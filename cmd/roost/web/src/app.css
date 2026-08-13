@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+
+@theme {
+	--font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+}
+
+body {
+	@apply bg-zinc-950 text-zinc-200 font-mono text-sm antialiased;
+}
+
+/* ── Nocturne tokens (imported from the claude.ai/design project's
+   design system, _ds/nocturne). Variables only at global scope; the
+   board route is the surface that consumes them. ── */
+:root {
+	--color-bg: #161826;
+	--color-surface: #232532;
+	--color-text: #e9e9ed;
+	--color-accent: #9184d9;
+	--color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+
+	--color-neutral-100: #f3f5fe;
+	--color-neutral-200: #e4e7f5;
+	--color-neutral-300: #cfd3e5;
+	--color-neutral-400: #b2b6ca;
+	--color-neutral-500: #9397ab;
+	--color-neutral-600: #75798c;
+	--color-neutral-700: #595d6c;
+	--color-neutral-800: #3f424d;
+	--color-neutral-900: #292b31;
+
+	--color-accent-100: #f5f4ff;
+	--color-accent-200: #e7e5fe;
+	--color-accent-300: #d2cefd;
+	--color-accent-400: #b5abfc;
+	--color-accent-500: #968ae0;
+	--color-accent-600: #796cbf;
+	--color-accent-700: #5d5294;
+	--color-accent-800: #423a6a;
+	--color-accent-900: #2b2741;
+
+	--font-heading: 'Inter', system-ui, sans-serif;
+	--font-body: 'Inter', system-ui, sans-serif;
+
+	--radius-sm: 4px;
+	--radius-md: 8px;
+	--radius-lg: 14px;
+
+	--shadow-sm: 0 0 0 1px #3f424d;
+	--shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
+	--shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
+}
+
+/* Nocturne component classes the board consumes (ported from the DS
+   stylesheet — outlined primaries, themed focus, no browser defaults). */
+.nk .btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	cursor: pointer;
+	font-family: var(--font-heading);
+	font-weight: 500;
+	font-size: 14px;
+	line-height: 1.2;
+	color: var(--color-text);
+	background: transparent;
+	border: 1px solid transparent;
+	padding: 6px 10px;
+	border-radius: var(--radius-md);
+}
+.nk .btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.nk .btn-primary {
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+}
+.nk .btn-primary:hover {
+	background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+.nk .btn-ghost {
+	color: var(--color-accent);
+	padding-inline: 4px;
+}
+.nk .btn-ghost:hover {
+	background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+.nk .input {
+	width: 100%;
+	min-height: 36px;
+	padding: 6px 10px;
+	font: inherit;
+	font-size: 14px;
+	color: var(--color-text);
+	caret-color: var(--color-accent);
+	background: var(--color-surface);
+	border: 1px solid var(--color-divider);
+	border-radius: var(--radius-md);
+}
+.nk .input:hover {
+	border-color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+.nk .input:focus-visible {
+	border-color: var(--color-accent);
+	outline: none;
+}
+.nk .tag {
+	display: inline-flex;
+	align-items: center;
+	font-size: 11px;
+	letter-spacing: 0.02em;
+	padding: 3px 10px;
+	border-radius: 6px;
+}
+.nk .tag-outline {
+	border: 1px solid var(--color-accent);
+	color: var(--color-accent);
+}
+.nk :focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+.nk ::selection {
+	background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+.nk *::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+.nk *::-webkit-scrollbar-thumb {
+	background: var(--color-neutral-800);
+	border-radius: 8px;
+}

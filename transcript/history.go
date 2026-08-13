@@ -1,0 +1,111 @@
+// The history read: one transcript rendered as the conversation it
+// records — user turns, assistant turns, tool work folded to a count.
+// A fork's transcript replays the whole conversation it continued, so
+// reading the NEWEST fork in a lineage is reading the agent's life to
+// date; that is what makes an agent page possible without stitching.
+package transcript
+
+import (
+	"bytes"
+	"encoding/json"
+	"strings"
+	"time"
+)
+
+// Msg is one bubble of the conversation.
+type Msg struct {
+	Role  string    `json:"role"` // "user" | "assistant"
+	Text  string    `json:"text"`
+	At    time.Time `json:"at,omitzero"`
+	Tools int       `json:"tools,omitempty"` // tool calls folded into this turn
+}
+
+// historyBytes bounds one history read. Deep transcripts lose their
+// oldest turns off the top, which the page says honestly.
+const historyBytes = 1 << 20
+
+// History renders a transcript's tail as conversation turns, oldest
+// first. Assistant stream lines merge into one turn until a human
+// speaks again; tool calls and their results fold into that turn's
+// count. Harness noise (command wrappers, tool results) is not
+// conversation and does not appear.
+func History(path string) []Msg {
+	data, err := readTail(path, historyBytes)
+	if err != nil {
+		return nil
+	}
+	var out []Msg
+	var cur *Msg // the assistant turn being accumulated
+	flush := func() {
+		if cur != nil && (cur.Text != "" || cur.Tools > 0) {
+			out = append(out, *cur)
+		}
+		cur = nil
+	}
+	for raw := range bytes.SplitSeq(data, []byte("\n")) {
+		if len(bytes.TrimSpace(raw)) == 0 {
+			continue
+		}
+		var l wireLine
+		if json.Unmarshal(raw, &l) != nil {
+			continue
+		}
+		if l.IsSidechain || l.Message == nil {
+			continue
+		}
+		ts, _ := time.Parse(time.RFC3339, l.Timestamp)
+		switch l.Type {
+		case "user":
+			if isToolResult(l.Message.Content) {
+				continue // the assistant's own machinery coming back
+			}
+			text := strings.TrimSpace(contentText(l.Message.Content))
+			if text == "" || harnessNoise(text) {
+				continue
+			}
+			flush()
+			out = append(out, Msg{Role: "user", Text: text, At: ts})
+		case "assistant":
+			if cur == nil {
+				cur = &Msg{Role: "assistant", At: ts}
+			}
+			cur.Tools += countToolUse(l.Message.Content)
+			if t := contentText(l.Message.Content); t != "" {
+				if cur.Text != "" {
+					cur.Text += "\n\n"
+				}
+				cur.Text += t
+			}
+		}
+	}
+	flush()
+	return out
+}
+
+// harnessNoise: lines the harness wrote through the user's mouth —
+// local-command wrappers, interruption markers — are plumbing, not
+// something the human said.
+func harnessNoise(text string) bool {
+	for _, p := range []string{"<local-command", "<command-name>", "[Request interrupted"} {
+		if strings.HasPrefix(text, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func countToolUse(raw json.RawMessage) int {
+	var blocks []struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return 0
+	}
+	n := 0
+	for _, b := range blocks {
+		if b.Type == "tool_use" {
+			n++
+		}
+	}
+	return n
+}

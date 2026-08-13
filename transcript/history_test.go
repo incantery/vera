@@ -1,0 +1,101 @@
+package transcript
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// assistantText is a mid-turn assistant stream line; endTurn (from the
+// scanner's fixtures) is the turn's last.
+func assistantText(at time.Duration, text string) string {
+	return fmt.Sprintf(`{"type":"assistant","timestamp":"%s","message":{"role":"assistant","content":[{"type":"text","text":%q}]}}`, ts(at), text)
+}
+
+func assistantEndTurn(at time.Duration, text string) string { return endTurn(at, text) }
+
+func writeHistoryFixture(t *testing.T, lines ...string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "s1.jsonl")
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestHistoryRendersTurnsAndFoldsTools(t *testing.T) {
+	path := writeHistoryFixture(t,
+		prompt(0, "fix the flaky test"),
+		toolUse(1),
+		toolResult(2),
+		assistantText(3, "Found it — the sleep races the poll."),
+		assistantEndTurn(4, "Fixed: the test now waits on the channel."),
+		prompt(5, "ship it"),
+		assistantEndTurn(6, "Tagged and pushed."),
+	)
+	h := History(path)
+	if len(h) != 4 {
+		t.Fatalf("turns: %d — %+v", len(h), h)
+	}
+	if h[0].Role != "user" || h[0].Text != "fix the flaky test" {
+		t.Fatalf("h[0]: %+v", h[0])
+	}
+	// One assistant turn: two stream lines merged, one tool folded in.
+	if h[1].Role != "assistant" || h[1].Tools != 1 ||
+		!strings.Contains(h[1].Text, "races the poll") || !strings.Contains(h[1].Text, "waits on the channel") {
+		t.Fatalf("h[1]: %+v", h[1])
+	}
+	if h[2].Text != "ship it" || h[3].Text != "Tagged and pushed." {
+		t.Fatalf("tail: %+v %+v", h[2], h[3])
+	}
+}
+
+func TestHistoryDropsHarnessNoiseAndSidechains(t *testing.T) {
+	path := writeHistoryFixture(t,
+		prompt(0, "<local-command-caveat>Caveat: local commands</local-command-caveat>"),
+		prompt(1, "[Request interrupted by user]"),
+		`{"type":"assistant","timestamp":"`+ts(2)+`","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"subagent chatter"}]}}`,
+		prompt(3, "the real question"),
+		assistantEndTurn(4, "the real answer"),
+	)
+	h := History(path)
+	if len(h) != 2 || h[0].Text != "the real question" || h[1].Text != "the real answer" {
+		t.Fatalf("h: %+v", h)
+	}
+}
+
+func TestHistoryOfAMissingFileIsEmptyNotAnError(t *testing.T) {
+	if h := History(filepath.Join(t.TempDir(), "gone.jsonl")); h != nil {
+		t.Fatalf("h: %+v", h)
+	}
+}
+
+func TestScanCarriesTheLatestToolCall(t *testing.T) {
+	dir := t.TempDir()
+	writeSession(t, dir, "proj", "s-tool", 0,
+		prompt(0, "run the tests"),
+		`{"type":"assistant","timestamp":"`+ts(1)+`","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"go test ./...","description":"Run the suite"}}]}}`,
+	)
+	s := one(t, testScanner(dir), t0.Add(2*time.Minute))
+	if s.ToolName != "Bash" || s.ToolDetail != "Run the suite" {
+		t.Fatalf("tool: %q %q", s.ToolName, s.ToolDetail)
+	}
+}
+
+func TestScanKeepsTheUsageSplit(t *testing.T) {
+	dir := t.TempDir()
+	writeSession(t, dir, "proj", "s-usage", 0,
+		prompt(0, "go"),
+		`{"type":"assistant","timestamp":"`+ts(1)+`","message":{"role":"assistant","model":"claude-fable-5","stop_reason":"end_turn","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":1200,"cache_read_input_tokens":300000,"cache_creation_input_tokens":5000,"output_tokens":800}}}`,
+	)
+	s := one(t, testScanner(dir), t0.Add(2*time.Minute))
+	if s.CtxTokens != 307000 || s.CtxIn != 1200 || s.CtxCacheRd != 300000 || s.CtxCacheWr != 5000 || s.CtxOut != 800 {
+		t.Fatalf("split: %+v", s)
+	}
+	if s.Model != "claude-fable-5" {
+		t.Fatalf("model: %q", s.Model)
+	}
+}
