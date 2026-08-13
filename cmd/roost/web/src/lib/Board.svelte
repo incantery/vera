@@ -5,6 +5,8 @@
 	// an agent is an assignment a card carries, not a namespace. The
 	// working agent's card wears its live status; captures land as
 	// unassigned backlog.
+	import { api } from '$lib/state.svelte.js';
+
 	let board = $state(null); // {tasks, inflight, spend, fleet, notice}
 	let selId = $state(null);
 	let capture = $state('');
@@ -14,7 +16,7 @@
 
 	async function refresh() {
 		try {
-			const r = await fetch('/api/tasks');
+			const r = await api('/api/tasks');
 			if (!r.ok) throw new Error((await r.json()).error ?? 'the board did not answer');
 			board = await r.json();
 			err = '';
@@ -68,7 +70,7 @@
 		busy = true;
 		err = '';
 		try {
-			const r = await fetch(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
+			const r = await api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
 			const out = await r.json();
 			if (!r.ok) throw new Error(out.error ?? 'refused');
 			await refresh();
@@ -90,16 +92,26 @@
 		triage = out.near ? { id: out.task.id, near: out.near } : null;
 	}
 	const act = (tid, action, extra) => post(`/api/tasks/${tid}/act`, { action, ...extra });
-	const start = (tid) => post(`/api/tasks/${tid}/start`);
+	const start = (tid, extra) => post(`/api/tasks/${tid}/start`, extra);
 	async function mergeTriage() {
 		await act(triage.id, 'merge', { intoId: triage.near.id });
 		selId = triage?.near?.id;
 		triage = null;
 	}
 	async function accept(t) {
-		if (t.proposalKind === 'start') await start(t.id);
-		else await act(t.id, 'accept');
+		if (t.proposalKind === 'start') {
+			await start(t.id, startIn ? { newIn: startIn } : undefined);
+			startIn = '';
+		} else await act(t.id, 'accept');
 	}
+
+	// Where an unassigned task starts: '' = the current agent; a cwd =
+	// a fresh agent born there. Reset when the selection moves.
+	let startIn = $state('');
+	$effect(() => {
+		selId;
+		startIn = '';
+	});
 </script>
 
 <div
@@ -383,6 +395,19 @@
 								>
 									{sel.proposalWhy}
 								</div>
+							{/if}
+							{#if sel.proposalKind === 'start' && !sel.agent && board?.repos?.length}
+								<!-- who works it: the current agent, or a fresh one
+								     born in a repo the fleet has shown -->
+								<select
+									bind:value={startIn}
+									style="font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 5px 8px;"
+								>
+									<option value="">on the current agent</option>
+									{#each board.repos as r (r.cwd)}
+										<option value={r.cwd}>fresh agent in {r.dir}</option>
+									{/each}
+								</select>
 							{/if}
 							<div style="display: flex; gap: 8px; margin-top: 2px;">
 								<button

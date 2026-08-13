@@ -56,11 +56,13 @@ func testServer(t *testing.T, dir string) *server {
 			Dir: dir, Window: 48 * time.Hour, Idle: 10 * time.Minute,
 			Quiet: 60 * time.Second, Max: 50,
 		},
-		ln:    openLineage(""),
-		uc:    &usage.Collector{}, // never started; Latest() honestly answers nil
-		says:  map[string]*sayJob{},
-		spend: map[string]*agentSpend{},
-		tasks: &taskStore{dir: t.TempDir()},
+		ln:      openLineage(""),
+		uc:      &usage.Collector{}, // never started; Latest() honestly answers nil
+		says:    map[string]*sayJob{},
+		spend:   map[string]*agentSpend{},
+		digests: map[string]*digestRec{},
+		sent:    map[string]string{},
+		tasks:   &taskStore{dir: t.TempDir()},
 	}
 }
 

@@ -183,3 +183,46 @@ func TestHeadlessRefusesAnUnsafeSessionID(t *testing.T) {
 		t.Fatal("an unsafe id must be refused before any exec")
 	}
 }
+
+// scriptStarter births "born-1" then behaves like its embedded turner.
+type scriptStarter struct{ scriptTurner }
+
+func (s *scriptStarter) StartTurn(ctx context.Context, prompt string) (Turn, error) {
+	s.sent = append(s.sent, prompt)
+	return Turn{Reply: "first breath: " + prompt, SessionID: "born-1", CostUSD: 0.02}, nil
+}
+
+func TestRunFreshBirthsAnAgentAndContinues(t *testing.T) {
+	tr := &scriptStarter{}
+	j := &scriptJudge{verdicts: []Verdict{
+		{Prompt: "push further"},
+		{Done: true, Reason: "the newborn delivered"},
+	}}
+	res, err := (&Loop{Turner: tr, Judge: j}).RunFresh(context.Background(), "the goal")
+	if err != nil || !res.Done {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if res.Root != "born-1" {
+		t.Fatalf("the newborn's identity must be the root: %q", res.Root)
+	}
+	if len(res.Turns) != 2 || res.Turns[0].Reply != "first breath: the goal" {
+		t.Fatalf("turns: %+v", res.Turns)
+	}
+	// Turn two resumed the newborn, not nothing.
+	if tr.sent[1] != "push further" {
+		t.Fatalf("sent: %v", tr.sent)
+	}
+	if res.CostUSD < 0.029 || res.CostUSD > 0.031 {
+		t.Fatalf("cost: %v", res.CostUSD)
+	}
+}
+
+func TestHeadlessStartTurnNeverResumes(t *testing.T) {
+	bin := stubClaude(t, `case "$*" in *--resume*) echo "resume leaked" >&2; exit 1;; esac
+echo '{"type":"result","result":"hello","session_id":"born-9","total_cost_usd":0.01}'`)
+	h := &Headless{Bin: bin, Dir: t.TempDir()}
+	turn, err := h.StartTurn(context.Background(), "hi")
+	if err != nil || turn.SessionID != "born-9" {
+		t.Fatalf("turn=%+v err=%v", turn, err)
+	}
+}

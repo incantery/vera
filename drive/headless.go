@@ -58,10 +58,20 @@ func (h *Headless) RunTurn(ctx context.Context, sessionID, prompt string) (Turn,
 	if !safeID(sessionID) {
 		return Turn{}, errors.New("session id is not resume-safe")
 	}
+	return h.exec(ctx, []string{"-p", "--resume", sessionID, "--output-format", "json", prompt})
+}
+
+// StartTurn births a session: the same print-mode turn with no
+// --resume, run in the target directory — a fresh agent takes its
+// first breath there, and the envelope names the session it now is.
+func (h *Headless) StartTurn(ctx context.Context, prompt string) (Turn, error) {
+	return h.exec(ctx, []string{"-p", "--output-format", "json", prompt})
+}
+
+func (h *Headless) exec(ctx context.Context, args []string) (Turn, error) {
 	ctx, cancel := context.WithTimeout(ctx, h.timeout())
 	defer cancel()
-	cmd := exec.CommandContext(ctx, h.bin(),
-		"-p", "--resume", sessionID, "--output-format", "json", prompt)
+	cmd := exec.CommandContext(ctx, h.bin(), args...)
 	cmd.Dir = h.Dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr

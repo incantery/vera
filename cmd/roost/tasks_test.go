@@ -192,3 +192,53 @@ func TestBoardBacklogStaysUnassignedBesideTheLiveTask(t *testing.T) {
 		t.Fatalf("backlog=%d live=%d — %+v", backlog, live, tasks)
 	}
 }
+
+func TestJournalsSurviveARestart(t *testing.T) {
+	dir := t.TempDir()
+	spendPath := filepath.Join(dir, "spend.jsonl")
+	digestPath := filepath.Join(dir, "digests.jsonl")
+
+	first := testServer(t, t.TempDir())
+	first.spendPath, first.digestPath = spendPath, digestPath
+	first.addSpend("root-1", 1.25, 0.10)
+	first.addSpend("root-1", 0.75, 0)
+	first.addSpend("root-2", 0, 0.05)
+	appendLine(digestPath, digestLine{Hash: "abc123", Headline: "It shipped.", Bullets: []string{"tag it"}, At: time.Now()})
+
+	// A fresh process, same journals: the meters must not have forgotten.
+	second := testServer(t, t.TempDir())
+	second.spendPath, second.digestPath = spendPath, digestPath
+	second.loadJournals()
+	if sp := second.spend["root-1"]; sp == nil || sp.ClaudeUSD != 2.0 || sp.JudgeUSD != 0.10 {
+		t.Fatalf("root-1 ledger: %+v", sp)
+	}
+	if sp := second.spend["root-2"]; sp == nil || sp.JudgeUSD != 0.05 {
+		t.Fatalf("root-2 ledger: %+v", sp)
+	}
+	rec := second.digests["abc123"]
+	if rec == nil || rec.State != "ready" || rec.Headline != "It shipped." {
+		t.Fatalf("digest cache: %+v", rec)
+	}
+}
+
+func TestRepoListOffersFleetDirsButNeverHome(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "titled work", now)
+	// An untitled session in a real repo still offers its directory —
+	// titled-ness gates adoption, not geography.
+	writeUntitledWorkingTranscript(t, dir, "-repo-beta", "quiet-1", now)
+	s := testServer(t, dir)
+	repos := repoList(s.boardSessions(now), "/repo/-repo-beta")
+	// beta played the role of $HOME here and must be excluded.
+	if len(repos) != 1 || repos[0]["cwd"] != "/repo/-repo-alpha" {
+		t.Fatalf("repos: %+v", repos)
+	}
+	// And a fresh start may only name what was offered.
+	if repoOffered(s.boardSessions(now), "/somewhere/else") != "" {
+		t.Fatal("an unoffered directory must be refused")
+	}
+	if repoOffered(s.boardSessions(now), "/repo/-repo-alpha") == "" {
+		t.Fatal("the offered directory must be accepted")
+	}
+}

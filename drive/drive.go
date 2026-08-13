@@ -58,8 +58,16 @@ type Result struct {
 	Done      bool
 	Reason    string
 	Turns     []Exchange
+	Root      string  // the session the drive began as — the agent's identity
 	SessionID string  // the final fork — resume it to take the wheel back
 	CostUSD   float64 // the turns' metered cost, summed
+}
+
+// A Starter can birth a session: the first turn of a conversation
+// that does not exist yet. Headless implements it; a Turner that
+// cannot start can still Run against existing sessions.
+type Starter interface {
+	StartTurn(ctx context.Context, prompt string) (Turn, error)
 }
 
 // Loop is one drive's machinery.
@@ -89,10 +97,18 @@ func (l *Loop) progress(format string, args ...any) {
 // within the turn budget is not an error; it is Done=false with the
 // reason on the record.
 func (l *Loop) Run(ctx context.Context, sessionID, goal string) (Result, error) {
-	res := Result{SessionID: sessionID}
-	prompt := goal
-	for turn := 1; turn <= l.maxTurns(); turn++ {
-		l.progress("turn %d/%d: asking claude", turn, l.maxTurns())
+	return l.run(ctx, sessionID, goal, goal, nil)
+}
+
+// run drives from an existing session: `prompt` is the next thing to
+// say, `seed` is whatever conversation is already on the record (the
+// fresh path's first exchange arrives this way).
+func (l *Loop) run(ctx context.Context, sessionID, goal, prompt string, seed []Exchange) (Result, error) {
+	res := Result{Root: sessionID, SessionID: sessionID, Turns: seed}
+	off := len(seed)
+	total := l.maxTurns() + off
+	for turn := 1 + off; turn <= total; turn++ {
+		l.progress("turn %d/%d: asking claude", turn, total)
 		t, err := l.Turner.RunTurn(ctx, res.SessionID, prompt)
 		res.CostUSD += t.CostUSD
 		if err != nil {
@@ -102,7 +118,7 @@ func (l *Loop) Run(ctx context.Context, sessionID, goal string) (Result, error) 
 			res.SessionID = t.SessionID
 		}
 		res.Turns = append(res.Turns, Exchange{Prompt: prompt, Reply: t.Reply})
-		l.progress("turn %d/%d: judging the reply", turn, l.maxTurns())
+		l.progress("turn %d/%d: judging the reply", turn, total)
 		v, err := l.Judge.Judge(ctx, goal, res.Turns)
 		if err != nil {
 			return res, errors.New("the judge failed: " + err.Error())
@@ -120,6 +136,52 @@ func (l *Loop) Run(ctx context.Context, sessionID, goal string) (Result, error) 
 		}
 		prompt = v.Prompt
 	}
-	res.Reason = fmt.Sprintf("the turn budget (%d) is spent and the goal is not met", l.maxTurns())
+	res.Reason = fmt.Sprintf("the turn budget (%d) is spent and the goal is not met", total)
 	return res, nil
+}
+
+// RunFresh drives a session that does not exist yet: the Turner (which
+// must also be a Starter) births it with the goal as the first turn,
+// and the loop continues from whatever session that turn became. The
+// Result's Root names the newborn agent.
+func (l *Loop) RunFresh(ctx context.Context, goal string) (Result, error) {
+	st, ok := l.Turner.(Starter)
+	if !ok {
+		return Result{}, errors.New("this turner cannot start a session")
+	}
+	var res Result
+	l.progress("turn 1/%d: starting a fresh agent", l.maxTurns())
+	t, err := st.StartTurn(ctx, goal)
+	res.CostUSD += t.CostUSD
+	if err != nil {
+		return res, errors.New("the first turn failed: " + err.Error())
+	}
+	if t.SessionID == "" {
+		return res, errors.New("the first turn came back without a session id")
+	}
+	res.Root, res.SessionID = t.SessionID, t.SessionID
+	res.Turns = append(res.Turns, Exchange{Prompt: goal, Reply: t.Reply})
+	l.progress("turn 1/%d: judging the reply", l.maxTurns())
+	v, err := l.Judge.Judge(ctx, goal, res.Turns)
+	if err != nil {
+		return res, errors.New("the judge failed: " + err.Error())
+	}
+	if v.Done {
+		res.Done, res.Reason = true, v.Reason
+		if res.Reason == "" {
+			res.Reason = "the goal is met"
+		}
+		return res, nil
+	}
+	if strings.TrimSpace(v.Prompt) == "" {
+		return res, errors.New("the judge wanted to continue but had nothing to say")
+	}
+	// The rest of the drive is an ordinary run against the newborn,
+	// with one turn already on the record.
+	rest := *l
+	rest.MaxTurns = l.maxTurns() - 1
+	more, err := rest.run(ctx, res.SessionID, goal, v.Prompt, res.Turns)
+	more.Root = res.Root
+	more.CostUSD += res.CostUSD
+	return more, err
 }

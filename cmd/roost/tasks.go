@@ -33,6 +33,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"crypto/rand"
@@ -383,7 +384,31 @@ func (s *server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"tasks": tasks, "inflight": inflight, "spend": spent, "notice": s.notice,
 		"fleet": map[string]int{"agents": len(fleet), "working": working},
+		"repos": repoList(fleet, homeDir()),
 	})
+}
+
+// repoList names the directories a fresh agent could be born into —
+// places the fleet has already shown, so the wire can never name a
+// directory the machine did not first offer. The home directory is
+// excluded: sessions there are usage probes and scratch, not repos.
+func repoList(fleet map[string]*transcript.Session, home string) []map[string]string {
+	seen := map[string]bool{}
+	var out []map[string]string
+	for _, live := range fleet {
+		if live.Cwd == "" || live.Cwd == home || seen[live.Cwd] {
+			continue
+		}
+		seen[live.Cwd] = true
+		out = append(out, map[string]string{"dir": filepath.Base(live.Cwd), "cwd": live.Cwd})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i]["dir"] < out[j]["dir"] })
+	return out
+}
+
+func homeDir() string {
+	home, _ := os.UserHomeDir()
+	return home
 }
 
 func (s *server) handleTaskCapture(w http.ResponseWriter, r *http.Request) {
@@ -421,6 +446,7 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		AgentID string `json:"agentId"`
+		NewIn   string `json:"newIn"` // birth a fresh agent in this repo
 	}
 	// The body is optional; absence means "rook picks".
 	json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14)).Decode(&req)
@@ -433,6 +459,10 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if t.Col == "progress" {
 		httpErr(w, 409, "already in progress")
+		return
+	}
+	if req.NewIn != "" {
+		s.startTaskFresh(w, r, t, req.NewIn, now)
 		return
 	}
 	agentID := t.Agent
@@ -487,6 +517,117 @@ func shortID(id string) string {
 		return id[:7]
 	}
 	return id
+}
+
+// startTaskFresh births a new agent for the task: a fresh headless
+// claude in the chosen repo, the goal as its first breath. The repo
+// must be one the fleet already showed — the wire can only name what
+// the machine offered.
+func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, newIn string, now time.Time) {
+	fleet := s.boardSessions(now)
+	if repoOffered(fleet, newIn) == "" {
+		httpErr(w, 400, "that directory is not one the fleet has shown")
+		return
+	}
+	// Costs accrue against the newborn, whose name we learn when it
+	// takes its first breath; until then the meter holds its coins.
+	var judgeUSD float64
+	var judgeMu sync.Mutex
+	ll := *s.llm
+	ll.Spend = func(c float64) { judgeMu.Lock(); judgeUSD += c; judgeMu.Unlock() }
+
+	goal, err := ll.CompileGoal(r.Context(), t.Intent)
+	if err != nil {
+		httpErr(w, 502, "rook could not compile the goal: "+err.Error())
+		return
+	}
+	dir := filepath.Base(newIn)
+	t, err = s.tasks.mutate(t.ID, func(t *task) error {
+		t.Goal, t.GoalActor = goal, "rook"
+		t.Col, t.State = "progress", "in progress · a fresh agent is being born"
+		t.Face = "Starting a fresh agent in " + dir + "."
+		t.clearProposal()
+		t.event("rook", "compiled intent → drive goal; starting a fresh agent in "+dir, now)
+		return nil
+	})
+	if err != nil {
+		httpErr(w, 500, err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	idb := make([]byte, 4)
+	rand.Read(idb)
+	rn := &run{
+		ID:           "drive-" + hex.EncodeToString(idb),
+		SessionTitle: "fresh agent in " + dir, Goal: goal, TaskID: t.ID,
+		Status: "starting", At: time.Now(), cancel: cancel,
+	}
+	s.mu.Lock()
+	s.runs = append([]*run{rn}, s.runs...)
+	s.mu.Unlock()
+
+	jl := ll // the run's own copy; same held meter
+	jl.Spend = func(c float64) {
+		judgeMu.Lock()
+		judgeUSD += c
+		judgeMu.Unlock()
+		s.update(rn.ID, func(r *run) { r.JudgeUSD += c })
+	}
+	loop := &drive.Loop{
+		Turner:   &drive.Headless{Bin: s.claudeBin, Dir: newIn},
+		Judge:    &drive.LLMJudge{LLM: &jl},
+		MaxTurns: s.turns,
+		Progress: func(line string) { s.update(rn.ID, func(r *run) { r.Status = line; r.At = time.Now() }) },
+	}
+	taskID := t.ID
+	go func() {
+		defer cancel()
+		res, err := loop.RunFresh(ctx, goal)
+		judgeMu.Lock()
+		held := judgeUSD
+		judgeMu.Unlock()
+		if res.Root != "" {
+			s.ln.advance(res.Root, res.SessionID)
+			s.addSpend(res.Root, res.CostUSD, held)
+		}
+		s.update(rn.ID, func(r *run) {
+			r.Finished = true
+			r.At = time.Now()
+			r.SessionID = res.Root
+			r.Turns = res.Turns
+			r.ResumeID = res.SessionID
+			r.ClaudeUSD = res.CostUSD
+			if err != nil {
+				r.Reason = err.Error()
+				return
+			}
+			r.Done = res.Done
+			r.Reason = res.Reason
+		})
+		// The newborn takes the assignment before the outcome is
+		// folded, so the card names its agent however the run ended.
+		if res.Root != "" {
+			s.tasks.mutate(taskID, func(t *task) error {
+				t.Agent = res.Root
+				t.event("rook", "assigned to the newborn agent in "+dir+" ("+shortID(res.Root)+")", time.Now())
+				return nil
+			})
+		}
+		s.taskRunLanded(taskID, res, err)
+	}()
+	writeJSON(w, t)
+}
+
+// repoOffered answers with the fleet cwd matching the ask, or "" —
+// the same offer repoList makes, checked on the way back in.
+func repoOffered(fleet map[string]*transcript.Session, cwd string) string {
+	for _, r := range repoList(fleet, homeDir()) {
+		if r["cwd"] == cwd {
+			return cwd
+		}
+	}
+	return ""
 }
 
 // currentAgent is the same freshest-lineage answer /api/state gives.

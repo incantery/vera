@@ -85,17 +85,20 @@ func main() {
 			Quiet:  60 * time.Second,
 			Max:    50,
 		},
-		claudeBin: *claudeBin,
-		turns:     *turns,
-		ln:        openLineage(*statePath),
-		says:      map[string]*sayJob{},
-		spend:     map[string]*agentSpend{},
-		digests:   map[string]*digestRec{},
-		sent:      map[string]string{},
-		uc:        &usage.Collector{Bin: *claudeBin},
-		shelf:     &artifactStore{dir: *artifactsDir},
-		tasks:     &taskStore{dir: *tasksDir},
+		claudeBin:  *claudeBin,
+		turns:      *turns,
+		ln:         openLineage(*statePath),
+		says:       map[string]*sayJob{},
+		spend:      map[string]*agentSpend{},
+		digests:    map[string]*digestRec{},
+		sent:       map[string]string{},
+		uc:         &usage.Collector{Bin: *claudeBin},
+		shelf:      &artifactStore{dir: *artifactsDir},
+		tasks:      &taskStore{dir: *tasksDir},
+		spendPath:  defaultSpendPath(),
+		digestPath: defaultDigestPath(),
 	}
+	s.loadJournals()
 	go s.uc.Loop()
 	// A missing key is a standing notice only where the default API
 	// lives; a custom base is a local server that wants no auth.
@@ -126,11 +129,28 @@ func main() {
 	mux.HandleFunc("POST /api/drive/stop", s.handleStop)
 
 	fmt.Printf("roost: watching %s\n", *dir)
-	fmt.Printf("roost: open http://%s\n", printableAddr(*addr))
+	handler := http.Handler(mux)
+	if loopbackOnly(*addr) {
+		fmt.Printf("roost: open http://%s (loopback only — no key needed)\n", printableAddr(*addr))
+	} else {
+		// Beyond loopback, the door gets its key: minted once, printed
+		// as part of the URL, required on every /api call.
+		key, err := loadOrCreateKey(defaultKeyPath())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "roost: cannot mint a key ("+err.Error()+") — refusing to serve the LAN unlocked")
+			os.Exit(1)
+		}
+		handler = requireKey(mux, key)
+		_, port, _ := strings.Cut(*addr, ":")
+		fmt.Println("roost: serving beyond loopback — a key guards the API. Open with:")
+		for _, u := range lanURLs(port) {
+			fmt.Printf("roost:   %s/?key=%s\n", u, key)
+		}
+	}
 	if s.notice != "" {
 		fmt.Println("roost: " + s.notice)
 	}
-	if err := http.ListenAndServe(*addr, mux); err != nil {
+	if err := http.ListenAndServe(*addr, handler); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -181,10 +201,13 @@ type server struct {
 	shelf     *artifactStore
 	tasks     *taskStore
 
+	spendPath  string // spend journal; "" = remember only while running
+	digestPath string // digest journal; same deal
+
 	mu      sync.Mutex
 	runs    []*run                 // newest first
 	says    map[string]*sayJob     // agent root -> the say in flight (or its failure)
-	spend   map[string]*agentSpend // agent root -> what this process spent on it
+	spend   map[string]*agentSpend // agent root -> what has been spent on it, ever
 	digests map[string]*digestRec  // reply-hash -> the membrane's compression of it
 	sent    map[string]string      // sent-text-hash -> the rough words behind it
 }
@@ -225,6 +248,7 @@ func (s *server) addSpend(root string, claude, judge float64) {
 	}
 	sp.ClaudeUSD += claude
 	sp.JudgeUSD += judge
+	appendLine(s.spendPath, spendLine{Root: root, Claude: claude, Judge: judge, At: time.Now()})
 }
 
 // sayJob is one chat message on its way through a headless turn — or
@@ -497,6 +521,8 @@ func (s *server) digestFor(root, prompt, reply string) *digestRec {
 		rec.State = "ready"
 		rec.Headline = headline
 		rec.Bullets = bullets
+		// Journaled so a restart never re-bills this turn.
+		appendLine(s.digestPath, digestLine{Hash: h, Headline: headline, Bullets: bullets, At: time.Now()})
 	}()
 	return &digestRec{State: "pending"}
 }
