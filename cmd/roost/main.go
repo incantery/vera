@@ -107,10 +107,12 @@ func main() {
 	go s.hub.watch(*dir)
 	go s.uc.Loop()
 	// Attachments outlive their usefulness with the agents that carried
-	// them: sweep orphaned upload dirs at start and every few hours.
+	// them, and the usage collector's probe transcripts outlive their
+	// harvest: sweep both at start and every few hours.
 	go func() {
 		for {
 			s.pruneUploads(*window)
+			pruneProbes(*dir, home, time.Now())
 			time.Sleep(6 * time.Hour)
 		}
 	}()
