@@ -3,6 +3,7 @@
 	import { fetchAgent, sayTo, startDrive, stopDrive, interruptAgent } from '$lib/state.svelte.js';
 	import UsageBar from '$lib/UsageBar.svelte';
 	import ArtifactPane from '$lib/ArtifactPane.svelte';
+	import DriveView from '$lib/DriveView.svelte';
 
 	const id = $derived(page.params.id);
 
@@ -136,7 +137,6 @@
 		error = '';
 		try {
 			if (driveMode) await startDrive(id, text);
-			else if (direct) await sayTo(id, text, { direct: true, perm });
 			else await sayTo(id, text, { verbatim });
 			text = '';
 			nearBottom = true;
@@ -145,6 +145,18 @@
 			error = err.message;
 		} finally {
 			sending = false;
+		}
+	}
+
+	// The cockpit's send: direct, under the sticky policy; a busy
+	// agent queues it server-side.
+	async function sendDirect(t) {
+		error = '';
+		try {
+			await sayTo(id, t, { direct: true, perm });
+			await refresh();
+		} catch (err) {
+			error = err.message;
 		}
 	}
 
@@ -163,10 +175,10 @@
 	};
 </script>
 
-<div class="mx-auto flex h-dvh gap-4 px-4 {shelfOpen ? 'max-w-6xl' : 'max-w-3xl'}">
+<div class="mx-auto flex h-dvh gap-4 {direct ? 'max-w-none px-0' : shelfOpen ? 'max-w-6xl px-4' : 'max-w-3xl px-4'}">
 <div class="flex h-dvh min-w-0 grow flex-col">
 	<!-- header -->
-	<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-zinc-800 py-3">
+	<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-zinc-800 py-3 {direct ? 'px-4' : ''}">
 		<a href="/" class="text-zinc-500 hover:text-zinc-300">←</a>
 		{#if data}
 			<span class="font-semibold">{data.agent.title}</span>
@@ -224,15 +236,15 @@
 		{/if}
 	</header>
 	{#if data?.usage}
-		<div class="border-b border-zinc-800/60 py-1.5">
+		<div class="border-b border-zinc-800/60 py-1.5 {direct ? 'px-4' : ''}">
 			<UsageBar usage={data.usage} />
 		</div>
 	{/if}
 
 	<!-- the session strip: what this conversation costs and the
 	     controls it supports — inside the column, the margins keep
-	     their silence -->
-	{#if data}
+	     their silence. The cockpit carries its own truth rail. -->
+	{#if data && !direct}
 		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-zinc-800/60 py-2 text-[11px] text-zinc-500">
 			{#if data.ctx}
 				<span title="what the next request starts from, per the transcript's own usage record">
@@ -269,11 +281,27 @@
 	{/if}
 
 	{#if lost}
-		<div class="mt-3 rounded-lg border border-rose-900 bg-rose-950/40 px-3 py-2 text-[13px] text-rose-300">
+		<div class="mt-3 rounded-lg border border-rose-900 bg-rose-950/40 px-3 py-2 text-[13px] text-rose-300 {direct ? 'mx-4' : ''}">
 			{lost}
 		</div>
 	{/if}
+	{#if direct && error}
+		<div class="mx-4 mt-2 text-xs text-rose-400">{error}</div>
+	{/if}
 
+	{#if direct}
+		<DriveView
+			{data}
+			{perm}
+			{setPerm}
+			{pendingSecs}
+			{interrupting}
+			onsend={sendDirect}
+			oninterrupt={interrupt}
+			oncompact={sendCompact}
+			{compacting}
+		/>
+	{:else}
 	<!-- conversation -->
 	<div bind:this={chatEl} onscroll={onScroll} class="grow space-y-4 overflow-y-auto py-4">
 		{#if data?.history?.length}
@@ -304,10 +332,7 @@
 							<!-- the turn's work, step by step — the last turn stays
 							     open while the agent works, so a running turn reads
 							     like a terminal, not a spinner -->
-							<details
-								class="mb-1"
-								open={direct && i === data.history.length - 1 && data.agent.state === 'working'}
-							>
+							<details class="mb-1">
 								<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
 									⛭ {m.tools} tool {m.tools === 1 ? 'call' : 'calls'}
 								</summary>
@@ -488,41 +513,14 @@
 				rows="2"
 				placeholder={driveMode
 					? `a goal — the supervisor keeps pushing until it’s met (${data?.turns ?? 4} turns max)`
-					: direct
-						? 'straight to claude — “/” runs a command, shift+enter for a new line'
-						: verbatim
-							? 'your exact words go straight to claude'
-							: 'tell rook what you want — it phrases the message for claude'}
-				class="grow resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-[13px] placeholder:text-zinc-600 focus:outline-none {direct
-					? 'focus:border-emerald-400'
-					: 'focus:border-sky-400'}"
+					: verbatim
+						? 'your exact words go straight to claude'
+						: 'tell rook what you want — it phrases the message for claude'}
+				class="grow resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-[13px] placeholder:text-zinc-600 focus:border-sky-400 focus:outline-none"
 			></textarea>
 			<div class="flex flex-col items-end gap-1.5">
 				<div class="flex items-center gap-1">
-					{#if direct && !driveMode}
-						<!-- the turn's tool policy: explicit, visible, chosen
-						     before the turn — not an interruption during it -->
-						<div class="flex overflow-hidden rounded-md border border-zinc-800 text-[10.5px]">
-							{#each ['read', 'edit', 'all'] as p (p)}
-								<button
-									type="button"
-									onclick={() => setPerm(p)}
-									class="px-1.5 py-0.5 {perm === p
-										? p === 'all'
-											? 'bg-rose-400/20 text-rose-300'
-											: 'bg-emerald-400/20 text-emerald-300'
-										: 'text-zinc-600 hover:text-zinc-400'}"
-									title={p === 'read'
-										? 'read-only: tools that would need permission are refused'
-										: p === 'edit'
-											? 'edit + test: file edits plus go/npm/make build-and-test — no git, no network'
-											: 'everything: claude runs with NO permission gate — it can do anything you could'}
-								>
-									{p}
-								</button>
-							{/each}
-						</div>
-					{:else if !driveMode}
+					{#if !driveMode}
 						<button
 							type="button"
 							onclick={() => (verbatim = !verbatim)}
@@ -550,20 +548,14 @@
 					disabled={sending || !text.trim() || !!activeDrive() || data?.pending?.status === 'thinking'}
 					class="rounded-xl px-4 py-2 font-semibold text-zinc-950 disabled:opacity-40 {driveMode
 						? 'bg-amber-400'
-						: direct
-							? 'bg-emerald-400'
-							: 'bg-sky-400'}"
+						: 'bg-sky-400'}"
 				>
 					{driveMode ? 'drive' : 'send'}
 				</button>
 			</div>
 		</form>
-		{#if direct && perm === 'all' && !driveMode}
-			<div class="mt-1.5 text-[11px] text-rose-400/80">
-				everything: this turn runs with no permission gate at all — claude can edit, delete, and run anything you could
-			</div>
-		{/if}
 	</footer>
+	{/if}
 </div>
 
 {#if shelfOpen}

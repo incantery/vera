@@ -19,19 +19,36 @@ type Msg struct {
 	At    time.Time `json:"at,omitzero"`
 	Tools int       `json:"tools,omitempty"` // tool calls folded into this turn
 	Steps []Step    `json:"steps,omitempty"` // the same calls, named and in order
+	Think []string  `json:"think,omitempty"` // reasoning excerpts, bounded
+	Ctx   int       `json:"ctx,omitempty"`   // context tokens after this turn
 }
 
 // Step is one tool call as a reader would skim it: the tool and the
-// most human-salient input field. The step list is capped; Tools keeps
-// the true count.
+// most human-salient input field. An edit carries its diff. The step
+// list is capped; Tools keeps the true count.
 type Step struct {
 	Tool   string `json:"tool"`
 	Detail string `json:"detail,omitempty"`
+	Diff   *Diff  `json:"diff,omitempty"`
+}
+
+// Diff is one Edit/Write as the reader would review it — the old and
+// new text, bounded, straight from the tool call's own input.
+type Diff struct {
+	File string `json:"file"`
+	Old  string `json:"old,omitempty"`
+	New  string `json:"new,omitempty"`
+	All  bool   `json:"all,omitempty"` // replace_all
 }
 
 // stepCap bounds a turn's step list — a 200-call turn reads as its
-// first stepCap steps plus the count, not as a wall.
-const stepCap = 40
+// first stepCap steps plus the count, not as a wall. thinkCap and
+// diffChars bound the reasoning and diff payloads the same way.
+const (
+	stepCap   = 40
+	thinkCap  = 3
+	diffChars = 1600
+)
 
 // historyBytes bounds one history read. Deep transcripts lose their
 // oldest turns off the top, which the page says honestly.
@@ -91,6 +108,15 @@ func History(path string) []Msg {
 					cur.Steps = append(cur.Steps, st)
 				}
 			}
+			for _, th := range thinkingText(l.Message.Content) {
+				if len(cur.Think) < thinkCap {
+					cur.Think = append(cur.Think, th)
+				}
+			}
+			if u := l.Message.Usage; u != nil {
+				// The window after this turn: same sum the scanner uses.
+				cur.Ctx = u.In + u.CacheRd + u.CacheWr
+			}
 			if t := contentText(l.Message.Content); t != "" {
 				if cur.Text != "" {
 					cur.Text += "\n\n"
@@ -127,7 +153,65 @@ func toolSteps(raw json.RawMessage) []Step {
 	var out []Step
 	for _, b := range blocks {
 		if b.Type == "tool_use" && b.Name != "" {
-			out = append(out, Step{Tool: b.Name, Detail: toolDetail(b.Input)})
+			out = append(out, Step{Tool: b.Name, Detail: toolDetail(b.Input), Diff: editDiff(b.Name, b.Input)})
+		}
+	}
+	return out
+}
+
+// editDiff lifts an Edit or Write into a reviewable diff — the tool
+// call's own input IS the change, no filesystem read needed.
+func editDiff(name string, raw json.RawMessage) *Diff {
+	if name != "Edit" && name != "Write" {
+		return nil
+	}
+	var in struct {
+		File    string `json:"file_path"`
+		Old     string `json:"old_string"`
+		New     string `json:"new_string"`
+		Content string `json:"content"`
+		All     bool   `json:"replace_all"`
+	}
+	if json.Unmarshal(raw, &in) != nil || in.File == "" {
+		return nil
+	}
+	d := &Diff{File: in.File, Old: clip(in.Old, diffChars), All: in.All}
+	if name == "Write" {
+		d.New = clip(in.Content, diffChars)
+	} else {
+		d.New = clip(in.New, diffChars)
+	}
+	if d.Old == "" && d.New == "" {
+		return nil
+	}
+	return d
+}
+
+// clip bounds multi-line text without flattening it — a diff keeps
+// its line breaks or it is not a diff.
+func clip(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && s[cut]&0xC0 == 0x80 {
+		cut--
+	}
+	return s[:cut] + "\n…"
+}
+
+func thinkingText(raw json.RawMessage) []string {
+	var blocks []struct {
+		Type     string `json:"type"`
+		Thinking string `json:"thinking"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return nil
+	}
+	var out []string
+	for _, b := range blocks {
+		if b.Type == "thinking" && strings.TrimSpace(b.Thinking) != "" {
+			out = append(out, Snip(b.Thinking, 400))
 		}
 	}
 	return out

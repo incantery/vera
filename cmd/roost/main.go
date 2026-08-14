@@ -223,6 +223,7 @@ type server struct {
 	spend   map[string]*agentSpend // agent root -> what has been spent on it, ever
 	digests map[string]*digestRec  // reply-hash -> the membrane's compression of it
 	sent    map[string]string      // sent-text-hash -> the rough words behind it
+	queues  map[string][]queuedSay // agent root -> direct messages typed ahead
 }
 
 // digestRec is one reply's compression, cached by the reply's hash so
@@ -278,6 +279,30 @@ type sayJob struct {
 
 	cancel      context.CancelFunc // interrupt: kill the claude subprocess
 	interrupted bool
+}
+
+// queuedSay is a direct-mode message typed while a turn was in
+// flight; it lands when that turn ends, in order, with its own policy.
+type queuedSay struct {
+	Text string `json:"text"`
+	Perm string `json:"perm,omitempty"`
+}
+
+const queueCap = 3
+
+// permPolicy maps a direct-mode policy name onto claude's own
+// permission system. The names are a closed set; the third answer is
+// the refusal message, empty when the name is good.
+func permPolicy(perm string) ([]string, string, string) {
+	switch perm {
+	case "", "read":
+		return nil, "", ""
+	case "edit":
+		return workTools, "", ""
+	case "all":
+		return nil, "bypassPermissions", ""
+	}
+	return nil, "", "perm must be read, edit, or all"
 }
 
 // run is one drive's row-worth of truth, live or finished.
@@ -449,11 +474,17 @@ func (s *server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// ?digests=0 is direct mode reading raw: the rough-words provenance
-	// still attaches, but no digest is computed or billed.
-	history := s.membraneHistory(root, transcript.History(head.Path),
-		r.URL.Query().Get("digests") == "0")
+	// still attaches, but no digest is computed or billed — and the
+	// direct cockpit gets the working-tree readout in the same fetch.
+	raw := r.URL.Query().Get("digests") == "0"
+	history := s.membraneHistory(root, transcript.History(head.Path), raw)
+	var tree []treeFile
+	if raw {
+		tree = gitTree(head.Cwd)
+	}
 	s.mu.Lock()
 	pending := s.says[root]
+	queue := append([]queuedSay(nil), s.queues[root]...)
 	var spent *agentSpend
 	if sp := s.spend[root]; sp != nil {
 		c := *sp
@@ -472,6 +503,8 @@ func (s *server) handleAgent(w http.ResponseWriter, r *http.Request) {
 		"ctx":       ctx,
 		"spend":     spent,
 		"pending":   pending,
+		"queue":     queue,
+		"tree":      tree,
 		"drives":    drives,
 		"resume":    head.ID,
 		"notice":    s.notice,
@@ -603,19 +636,9 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "say something")
 		return
 	}
-	// The three direct-mode policies, code-side like the board's:
-	// read (print mode's default refusals), edit (the board's workTools
-	// grant), all (claude's own bypassPermissions — no gate at all).
-	var permTools []string
-	permMode := ""
-	switch req.Perm {
-	case "", "read":
-	case "edit":
-		permTools = workTools
-	case "all":
-		permMode = "bypassPermissions"
-	default:
-		httpErr(w, 400, "perm must be read, edit, or all")
+	permTools, permMode, permErr := permPolicy(req.Perm)
+	if permErr != "" {
+		httpErr(w, 400, permErr)
 		return
 	}
 	now := time.Now()
@@ -627,6 +650,23 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 	expand := !req.Direct && !req.Verbatim && s.llm != nil && !isCommand(req.Text)
 	s.mu.Lock()
 	if j := s.says[root]; j != nil && (j.Status == "thinking" || j.Status == "phrasing") {
+		// Direct mode types ahead: the message queues and lands when
+		// this turn ends. The membrane path still answers busy —
+		// phrasing against a moving transcript would invent context.
+		if req.Direct {
+			if len(s.queues[root]) >= queueCap {
+				s.mu.Unlock()
+				httpErr(w, 409, "the queue is full — three ahead is enough")
+				return
+			}
+			if s.queues == nil {
+				s.queues = map[string][]queuedSay{}
+			}
+			s.queues[root] = append(s.queues[root], queuedSay{Text: req.Text, Perm: req.Perm})
+			s.mu.Unlock()
+			writeJSON(w, map[string]string{"status": "queued"})
+			return
+		}
 		s.mu.Unlock()
 		httpErr(w, 409, "still working on the last message")
 		return
@@ -696,8 +736,67 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		// The exchange is in the head's transcript now; the pending
 		// bubble has nothing left to say.
 		delete(s.says, root)
+		go s.drainQueue(root)
 	}()
 	writeJSON(w, map[string]string{"status": status})
+}
+
+// drainQueue runs the next queued direct message, if the agent is
+// free. Each landing drains the next — an interrupted or failed turn
+// stops the chain, because the human plainly wants the wheel.
+func (s *server) drainQueue(root string) {
+	now := time.Now()
+	s.mu.Lock()
+	q := s.queues[root]
+	if len(q) == 0 {
+		s.mu.Unlock()
+		return
+	}
+	if j := s.says[root]; j != nil && (j.Status == "thinking" || j.Status == "phrasing") {
+		s.mu.Unlock()
+		return
+	}
+	if s.drivingLocked(root) {
+		s.mu.Unlock()
+		return
+	}
+	next := q[0]
+	s.queues[root] = q[1:]
+	turnCtx, cancel := context.WithCancel(context.Background())
+	job := &sayJob{Text: next.Text, Status: "thinking", Direct: true, Perm: next.Perm, At: now, cancel: cancel}
+	s.says[root] = job
+	s.mu.Unlock()
+
+	_, head := s.resolveAgent(root, now)
+	permTools, permMode, _ := permPolicy(next.Perm)
+	go func() {
+		defer cancel()
+		if head == nil {
+			s.mu.Lock()
+			job.Status = "failed"
+			job.Err = "the agent left the window before its queued message could land"
+			s.mu.Unlock()
+			return
+		}
+		turner := &drive.Headless{Bin: s.claudeBin, Dir: head.Cwd,
+			AllowedTools: permTools, PermissionMode: permMode}
+		turn, err := turner.RunTurn(turnCtx, head.ID, next.Text)
+		s.addSpend(root, turn.CostUSD, 0)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		job.CostUSD = turn.CostUSD
+		if err != nil {
+			job.Status = "failed"
+			job.Err = err.Error()
+			if job.interrupted {
+				job.Err = "interrupted — whatever landed stays in the transcript"
+			}
+			return
+		}
+		s.ln.advance(root, turn.SessionID)
+		delete(s.says, root)
+		go s.drainQueue(root)
+	}()
 }
 
 // handleInterrupt kills the in-flight say turn — the TUI's Esc, for

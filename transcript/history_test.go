@@ -113,6 +113,29 @@ func TestHistoryCarriesToolSteps(t *testing.T) {
 	}
 }
 
+// An Edit's own input IS the change: the step carries a reviewable
+// diff, and thinking blocks surface as bounded reasoning excerpts.
+func TestHistoryLiftsDiffsAndThinking(t *testing.T) {
+	path := writeHistoryFixture(t,
+		prompt(0, "fix the guard"),
+		`{"type":"assistant","timestamp":"`+ts(1)+`","message":{"role":"assistant","content":[{"type":"thinking","thinking":"the guard compares the wrong generation"},{"type":"tool_use","name":"Edit","input":{"file_path":"/x/drive.go","old_string":"a == b","new_string":"a == next"}}],"usage":{"input_tokens":100,"cache_read_input_tokens":40000,"cache_creation_input_tokens":900,"output_tokens":50}}}`,
+		toolResult(2),
+		assistantEndTurn(3, "fixed"),
+	)
+	h := History(path)
+	m := h[1]
+	if len(m.Steps) != 1 || m.Steps[0].Diff == nil ||
+		m.Steps[0].Diff.File != "/x/drive.go" || m.Steps[0].Diff.Old != "a == b" || m.Steps[0].Diff.New != "a == next" {
+		t.Fatalf("steps: %+v", m.Steps)
+	}
+	if len(m.Think) != 1 || !strings.Contains(m.Think[0], "wrong generation") {
+		t.Fatalf("think: %+v", m.Think)
+	}
+	if m.Ctx != 41000 {
+		t.Fatalf("ctx: %d", m.Ctx)
+	}
+}
+
 func TestHistoryOfAMissingFileIsEmptyNotAnError(t *testing.T) {
 	if h := History(filepath.Join(t.TempDir(), "gone.jsonl")); h != nil {
 		t.Fatalf("h: %+v", h)
