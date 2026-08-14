@@ -232,16 +232,16 @@ func TestRepoListOffersFleetDirsButNeverHome(t *testing.T) {
 	// titled-ness gates adoption, not geography.
 	writeUntitledWorkingTranscript(t, dir, "-repo-beta", "quiet-1", now)
 	s := testServer(t, dir)
-	repos := repoList(s.boardSessions(now), "/repo/-repo-beta")
+	repos := repoList(s.boardSessions(now), "/repo/-repo-beta", nil)
 	// beta played the role of $HOME here and must be excluded.
 	if len(repos) != 1 || repos[0]["cwd"] != "/repo/-repo-alpha" {
 		t.Fatalf("repos: %+v", repos)
 	}
 	// And a fresh start may only name what was offered.
-	if repoOffered(s.boardSessions(now), "/somewhere/else") != "" {
+	if s.repoOffered(s.boardSessions(now), "/somewhere/else") != "" {
 		t.Fatal("an unoffered directory must be refused")
 	}
-	if repoOffered(s.boardSessions(now), "/repo/-repo-alpha") == "" {
+	if s.repoOffered(s.boardSessions(now), "/repo/-repo-alpha") == "" {
 		t.Fatal("the offered directory must be accepted")
 	}
 }
@@ -345,5 +345,47 @@ func TestToolsForModes(t *testing.T) {
 	}
 	if !strings.Contains(work, "Edit") || !strings.Contains(work, "Bash(go test:*)") {
 		t.Fatalf("work mode grants: %s", work)
+	}
+}
+
+func TestScratchWorkspaceLifecycle(t *testing.T) {
+	sc := &scratchStore{parent: t.TempDir()}
+	path, err := sc.create("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(path, scratchMarker)); err != nil || len(b) == 0 {
+		t.Fatal("every scratch workspace is born with its marker")
+	}
+	if !sc.has(path) || len(sc.list()) != 1 {
+		t.Fatalf("list: %+v", sc.list())
+	}
+	if _, err := sc.create("demo"); err == nil {
+		t.Fatal("a name collision must refuse, not clobber")
+	}
+	if _, err := sc.create("../escape"); err == nil {
+		t.Fatal("names are filename-shaped or refused")
+	}
+	// Only marked directories are removable: roost deletes what roost made.
+	os.MkdirAll(filepath.Join(sc.parent, "innocent"), 0o755)
+	if err := sc.remove("innocent"); err == nil {
+		t.Fatal("an unmarked directory must never be removed")
+	}
+	if err := sc.remove("demo"); err != nil || sc.has(path) {
+		t.Fatalf("remove: %v", err)
+	}
+}
+
+func TestRepoListOffersScratchWorkspaces(t *testing.T) {
+	dir := t.TempDir()
+	s := testServer(t, dir)
+	path, _ := s.scratch.create("demo")
+	repos := repoList(s.boardSessions(time.Now()), "/nowhere", s.scratch.list())
+	if len(repos) != 1 || repos[0]["cwd"] != path || repos[0]["scratch"] != "yes" {
+		t.Fatalf("repos: %+v", repos)
+	}
+	// And the offer check accepts it even with no session inside.
+	if s.repoOffered(s.boardSessions(time.Now()), path) == "" {
+		t.Fatal("a scratch workspace is offered before any session exists in it")
 	}
 }

@@ -46,23 +46,16 @@ history, digests, what-rook-sent provenance, /compact, costs).
 
 ## Your first task
 
-Give roost a scratch workspace so nothing real is at stake:
-
-```
-mkdir ~/roost-demo && cd ~/roost-demo
-claude -p "Reply OK — this seeds the roost demo workspace."
-```
-
-That one turn makes the directory visible to roost (it only ever
-offers directories it has seen a Claude session in — the wire can't
-name a place the machine didn't show it first).
-
-Then, on the board:
+Everything happens on the board — including making a place where
+nothing real is at stake. (Real repositories appear in the picker once
+roost has seen a Claude session in them; scratch workspaces are the
+ones roost creates itself, under `~/roost-scratch/`.)
 
 1. **Capture** — type what needs doing in the top bar. It lands in the
    inbox, unassigned, free.
-2. **Start** — open the card. Choose *fresh agent in roost-demo* and a
-   tool policy: **read-only** (analysis; anything mutating stays
+2. **Start** — open the card. In the *rook proposes* box, pick
+   **+ new scratch workspace…** (or a real repo the fleet has shown)
+   and a tool policy: **read-only** (analysis; anything mutating stays
    refused) or **can edit & test** (file edits plus scoped
    build/test commands — `go build/test/vet`, `npm test`, `make` —
    through claude's own permission system; no git mutation, no
@@ -100,29 +93,13 @@ directory you don't mind changing."
 
 ## The five-minute demo
 
-With `~/roost-demo` seeded (above, including
-`echo "protected" > DO-NOT-DELETE.txt`), capture this and start it as
-a *fresh agent in roost-demo*, mode *can edit & test*:
+**DEMO.md** walks the whole flow through the web app, click by click:
+a roost-made scratch workspace, a fresh agent in work mode building
+and testing real Go code, the rook agent approving the routine asks,
+you personally denying a file deletion from the card, verification in
+the Conversation panel, acceptance, and one-click workspace cleanup.
+(Prefer the terminal? `demo.sh` runs the same flow through the API.)
 
-> In this demo workspace, work in three phases, STOPPING after each
-> phase to ask permission before the next. Phase 1: create go.mod
-> (module roostdemo) and greet.go with a Greet(name string) string
-> function. Phase 2: create greet_test.go with a real test and run
-> go test. Phase 3: request authorization to ALSO delete
-> DO-NOT-DELETE.txt — do not delete anything without explicit
-> authorization.
-
-What you'll watch: the worker builds and tests real code, asking
-between phases; the rook agent approves the routine asks itself (each
-decision on the card's log); at the edge of the deletion phase it
-STOPS and escalates to you. Reply from the card — "proceed, but the
-deletion answer is NO; confirm the file and finish" — and the same
-drive continues to a done proposal. Total: three turns, well under a
-dollar, and DO-NOT-DELETE.txt still standing.
-
-Prefer the terminal? `demo.sh` beside this file runs the same flow
-through the API, payload for payload, with the verification built in.
-
-This demo is honest about what it is: a scratch directory, not a
-sandbox. The safety you watched came from the judge's escalation line
+The demo is honest about what it is: a scratch directory, not a
+sandbox. The safety you watch comes from the judge's escalation line
 and the tool policy — not from filesystem isolation.

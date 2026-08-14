@@ -124,6 +124,34 @@
 		await post(`/api/tasks/${sel.id}/reply`, { text });
 		replyText = '';
 	}
+
+	// "+ new scratch workspace…": roost creates a directory under its
+	// managed parent — a place where nothing real is at stake. Not a
+	// sandbox; a spare room.
+	async function onRepoPick(e) {
+		if (e.target.value !== '__new__') return;
+		startIn = '';
+		const name = window.prompt('Name the scratch workspace (letters, digits, dashes):');
+		if (!name) return;
+		const out = await post('/api/workspaces', { name: name.trim() });
+		if (out?.cwd) startIn = out.cwd;
+	}
+
+	async function deleteScratch(name) {
+		if (!window.confirm(`Delete the scratch workspace “${name}” and everything in it?`)) return;
+		busy = true;
+		err = '';
+		try {
+			const r = await api(`/api/workspaces/${name}`, { method: 'DELETE' });
+			const out = await r.json();
+			if (!r.ok) throw new Error(out.error ?? 'refused');
+			await refresh();
+		} catch (e2) {
+			err = e2.message;
+		} finally {
+			busy = false;
+		}
+	}
 </script>
 
 <div
@@ -375,6 +403,13 @@
 								style="font-size: 11px; color: var(--color-neutral-500);"
 								onclick={() => act(sel.id, 'drop')}>drop</button
 							>
+						{:else if sel.scratchName}
+							<button
+								class="btn btn-ghost"
+								style="font-size: 11px; color: var(--color-neutral-500);"
+								title="remove ~/roost-scratch/{sel.scratchName} and everything in it"
+								onclick={() => deleteScratch(sel.scratchName)}>delete scratch workspace</button
+							>
 						{/if}
 					</div>
 					<h1
@@ -410,17 +445,21 @@
 							{/if}
 							{#if sel.proposalKind === 'start'}
 								<div style="display: flex; gap: 6px; flex-wrap: wrap;">
-									{#if !sel.agent && board?.repos?.length}
+									{#if !sel.agent}
 										<!-- who works it: the current agent, or a fresh
 										     one born in a repo the fleet has shown -->
 										<select
 											bind:value={startIn}
+											onchange={onRepoPick}
 											style="flex: 1; font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 5px 8px;"
 										>
 											<option value="">on the current agent</option>
-											{#each board.repos as r (r.cwd)}
-												<option value={r.cwd}>fresh agent in {r.dir}</option>
+											{#each board?.repos ?? [] as r (r.cwd)}
+												<option value={r.cwd}
+													>fresh agent in {r.dir}{r.scratch ? ' (scratch)' : ''}</option
+												>
 											{/each}
+											<option value="__new__">+ new scratch workspace…</option>
 										</select>
 									{/if}
 									<!-- the tool policy: code-side sets, never LLM-chosen -->
@@ -516,6 +555,50 @@
 							</div>
 						</div>
 					</div>
+
+					{#if sel.exchanges?.length}
+						<!-- the drive's own conversation: what rook sent, what
+						     the worker said — the review surface for every
+						     judge approval and the worker's verification -->
+						<div style="display: flex; flex-direction: column; gap: 10px;">
+							<div
+								style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-neutral-600);"
+							>
+								Conversation
+							</div>
+							{#each sel.exchanges as ex, i (i)}
+								<div
+									style="border-left: 2px solid var(--color-divider); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 5px;"
+								>
+									<div
+										style="font-size: 12px; line-height: 1.5; color: var(--color-accent-300); text-wrap: pretty;"
+									>
+										→ {ex.prompt}
+									</div>
+									{#if (ex.reply ?? '').length > 420}
+										<details>
+											<summary
+												style="cursor: pointer; font-size: 12px; line-height: 1.5; color: var(--color-neutral-300);"
+											>
+												{ex.reply.slice(0, 220)}… <span style="color: var(--color-neutral-600);">(show all)</span>
+											</summary>
+											<div
+												style="margin-top: 4px; font-size: 12px; line-height: 1.55; white-space: pre-wrap; color: var(--color-neutral-300);"
+											>
+												{ex.reply}
+											</div>
+										</details>
+									{:else}
+										<div
+											style="font-size: 12px; line-height: 1.55; white-space: pre-wrap; color: var(--color-neutral-300);"
+										>
+											{ex.reply}
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
 
 					{#if sel.runs?.length}
 						<div style="display: flex; flex-direction: column; gap: 10px;">

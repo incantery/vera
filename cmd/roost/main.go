@@ -95,6 +95,7 @@ func main() {
 		uc:         &usage.Collector{Bin: *claudeBin},
 		shelf:      &artifactStore{dir: *artifactsDir},
 		tasks:      &taskStore{dir: *tasksDir},
+		scratch:    &scratchStore{parent: defaultScratchParent()},
 		spendPath:  defaultSpendPath(),
 		digestPath: defaultDigestPath(),
 	}
@@ -132,6 +133,8 @@ func main() {
 	mux.HandleFunc("POST /api/tasks/{tid}/start", s.handleTaskStart)
 	mux.HandleFunc("POST /api/tasks/{tid}/act", s.handleTaskAct)
 	mux.HandleFunc("POST /api/tasks/{tid}/reply", s.handleTaskReply)
+	mux.HandleFunc("POST /api/workspaces", s.handleWorkspaceCreate)
+	mux.HandleFunc("DELETE /api/workspaces/{name}", s.handleWorkspaceDelete)
 	mux.HandleFunc("POST /api/drive", s.handleDrive)
 	mux.HandleFunc("POST /api/drive/stop", s.handleStop)
 
@@ -208,6 +211,7 @@ type server struct {
 	uc        *usage.Collector
 	shelf     *artifactStore
 	tasks     *taskStore
+	scratch   *scratchStore
 
 	spendPath  string // spend journal; "" = remember only while running
 	digestPath string // digest journal; same deal

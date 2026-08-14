@@ -86,6 +86,14 @@ type task struct {
 	Runs    []taskRun `json:"runs,omitempty"`
 	CostUSD float64   `json:"costUsd,omitempty"`
 
+	// Workspace is where the task's runs execute — the assigned
+	// agent's directory, recorded at start so cleanup knows the place
+	// even after the agent scrolls out of the window.
+	Workspace string `json:"workspace,omitempty"`
+	// ScratchName is derived at read time: set when Workspace is a
+	// roost-managed scratch dir that still exists, never persisted.
+	ScratchName string `json:"scratchName,omitempty"`
+
 	// Mode is the task's tool policy: "read" (default — print mode's
 	// refusals stand) or "work" (edits and scoped build/test commands,
 	// through claude's own permission system). Code-side sets, never
@@ -215,7 +223,8 @@ func (st *taskStore) get(id string) (task, error) {
 	if json.Unmarshal(b, &t) != nil {
 		return task{}, errors.New("that task did not parse")
 	}
-	t.Live = nil // the overlay never survives a write; never trust one from disk
+	t.Live = nil // derived, never trusted from disk
+	t.ScratchName = ""
 	return t, nil
 }
 
@@ -236,7 +245,7 @@ func (st *taskStore) write(t task) error {
 	if err != nil {
 		return err
 	}
-	t.Live = nil // derived, never persisted
+	t.Live, t.ScratchName = nil, "" // derived, never persisted
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -393,6 +402,11 @@ func (s *server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 		tasks = []task{}
 	}
 	overlay(tasks, fleet)
+	for i := range tasks {
+		if tasks[i].Workspace != "" && s.scratch.has(tasks[i].Workspace) {
+			tasks[i].ScratchName = filepath.Base(tasks[i].Workspace)
+		}
+	}
 
 	working := 0
 	for _, live := range fleet {
@@ -415,7 +429,7 @@ func (s *server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"tasks": tasks, "inflight": inflight, "spend": spent, "notice": s.notice,
 		"fleet": map[string]int{"agents": len(fleet), "working": working},
-		"repos": repoList(fleet, homeDir()),
+		"repos": repoList(fleet, homeDir(), s.scratch.list()),
 	})
 }
 
@@ -423,7 +437,7 @@ func (s *server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 // places the fleet has already shown, so the wire can never name a
 // directory the machine did not first offer. The home directory is
 // excluded: sessions there are usage probes and scratch, not repos.
-func repoList(fleet map[string]*transcript.Session, home string) []map[string]string {
+func repoList(fleet map[string]*transcript.Session, home string, scratch []string) []map[string]string {
 	seen := map[string]bool{}
 	var out []map[string]string
 	for _, live := range fleet {
@@ -432,6 +446,15 @@ func repoList(fleet map[string]*transcript.Session, home string) []map[string]st
 		}
 		seen[live.Cwd] = true
 		out = append(out, map[string]string{"dir": filepath.Base(live.Cwd), "cwd": live.Cwd})
+	}
+	// Scratch workspaces are offered even before any session exists in
+	// them — roost made them, roost may staff them.
+	for _, cwd := range scratch {
+		if seen[cwd] {
+			continue
+		}
+		seen[cwd] = true
+		out = append(out, map[string]string{"dir": filepath.Base(cwd), "cwd": cwd, "scratch": "yes"})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i]["dir"] < out[j]["dir"] })
 	return out
@@ -533,6 +556,7 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 	t, err = s.tasks.mutate(t.ID, func(t *task) error {
 		t.Agent = root
 		t.Mode = mode
+		t.Workspace = head.Cwd
 		t.Goal, t.GoalActor = goal, "rook"
 		t.Col, t.State = "progress", "in progress · turn in flight"
 		t.Face = "Started. The first turn is in flight."
@@ -629,7 +653,7 @@ func shortID(id string) string {
 // the machine offered.
 func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, newIn, mode string, now time.Time) {
 	fleet := s.boardSessions(now)
-	if repoOffered(fleet, newIn) == "" {
+	if s.repoOffered(fleet, newIn) == "" {
 		httpErr(w, 400, "that directory is not one the fleet has shown")
 		return
 	}
@@ -648,6 +672,7 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 	dir := filepath.Base(newIn)
 	t, err = s.tasks.mutate(t.ID, func(t *task) error {
 		t.Mode = mode
+		t.Workspace = newIn
 		t.Goal, t.GoalActor = goal, "rook"
 		t.Col, t.State = "progress", "in progress · a fresh agent is being born"
 		t.Face = "Starting a fresh agent in " + dir + "."
@@ -727,8 +752,8 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 
 // repoOffered answers with the fleet cwd matching the ask, or "" —
 // the same offer repoList makes, checked on the way back in.
-func repoOffered(fleet map[string]*transcript.Session, cwd string) string {
-	for _, r := range repoList(fleet, homeDir()) {
+func (s *server) repoOffered(fleet map[string]*transcript.Session, cwd string) string {
+	for _, r := range repoList(fleet, homeDir(), s.scratch.list()) {
 		if r["cwd"] == cwd {
 			return cwd
 		}
