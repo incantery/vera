@@ -51,8 +51,10 @@ const (
 )
 
 // historyBytes bounds one history read. Deep transcripts lose their
-// oldest turns off the top, which the page says honestly.
-const historyBytes = 1 << 20
+// oldest turns off the top, which the page says honestly. 4MB, not
+// 1MB: a single pasted screenshot rides the transcript as ~1MB of
+// base64, and one image-heavy turn must not eat the whole scrollback.
+const historyBytes = 4 << 20
 
 // History renders a transcript's tail as conversation turns, oldest
 // first. Assistant stream lines merge into one turn until a human
@@ -130,10 +132,15 @@ func History(path string) []Msg {
 }
 
 // harnessNoise: lines the harness wrote through the user's mouth —
-// local-command wrappers, interruption markers — are plumbing, not
-// something the human said.
+// local-command wrappers, interruption markers, background-task
+// notifications, image-dimension notes — are plumbing, not something
+// the human said.
 func harnessNoise(text string) bool {
-	for _, p := range []string{"<local-command", "<command-name>", "[Request interrupted"} {
+	for _, p := range []string{
+		"<local-command", "<command-name>", "[Request interrupted",
+		"[SYSTEM NOTIFICATION", "<task-notification>", "<system-reminder>",
+		"[Image: original",
+	} {
 		if strings.HasPrefix(text, p) {
 			return true
 		}

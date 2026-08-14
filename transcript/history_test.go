@@ -58,8 +58,11 @@ func TestHistoryDropsHarnessNoiseAndSidechains(t *testing.T) {
 		prompt(0, "<local-command-caveat>Caveat: local commands</local-command-caveat>"),
 		prompt(1, "[Request interrupted by user]"),
 		`{"type":"assistant","timestamp":"`+ts(2)+`","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"subagent chatter"}]}}`,
-		prompt(3, "the real question"),
-		assistantEndTurn(4, "the real answer"),
+		prompt(3, "[SYSTEM NOTIFICATION - NOT USER INPUT]\nan automated background-task event"),
+		prompt(4, "<task-notification>\n<task-id>abc</task-id>\n</task-notification>"),
+		prompt(5, "[Image: original 2559x1247, displayed at 2000x975...]"),
+		prompt(6, "the real question"),
+		assistantEndTurn(7, "the real answer"),
 	)
 	h := History(path)
 	if len(h) != 2 || h[0].Text != "the real question" || h[1].Text != "the real answer" {

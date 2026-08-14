@@ -4,6 +4,7 @@
 	import UsageBar from '$lib/UsageBar.svelte';
 	import ArtifactPane from '$lib/ArtifactPane.svelte';
 	import DriveView from '$lib/DriveView.svelte';
+	import Markdown from '$lib/Markdown.svelte';
 
 	const id = $derived(page.params.id);
 
@@ -409,8 +410,8 @@
 								<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
 									full reply
 								</summary>
-								<div class="mt-1 border-l-2 border-zinc-800 pl-3 text-[13px] leading-relaxed whitespace-pre-wrap text-zinc-400">
-									{m.text}
+								<div class="mt-1 border-l-2 border-zinc-800 pl-3 text-[13px] text-zinc-400">
+									<Markdown text={m.text} />
 								</div>
 							</details>
 						{:else}
@@ -418,7 +419,7 @@
 								<div class="mb-1 animate-pulse text-[11px] text-zinc-600">summarizing…</div>
 							{/if}
 							{#if m.text}
-								<div class="text-[13px] leading-relaxed whitespace-pre-wrap">{m.text}</div>
+								<div class="text-[13px]"><Markdown text={m.text} /></div>
 							{/if}
 						{/if}
 					</div>

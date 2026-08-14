@@ -19,6 +19,7 @@
 	} = $props();
 
 	import { uploadImage, uploadUrl, imageParts } from './state.svelte.js';
+	import Markdown from './Markdown.svelte';
 
 	let text = $state('');
 	let showThinking = $state(true);
@@ -125,6 +126,19 @@
 		return out;
 	}
 
+	// Consecutive plain tool calls fold into one card; an edit's diff
+	// stands alone. One turn reads as a few cards, not a wall of rows.
+	function stepGroups(steps = []) {
+		const groups = [];
+		for (const st of steps) {
+			const last = groups[groups.length - 1];
+			if (st.diff) groups.push({ diff: st });
+			else if (last?.tools) last.tools.push(st);
+			else groups.push({ tools: [st] });
+		}
+		return groups;
+	}
+
 	const followKey = $derived(history.length + ':' + (data?.pending?.status ?? ''));
 	$effect(() => {
 		followKey;
@@ -190,7 +204,8 @@
 
 	<!-- stream -->
 	<main style="flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0;">
-		<div bind:this={chatEl} onscroll={onScroll} style="flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px 8px; display: flex; flex-direction: column; gap: 15px;">
+		<div bind:this={chatEl} onscroll={onScroll} style="flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px 8px;">
+		<div style="width: 100%; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px;">
 			{#each history as m, i (i)}
 				{#if m.role === 'user'}
 					{@const parts = imageParts(m.text)}
@@ -222,16 +237,16 @@
 							</div>
 						{/each}
 					{/if}
-					{#each m.steps ?? [] as st, si (si)}
-						{#if st.diff}
+					{#each stepGroups(m.steps) as g, gi (gi)}
+						{#if g.diff}
 							<div style="border: 1px solid var(--color-neutral-800); border-radius: var(--radius-md); background: var(--color-surface); overflow: hidden;">
 								<div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--color-divider);">
-									<span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.04em; color: var(--color-accent-300);">{st.tool.toLowerCase()}</span>
-									<span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--color-neutral-200); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{st.diff.file}</span>
-									{#if st.diff.all}<span style="font-size: 10.5px; color: var(--color-neutral-600);">replace all</span>{/if}
+									<span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.04em; color: var(--color-accent-300);">{g.diff.tool.toLowerCase()}</span>
+									<span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--color-neutral-200); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{g.diff.diff.file}</span>
+									{#if g.diff.diff.all}<span style="font-size: 10.5px; color: var(--color-neutral-600);">replace all</span>{/if}
 								</div>
 								<div style="padding: 7px 0; background: var(--color-bg); max-height: 260px; overflow-y: auto;">
-									{#each diffLines(st.diff) as l, li (li)}
+									{#each diffLines(g.diff.diff) as l, li (li)}
 										<div style="display: grid; grid-template-columns: 14px 1fr; gap: 8px; padding: 1px 12px; background: {l.sign === '+' ? 'var(--color-accent-900)' : 'var(--color-neutral-900)'};">
 											<span style="font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: {l.sign === '+' ? 'var(--color-accent-100)' : 'var(--color-neutral-600)'};">{l.sign}</span>
 											<span style="font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.6; color: {l.sign === '+' ? 'var(--color-accent-100)' : 'var(--color-neutral-600)'}; white-space: pre-wrap;">{l.text}</span>
@@ -240,9 +255,13 @@
 								</div>
 							</div>
 						{:else}
-							<div style="display: flex; align-items: center; gap: 10px; padding: 6px 12px; border: 1px solid var(--color-neutral-800); border-radius: var(--radius-md); background: var(--color-surface);">
-								<span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.04em; color: var(--color-accent-300);">{st.tool.toLowerCase()}</span>
-								<span style="font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--color-neutral-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{st.detail}</span>
+							<div style="border: 1px solid var(--color-neutral-800); border-radius: var(--radius-md); background: var(--color-surface); padding: 4px 0;">
+								{#each g.tools as st, si (si)}
+									<div style="display: flex; align-items: baseline; gap: 10px; padding: 2.5px 12px;">
+										<span style="font-family: ui-monospace, Menlo, monospace; font-size: 11px; letter-spacing: 0.04em; color: var(--color-accent-300); flex: 0 0 52px;">{st.tool.toLowerCase()}</span>
+										<span style="font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--color-neutral-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{st.detail}</span>
+									</div>
+								{/each}
 							</div>
 						{/if}
 					{/each}
@@ -252,7 +271,7 @@
 					{#if m.text}
 						<div style="display: flex; flex-direction: column; gap: 4px;">
 							<span style="font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-neutral-500);">claude code</span>
-							<span style="font-size: 13.5px; line-height: 1.6; color: var(--color-neutral-300); white-space: pre-wrap; text-wrap: pretty;">{m.text}</span>
+							<div style="font-size: 13.5px; color: var(--color-neutral-300);"><Markdown text={m.text} /></div>
 						</div>
 					{/if}
 				{/if}
@@ -293,9 +312,11 @@
 				{/if}
 			{/if}
 		</div>
+		</div>
 
-		<!-- composer -->
-		<div style="border-top: 1px solid var(--color-divider); padding: 11px 22px 12px; display: flex; flex-direction: column; gap: 8px;">
+		<!-- composer: same reading measure as the stream above it -->
+		<div style="border-top: 1px solid var(--color-divider); padding: 11px 22px 12px;">
+		<div style="width: 100%; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px;">
 			{#if data?.queue?.length}
 				<div style="display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--color-accent-200); flex-wrap: wrap;">
 					<span style="color: var(--color-neutral-600);">queued</span>
@@ -347,6 +368,7 @@
 				<div style="flex: 1;"></div>
 				<span>every turn logs to this agent's transcript with actor <span style="color: var(--color-neutral-400);">human</span></span>
 			</div>
+		</div>
 		</div>
 	</main>
 
