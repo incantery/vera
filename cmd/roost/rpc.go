@@ -92,6 +92,8 @@ func connectErr(serr *sayErr) error {
 		code = connect.CodeNotFound
 	case 409:
 		code = connect.CodeFailedPrecondition
+	case 502:
+		code = connect.CodeUnavailable // the rook agent's own wire failed
 	}
 	return connect.NewError(code, errors.New(serr.msg))
 }
@@ -149,6 +151,18 @@ func (r *roostRPC) Discard(ctx context.Context, req *connect.Request[roostv1.Dis
 		return nil, connectErr(serr)
 	}
 	return connect.NewResponse(&roostv1.DiscardResponse{}), nil
+}
+
+// Suggest is the rook agent's bid on the human's next move — blocking
+// (the first ask per turn pays the wire), cached server-side.
+func (r *roostRPC) Suggest(ctx context.Context, req *connect.Request[roostv1.SuggestRequest]) (*connect.Response[roostv1.SuggestResponse], error) {
+	rec, serr := r.s.agentSuggest(req.Msg.Id)
+	if serr != nil {
+		return nil, connectErr(serr)
+	}
+	return connect.NewResponse(&roostv1.SuggestResponse{
+		Happened: rec.Happened, Now: rec.Now, Replies: rec.Replies,
+	}), nil
 }
 
 // WatchBoard streams the home screen's present: whole frames (the

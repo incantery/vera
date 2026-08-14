@@ -25,6 +25,10 @@ func defaultDigestPath() string {
 	return statePath("roost-digests.jsonl")
 }
 
+func defaultSuggestPath() string {
+	return statePath("roost-suggests.jsonl")
+}
+
 func statePath(name string) string {
 	state := os.Getenv("XDG_STATE_HOME")
 	if state == "" {
@@ -110,5 +114,14 @@ func (s *server) loadJournals() {
 			return
 		}
 		s.digests[l.Hash] = &digestRec{State: "ready", Headline: l.Headline, Bullets: l.Bullets}
+	})
+	eachLine(s.suggestPath, func(b []byte) {
+		var l suggestLine
+		if json.Unmarshal(b, &l) != nil || l.Hash == "" || len(l.Replies) == 0 {
+			return
+		}
+		rec := &suggestRec{Happened: l.Happened, Now: l.Now, Replies: l.Replies, done: make(chan struct{})}
+		close(rec.done)
+		s.suggests[l.Hash] = rec
 	})
 }

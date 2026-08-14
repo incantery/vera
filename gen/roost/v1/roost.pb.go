@@ -2600,6 +2600,114 @@ func (*DiscardResponse) Descriptor() ([]byte, []int) {
 	return file_roost_v1_roost_proto_rawDescGZIP(), []int{33}
 }
 
+// Suggest is the rook agent's bid on the human's next move: it reads
+// the last finished exchange and answers with a digest of where
+// things stand plus one to three ranked replies the human could send.
+// Cached per turn server-side — asking twice bills once.
+type SuggestRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuggestRequest) Reset() {
+	*x = SuggestRequest{}
+	mi := &file_roost_v1_roost_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuggestRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuggestRequest) ProtoMessage() {}
+
+func (x *SuggestRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuggestRequest.ProtoReflect.Descriptor instead.
+func (*SuggestRequest) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *SuggestRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type SuggestResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Happened      string                 `protobuf:"bytes,1,opt,name=happened,proto3" json:"happened,omitempty"` // what the worker just did
+	Now           string                 `protobuf:"bytes,2,opt,name=now,proto3" json:"now,omitempty"`           // where the work stands, what it waits on
+	Replies       []string               `protobuf:"bytes,3,rep,name=replies,proto3" json:"replies,omitempty"`   // ranked, best first, ready to send
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuggestResponse) Reset() {
+	*x = SuggestResponse{}
+	mi := &file_roost_v1_roost_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuggestResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuggestResponse) ProtoMessage() {}
+
+func (x *SuggestResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuggestResponse.ProtoReflect.Descriptor instead.
+func (*SuggestResponse) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *SuggestResponse) GetHappened() string {
+	if x != nil {
+		return x.Happened
+	}
+	return ""
+}
+
+func (x *SuggestResponse) GetNow() string {
+	if x != nil {
+		return x.Now
+	}
+	return ""
+}
+
+func (x *SuggestResponse) GetReplies() []string {
+	if x != nil {
+		return x.Replies
+	}
+	return nil
+}
+
 var File_roost_v1_roost_proto protoreflect.FileDescriptor
 
 const file_roost_v1_roost_proto_rawDesc = "" +
@@ -2819,7 +2927,13 @@ const file_roost_v1_roost_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x10\n" +
 	"\x03all\x18\x03 \x01(\bR\x03all\"\x11\n" +
-	"\x0fDiscardResponse2\xd8\x03\n" +
+	"\x0fDiscardResponse\" \n" +
+	"\x0eSuggestRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"Y\n" +
+	"\x0fSuggestResponse\x12\x1a\n" +
+	"\bhappened\x18\x01 \x01(\tR\bhappened\x12\x10\n" +
+	"\x03now\x18\x02 \x01(\tR\x03now\x12\x18\n" +
+	"\areplies\x18\x03 \x03(\tR\areplies2\x98\x04\n" +
 	"\fRoostService\x12I\n" +
 	"\n" +
 	"WatchAgent\x12\x1b.roost.v1.WatchAgentRequest\x1a\x1c.roost.v1.WatchAgentResponse0\x01\x122\n" +
@@ -2829,7 +2943,8 @@ const file_roost_v1_roost_proto_rawDesc = "" +
 	"WatchBoard\x12\x1b.roost.v1.WatchBoardRequest\x1a\x1c.roost.v1.WatchBoardResponse0\x01\x12;\n" +
 	"\x06Review\x12\x17.roost.v1.ReviewRequest\x1a\x18.roost.v1.ReviewResponse\x12;\n" +
 	"\x06Commit\x12\x17.roost.v1.CommitRequest\x1a\x18.roost.v1.CommitResponse\x12>\n" +
-	"\aDiscard\x12\x18.roost.v1.DiscardRequest\x1a\x19.roost.v1.DiscardResponseB<Z:github.com/incantery/rook-host/engine/gen/roost/v1;roostv1b\x06proto3"
+	"\aDiscard\x12\x18.roost.v1.DiscardRequest\x1a\x19.roost.v1.DiscardResponse\x12>\n" +
+	"\aSuggest\x12\x18.roost.v1.SuggestRequest\x1a\x19.roost.v1.SuggestResponseB<Z:github.com/incantery/rook-host/engine/gen/roost/v1;roostv1b\x06proto3"
 
 var (
 	file_roost_v1_roost_proto_rawDescOnce sync.Once
@@ -2843,7 +2958,7 @@ func file_roost_v1_roost_proto_rawDescGZIP() []byte {
 	return file_roost_v1_roost_proto_rawDescData
 }
 
-var file_roost_v1_roost_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_roost_v1_roost_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
 var file_roost_v1_roost_proto_goTypes = []any{
 	(*WatchAgentRequest)(nil),  // 0: roost.v1.WatchAgentRequest
 	(*WatchAgentResponse)(nil), // 1: roost.v1.WatchAgentResponse
@@ -2879,6 +2994,8 @@ var file_roost_v1_roost_proto_goTypes = []any{
 	(*CommitResponse)(nil),     // 31: roost.v1.CommitResponse
 	(*DiscardRequest)(nil),     // 32: roost.v1.DiscardRequest
 	(*DiscardResponse)(nil),    // 33: roost.v1.DiscardResponse
+	(*SuggestRequest)(nil),     // 34: roost.v1.SuggestRequest
+	(*SuggestResponse)(nil),    // 35: roost.v1.SuggestResponse
 }
 var file_roost_v1_roost_proto_depIdxs = []int32{
 	2,  // 0: roost.v1.WatchAgentResponse.agent:type_name -> roost.v1.Agent
@@ -2908,15 +3025,17 @@ var file_roost_v1_roost_proto_depIdxs = []int32{
 	27, // 24: roost.v1.RoostService.Review:input_type -> roost.v1.ReviewRequest
 	30, // 25: roost.v1.RoostService.Commit:input_type -> roost.v1.CommitRequest
 	32, // 26: roost.v1.RoostService.Discard:input_type -> roost.v1.DiscardRequest
-	1,  // 27: roost.v1.RoostService.WatchAgent:output_type -> roost.v1.WatchAgentResponse
-	13, // 28: roost.v1.RoostService.Say:output_type -> roost.v1.SayResponse
-	15, // 29: roost.v1.RoostService.Interrupt:output_type -> roost.v1.InterruptResponse
-	17, // 30: roost.v1.RoostService.WatchBoard:output_type -> roost.v1.WatchBoardResponse
-	29, // 31: roost.v1.RoostService.Review:output_type -> roost.v1.ReviewResponse
-	31, // 32: roost.v1.RoostService.Commit:output_type -> roost.v1.CommitResponse
-	33, // 33: roost.v1.RoostService.Discard:output_type -> roost.v1.DiscardResponse
-	27, // [27:34] is the sub-list for method output_type
-	20, // [20:27] is the sub-list for method input_type
+	34, // 27: roost.v1.RoostService.Suggest:input_type -> roost.v1.SuggestRequest
+	1,  // 28: roost.v1.RoostService.WatchAgent:output_type -> roost.v1.WatchAgentResponse
+	13, // 29: roost.v1.RoostService.Say:output_type -> roost.v1.SayResponse
+	15, // 30: roost.v1.RoostService.Interrupt:output_type -> roost.v1.InterruptResponse
+	17, // 31: roost.v1.RoostService.WatchBoard:output_type -> roost.v1.WatchBoardResponse
+	29, // 32: roost.v1.RoostService.Review:output_type -> roost.v1.ReviewResponse
+	31, // 33: roost.v1.RoostService.Commit:output_type -> roost.v1.CommitResponse
+	33, // 34: roost.v1.RoostService.Discard:output_type -> roost.v1.DiscardResponse
+	35, // 35: roost.v1.RoostService.Suggest:output_type -> roost.v1.SuggestResponse
+	28, // [28:36] is the sub-list for method output_type
+	20, // [20:28] is the sub-list for method input_type
 	20, // [20:20] is the sub-list for extension type_name
 	20, // [20:20] is the sub-list for extension extendee
 	0,  // [0:20] is the sub-list for field type_name
@@ -2933,7 +3052,7 @@ func file_roost_v1_roost_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_roost_v1_roost_proto_rawDesc), len(file_roost_v1_roost_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   34,
+			NumMessages:   36,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

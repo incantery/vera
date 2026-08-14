@@ -22,7 +22,7 @@
 		compacting
 	} = $props();
 
-	import { uploadImage, uploadUrl, imageParts, agentDiff, commitTree, discardChange } from './state.svelte.js';
+	import { uploadImage, uploadUrl, imageParts, agentDiff, commitTree, discardChange, agentSuggest } from './state.svelte.js';
 	import Markdown from './Markdown.svelte';
 
 	const EASE = 'cubic-bezier(0.2, 0.8, 0.25, 1)';
@@ -122,6 +122,56 @@
 			s: l
 		}));
 	}
+	// ── rook suggests ──────────────────────────────────────────────
+	// The co-pilot's panel: when a turn lands and it's your move, rook
+	// reads the exchange and bids — what just happened, where we are,
+	// and ranked replies. Clicking one sends it on the ordinary say
+	// rail; typing your own instead is the honest counter-signal.
+	let suggOpen = $state(true);
+	let sugg = $state(null); // {happened, now, replies} or null
+	let suggErr = $state('');
+	let suggBusy = $state(false);
+	let suggKey = ''; // the turn the current bid belongs to — not reactive
+
+	async function loadSuggest(key) {
+		suggBusy = true;
+		suggErr = '';
+		try {
+			const bid = await agentSuggest(agentId);
+			if (suggKey !== key) return; // a newer turn landed mid-flight
+			sugg = bid;
+		} catch (e) {
+			if (suggKey !== key) return;
+			sugg = null;
+			suggErr = e.message;
+		}
+		if (suggKey === key) suggBusy = false;
+	}
+	// A bid is asked for when the panel is open, the worker is quiet,
+	// and the last words are the worker's. The server caches per turn,
+	// so re-asking the same turn costs a round trip, not a bill.
+	$effect(() => {
+		if (!suggOpen || !agentId || phase === 'working') return;
+		const last = history[history.length - 1];
+		if (!last || last.role !== 'assistant' || !hasProse(history)) return;
+		const key = `${agentId}:${history.length}:${(last.text ?? '').length}`;
+		if (key === suggKey) return;
+		suggKey = key;
+		loadSuggest(key);
+	});
+	function hasProse(h) {
+		for (let i = h.length - 1; i >= 0; i--) if (h[i].role === 'assistant' && h[i].text) return true;
+		return false;
+	}
+	function sendSuggestion(t) {
+		nearBottom = true;
+		onsend(t, []);
+	}
+	function editSuggestion(t) {
+		text = t;
+		inputEl?.focus();
+	}
+
 	let sel = $state(-1);
 	let open = $state({});
 	let chatEl = $state(null);
@@ -466,6 +516,11 @@
 			openReview();
 			return;
 		}
+		if (e.key === 's') {
+			e.preventDefault();
+			suggOpen = !suggOpen;
+			return;
+		}
 		if (e.key === 'i') {
 			e.preventDefault();
 			inputEl?.focus();
@@ -500,6 +555,7 @@
 		{ k: 'o', d: 'expand or collapse the selected event' },
 		{ k: 'i', d: 'focus the composer' },
 		{ k: 'r', d: 'review the working tree — approve or discard' },
+		{ k: 's', d: 'rook suggests — the co-pilot panel' },
 		{ k: 'esc', d: 'interrupt the current turn' },
 		{ k: '⏎', d: 'send (or queue while working)' },
 		{ k: '\\', d: 'collapse the turns rail' },
@@ -864,6 +920,81 @@
 				</div>
 			</div>
 		</main>
+
+		<!-- rook suggests: the co-pilot's panel -->
+		<aside
+			style="flex: 0 0 auto; width: {suggOpen ? '276px' : '42px'}; border-left: 1px solid var(--color-divider); overflow: hidden; transition: width 200ms {EASE}; display: none; flex-direction: column;"
+			class="lg:flex!"
+		>
+			<div style="display: flex; align-items: center; gap: 7px; padding: 11px 12px 9px; white-space: nowrap;">
+				<button
+					onclick={() => (suggOpen = !suggOpen)}
+					style="font: inherit; font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; padding: 0; cursor: pointer; border: none; background: transparent; color: {suggOpen ? 'var(--color-neutral-500)' : 'var(--color-accent-300)'};"
+					class="hover:text-[var(--color-neutral-300)]!"
+					title="rook reads each finished turn and suggests replies · s"
+				>
+					{suggOpen ? 'ROOK SUGGESTS · s' : '◆'}
+				</button>
+				{#if suggOpen && suggBusy}
+					<span style="width: 9px; height: 9px; flex: 0 0 auto; border-radius: 99px; border: 1.5px solid var(--color-accent-800); border-top-color: var(--color-accent-300); animation: rk-spin 0.85s linear infinite;"></span>
+				{/if}
+			</div>
+			{#if suggOpen}
+				<div style="flex: 1; min-height: 0; overflow-y: auto; padding: 2px 14px 16px; display: flex; flex-direction: column; gap: 14px;">
+					{#if phase === 'working'}
+						<div style="font-size: 11.5px; line-height: 1.55; color: var(--color-neutral-600); text-wrap: pretty;">
+							claude is working — rook reads the turn when it lands
+						</div>
+					{:else if suggErr}
+						<div style="font-size: 11.5px; line-height: 1.5; color: var(--ev-sh); text-wrap: pretty;">{suggErr}</div>
+					{:else if !sugg && suggBusy}
+						<div style="font-size: 11.5px; line-height: 1.55; color: var(--color-neutral-600);">rook is reading the turn…</div>
+					{:else if sugg}
+						<div style="display: flex; flex-direction: column; gap: 5px;">
+							<div style="font-family: {MONO}; font-size: 10px; letter-spacing: 0.08em; color: var(--color-neutral-600);">WHAT JUST HAPPENED</div>
+							<div style="font-size: 12px; line-height: 1.55; color: var(--color-neutral-300); text-wrap: pretty;">{sugg.happened}</div>
+						</div>
+						{#if sugg.now}
+							<div style="display: flex; flex-direction: column; gap: 5px;">
+								<div style="font-family: {MONO}; font-size: 10px; letter-spacing: 0.08em; color: var(--color-neutral-600);">WHERE WE ARE</div>
+								<div style="font-size: 12px; line-height: 1.55; color: var(--color-neutral-300); text-wrap: pretty;">{sugg.now}</div>
+							</div>
+						{/if}
+						<div style="display: flex; flex-direction: column; gap: 8px;">
+							<div style="font-family: {MONO}; font-size: 10px; letter-spacing: 0.08em; color: var(--color-neutral-600);">SUGGESTED REPLIES · CLICK SENDS</div>
+							{#each sugg.replies as rep, ri (ri)}
+								<div style="display: flex; flex-direction: column; border: 1px solid {ri === 0 ? 'var(--color-accent-700)' : 'var(--color-neutral-800)'}; border-radius: var(--radius-md); overflow: hidden;">
+									<button
+										onclick={() => sendSuggestion(rep)}
+										style="font: inherit; text-align: left; cursor: pointer; border: none; background: transparent; padding: 8px 10px; display: flex; gap: 8px; align-items: flex-start; color: inherit;"
+										class="hover:bg-[var(--color-neutral-900)]!"
+										title="send this reply now"
+									>
+										<span style="flex: 0 0 auto; font-family: {MONO}; font-size: 10.5px; color: {ri === 0 ? 'var(--color-accent-300)' : 'var(--color-neutral-600)'}; padding-top: 1px;">{ri + 1}</span>
+										<span style="font-size: 12px; line-height: 1.5; color: var(--color-neutral-200); text-wrap: pretty;">{rep}</span>
+									</button>
+									<div style="display: flex; align-items: center; gap: 8px; padding: 0 10px 6px 24px;">
+										<button
+											onclick={() => editSuggestion(rep)}
+											style="font: inherit; font-family: {MONO}; font-size: 10px; padding: 0; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-600);"
+											class="hover:text-[var(--color-accent-200)]!"
+											title="put this reply in the composer to edit first"
+										>edit → composer</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+						<div style="font-family: {MONO}; font-size: 10px; line-height: 1.5; color: var(--color-neutral-700); text-wrap: pretty;">
+							rook's own call · one per turn · counted under spend
+						</div>
+					{:else}
+						<div style="font-size: 11.5px; line-height: 1.55; color: var(--color-neutral-600); text-wrap: pretty;">
+							no finished turn to read yet
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</aside>
 
 		<!-- inspector -->
 		<aside

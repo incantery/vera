@@ -53,6 +53,8 @@ const (
 	RoostServiceCommitProcedure = "/roost.v1.RoostService/Commit"
 	// RoostServiceDiscardProcedure is the fully-qualified name of the RoostService's Discard RPC.
 	RoostServiceDiscardProcedure = "/roost.v1.RoostService/Discard"
+	// RoostServiceSuggestProcedure is the fully-qualified name of the RoostService's Suggest RPC.
+	RoostServiceSuggestProcedure = "/roost.v1.RoostService/Suggest"
 )
 
 // RoostServiceClient is a client for the roost.v1.RoostService service.
@@ -64,6 +66,7 @@ type RoostServiceClient interface {
 	Review(context.Context, *connect.Request[v1.ReviewRequest]) (*connect.Response[v1.ReviewResponse], error)
 	Commit(context.Context, *connect.Request[v1.CommitRequest]) (*connect.Response[v1.CommitResponse], error)
 	Discard(context.Context, *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error)
+	Suggest(context.Context, *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error)
 }
 
 // NewRoostServiceClient constructs a client for the roost.v1.RoostService service. By default, it
@@ -119,6 +122,12 @@ func NewRoostServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(roostServiceMethods.ByName("Discard")),
 			connect.WithClientOptions(opts...),
 		),
+		suggest: connect.NewClient[v1.SuggestRequest, v1.SuggestResponse](
+			httpClient,
+			baseURL+RoostServiceSuggestProcedure,
+			connect.WithSchema(roostServiceMethods.ByName("Suggest")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -131,6 +140,7 @@ type roostServiceClient struct {
 	review     *connect.Client[v1.ReviewRequest, v1.ReviewResponse]
 	commit     *connect.Client[v1.CommitRequest, v1.CommitResponse]
 	discard    *connect.Client[v1.DiscardRequest, v1.DiscardResponse]
+	suggest    *connect.Client[v1.SuggestRequest, v1.SuggestResponse]
 }
 
 // WatchAgent calls roost.v1.RoostService.WatchAgent.
@@ -168,6 +178,11 @@ func (c *roostServiceClient) Discard(ctx context.Context, req *connect.Request[v
 	return c.discard.CallUnary(ctx, req)
 }
 
+// Suggest calls roost.v1.RoostService.Suggest.
+func (c *roostServiceClient) Suggest(ctx context.Context, req *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error) {
+	return c.suggest.CallUnary(ctx, req)
+}
+
 // RoostServiceHandler is an implementation of the roost.v1.RoostService service.
 type RoostServiceHandler interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error
@@ -177,6 +192,7 @@ type RoostServiceHandler interface {
 	Review(context.Context, *connect.Request[v1.ReviewRequest]) (*connect.Response[v1.ReviewResponse], error)
 	Commit(context.Context, *connect.Request[v1.CommitRequest]) (*connect.Response[v1.CommitResponse], error)
 	Discard(context.Context, *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error)
+	Suggest(context.Context, *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error)
 }
 
 // NewRoostServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -228,6 +244,12 @@ func NewRoostServiceHandler(svc RoostServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(roostServiceMethods.ByName("Discard")),
 		connect.WithHandlerOptions(opts...),
 	)
+	roostServiceSuggestHandler := connect.NewUnaryHandler(
+		RoostServiceSuggestProcedure,
+		svc.Suggest,
+		connect.WithSchema(roostServiceMethods.ByName("Suggest")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/roost.v1.RoostService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RoostServiceWatchAgentProcedure:
@@ -244,6 +266,8 @@ func NewRoostServiceHandler(svc RoostServiceHandler, opts ...connect.HandlerOpti
 			roostServiceCommitHandler.ServeHTTP(w, r)
 		case RoostServiceDiscardProcedure:
 			roostServiceDiscardHandler.ServeHTTP(w, r)
+		case RoostServiceSuggestProcedure:
+			roostServiceSuggestHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -279,4 +303,8 @@ func (UnimplementedRoostServiceHandler) Commit(context.Context, *connect.Request
 
 func (UnimplementedRoostServiceHandler) Discard(context.Context, *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.Discard is not implemented"))
+}
+
+func (UnimplementedRoostServiceHandler) Suggest(context.Context, *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.Suggest is not implemented"))
 }

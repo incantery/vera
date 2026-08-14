@@ -87,21 +87,23 @@ func main() {
 			Max:    50,
 			Skip:   skipProbes(home),
 		},
-		claudeBin:  *claudeBin,
-		turns:      *turns,
-		ln:         openLineage(*statePath),
-		says:       map[string]*sayJob{},
-		spend:      map[string]*agentSpend{},
-		digests:    map[string]*digestRec{},
-		sent:       map[string]string{},
-		uc:         &usage.Collector{Bin: *claudeBin},
-		shelf:      &artifactStore{dir: *artifactsDir},
-		tasks:      &taskStore{dir: *tasksDir},
-		scratch:    &scratchStore{parent: defaultScratchParent()},
-		spendPath:  defaultSpendPath(),
-		digestPath: defaultDigestPath(),
-		uploads:    defaultUploadsDir(),
-		hub:        newHub(),
+		claudeBin:   *claudeBin,
+		turns:       *turns,
+		ln:          openLineage(*statePath),
+		says:        map[string]*sayJob{},
+		spend:       map[string]*agentSpend{},
+		digests:     map[string]*digestRec{},
+		suggests:    map[string]*suggestRec{},
+		sent:        map[string]string{},
+		uc:          &usage.Collector{Bin: *claudeBin},
+		shelf:       &artifactStore{dir: *artifactsDir},
+		tasks:       &taskStore{dir: *tasksDir},
+		scratch:     &scratchStore{parent: defaultScratchParent()},
+		spendPath:   defaultSpendPath(),
+		digestPath:  defaultDigestPath(),
+		suggestPath: defaultSuggestPath(),
+		uploads:     defaultUploadsDir(),
+		hub:         newHub(),
 	}
 	s.loadJournals()
 	go s.hub.watch(*dir)
@@ -139,6 +141,7 @@ func main() {
 	mux.HandleFunc("GET /api/agent/{id}", s.handleAgent)
 	mux.HandleFunc("POST /api/agent/{id}/say", s.handleSay)
 	mux.HandleFunc("POST /api/agent/{id}/interrupt", s.handleInterrupt)
+	mux.HandleFunc("GET /api/agent/{id}/suggest", s.handleSuggest)
 	mux.HandleFunc("GET /api/agent/{id}/diff", s.handleDiff)
 	mux.HandleFunc("POST /api/agent/{id}/commit", s.handleCommit)
 	mux.HandleFunc("POST /api/agent/{id}/discard", s.handleDiscard)
@@ -251,17 +254,19 @@ type server struct {
 	tasks     *taskStore
 	scratch   *scratchStore
 
-	spendPath  string // spend journal; "" = remember only while running
-	digestPath string // digest journal; same deal
-	uploads    string // pasted-image directory, namespaced per agent
+	spendPath   string // spend journal; "" = remember only while running
+	digestPath  string // digest journal; same deal
+	suggestPath string // suggestion journal; every bid served, for learning later
+	uploads     string // pasted-image directory, namespaced per agent
 
-	mu      sync.Mutex
-	runs    []*run                 // newest first
-	says    map[string]*sayJob     // agent root -> the say in flight (or its failure)
-	spend   map[string]*agentSpend // agent root -> what has been spent on it, ever
-	digests map[string]*digestRec  // reply-hash -> the membrane's compression of it
-	sent    map[string]string      // sent-text-hash -> the rough words behind it
-	queues  map[string][]queuedSay // agent root -> direct messages typed ahead
+	mu       sync.Mutex
+	runs     []*run                 // newest first
+	says     map[string]*sayJob     // agent root -> the say in flight (or its failure)
+	spend    map[string]*agentSpend // agent root -> what has been spent on it, ever
+	digests  map[string]*digestRec  // reply-hash -> the membrane's compression of it
+	suggests map[string]*suggestRec // exchange-hash -> rook's bid on the reply
+	sent     map[string]string      // sent-text-hash -> the rough words behind it
+	queues   map[string][]queuedSay // agent root -> direct messages typed ahead
 
 	hub *hub // "something changed" — feeds the watch streams
 }
