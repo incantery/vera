@@ -101,13 +101,16 @@ export async function fetchAgent(id, { raw = false } = {}) {
 	return r.json();
 }
 
+// sayTo rides the typed wire (the Say RPC) — the same core the REST
+// endpoint still serves for anything that has not migrated. Connect
+// errors carry the server's own words; strip the code prefix.
 export async function sayTo(id, text, opts = {}) {
 	const { verbatim = false, direct = false, perm = '', images = [] } = opts === true ? { verbatim: true } : opts;
-	const r = await api(`/api/agent/${id}/say`, {
-		method: 'POST',
-		body: JSON.stringify({ text, verbatim, direct, perm, images })
-	});
-	if (!r.ok) throw new Error((await r.json()).error ?? 'the message was refused');
+	try {
+		await roostClient.say({ id, text, verbatim, direct, perm, images });
+	} catch (err) {
+		throw new Error(err?.rawMessage || 'the message was refused');
+	}
 }
 
 // ---- the typed wire: Connect streaming ----
@@ -148,6 +151,7 @@ function fromMsg(m) {
 			: undefined,
 		think: m.think?.length ? m.think : undefined,
 		ctx: n(m.ctx) || undefined,
+		secs: m.secs || undefined,
 		rough: m.rough || undefined,
 		digest: m.digest ? { state: m.digest.state, headline: m.digest.headline, bullets: m.digest.bullets } : undefined
 	};

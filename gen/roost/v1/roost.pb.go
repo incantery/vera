@@ -327,6 +327,7 @@ type Msg struct {
 	Ctx           int64                  `protobuf:"varint,6,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	Rough         string                 `protobuf:"bytes,7,opt,name=rough,proto3" json:"rough,omitempty"`   // membrane provenance on user turns
 	Digest        *Digest                `protobuf:"bytes,8,opt,name=digest,proto3" json:"digest,omitempty"` // membrane compression, absent in raw watches
+	Secs          int32                  `protobuf:"varint,9,opt,name=secs,proto3" json:"secs,omitempty"`    // how long the assistant turn ran, wall-clock
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -415,6 +416,13 @@ func (x *Msg) GetDigest() *Digest {
 		return x.Digest
 	}
 	return nil
+}
+
+func (x *Msg) GetSecs() int32 {
+	if x != nil {
+		return x.Secs
+	}
+	return 0
 }
 
 type Step struct {
@@ -993,6 +1001,139 @@ func (x *TreeFile) GetIsNew() bool {
 	return false
 }
 
+// Say sends one chat message to an agent — the same rail the REST
+// endpoint served, typed. The answer is the pending status the watch
+// stream will confirm: "phrasing" (the membrane is wording it),
+// "thinking" (the turn is running), or "queued" (direct mode typed
+// ahead of a busy turn).
+type SayRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	Verbatim      bool                   `protobuf:"varint,3,opt,name=verbatim,proto3" json:"verbatim,omitempty"` // membrane mode: skip the phrasing, send as typed
+	Direct        bool                   `protobuf:"varint,4,opt,name=direct,proto3" json:"direct,omitempty"`     // direct mode: no membrane, ever
+	Perm          string                 `protobuf:"bytes,5,opt,name=perm,proto3" json:"perm,omitempty"`          // "" | "read" | "edit" | "all"
+	Images        []string               `protobuf:"bytes,6,rep,name=images,proto3" json:"images,omitempty"`      // paths the upload endpoint answered with
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SayRequest) Reset() {
+	*x = SayRequest{}
+	mi := &file_roost_v1_roost_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SayRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SayRequest) ProtoMessage() {}
+
+func (x *SayRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SayRequest.ProtoReflect.Descriptor instead.
+func (*SayRequest) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SayRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SayRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *SayRequest) GetVerbatim() bool {
+	if x != nil {
+		return x.Verbatim
+	}
+	return false
+}
+
+func (x *SayRequest) GetDirect() bool {
+	if x != nil {
+		return x.Direct
+	}
+	return false
+}
+
+func (x *SayRequest) GetPerm() string {
+	if x != nil {
+		return x.Perm
+	}
+	return ""
+}
+
+func (x *SayRequest) GetImages() []string {
+	if x != nil {
+		return x.Images
+	}
+	return nil
+}
+
+type SayResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Status        string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"` // "phrasing" | "thinking" | "queued"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SayResponse) Reset() {
+	*x = SayResponse{}
+	mi := &file_roost_v1_roost_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SayResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SayResponse) ProtoMessage() {}
+
+func (x *SayResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SayResponse.ProtoReflect.Descriptor instead.
+func (*SayResponse) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *SayResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 var File_roost_v1_roost_proto protoreflect.FileDescriptor
 
 const file_roost_v1_roost_proto_rawDesc = "" +
@@ -1024,7 +1165,7 @@ const file_roost_v1_roost_proto_rawDesc = "" +
 	"\vtool_detail\x18\a \x01(\tR\n" +
 	"toolDetail\x12\x17\n" +
 	"\actx_pct\x18\b \x01(\x05R\x06ctxPct\x12\x10\n" +
-	"\x03age\x18\t \x01(\tR\x03age\"\xd1\x01\n" +
+	"\x03age\x18\t \x01(\tR\x03age\"\xe5\x01\n" +
 	"\x03Msg\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\x14\n" +
@@ -1033,7 +1174,8 @@ const file_roost_v1_roost_proto_rawDesc = "" +
 	"\x05think\x18\x05 \x03(\tR\x05think\x12\x10\n" +
 	"\x03ctx\x18\x06 \x01(\x03R\x03ctx\x12\x14\n" +
 	"\x05rough\x18\a \x01(\tR\x05rough\x12(\n" +
-	"\x06digest\x18\b \x01(\v2\x10.roost.v1.DigestR\x06digest\"\x90\x01\n" +
+	"\x06digest\x18\b \x01(\v2\x10.roost.v1.DigestR\x06digest\x12\x12\n" +
+	"\x04secs\x18\t \x01(\x05R\x04secs\"\x90\x01\n" +
 	"\x04Step\x12\x12\n" +
 	"\x04tool\x18\x01 \x01(\tR\x04tool\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\x12\"\n" +
@@ -1082,10 +1224,21 @@ const file_roost_v1_roost_proto_rawDesc = "" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x10\n" +
 	"\x03add\x18\x02 \x01(\x05R\x03add\x12\x10\n" +
 	"\x03del\x18\x03 \x01(\x05R\x03del\x12\x15\n" +
-	"\x06is_new\x18\x04 \x01(\bR\x05isNew2Y\n" +
+	"\x06is_new\x18\x04 \x01(\bR\x05isNew\"\x90\x01\n" +
+	"\n" +
+	"SayRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x12\x1a\n" +
+	"\bverbatim\x18\x03 \x01(\bR\bverbatim\x12\x16\n" +
+	"\x06direct\x18\x04 \x01(\bR\x06direct\x12\x12\n" +
+	"\x04perm\x18\x05 \x01(\tR\x04perm\x12\x16\n" +
+	"\x06images\x18\x06 \x03(\tR\x06images\"%\n" +
+	"\vSayResponse\x12\x16\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status2\x8d\x01\n" +
 	"\fRoostService\x12I\n" +
 	"\n" +
-	"WatchAgent\x12\x1b.roost.v1.WatchAgentRequest\x1a\x1c.roost.v1.WatchAgentResponse0\x01B<Z:github.com/incantery/rook-host/engine/gen/roost/v1;roostv1b\x06proto3"
+	"WatchAgent\x12\x1b.roost.v1.WatchAgentRequest\x1a\x1c.roost.v1.WatchAgentResponse0\x01\x122\n" +
+	"\x03Say\x12\x14.roost.v1.SayRequest\x1a\x15.roost.v1.SayResponseB<Z:github.com/incantery/rook-host/engine/gen/roost/v1;roostv1b\x06proto3"
 
 var (
 	file_roost_v1_roost_proto_rawDescOnce sync.Once
@@ -1099,7 +1252,7 @@ func file_roost_v1_roost_proto_rawDescGZIP() []byte {
 	return file_roost_v1_roost_proto_rawDescData
 }
 
-var file_roost_v1_roost_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_roost_v1_roost_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_roost_v1_roost_proto_goTypes = []any{
 	(*WatchAgentRequest)(nil),  // 0: roost.v1.WatchAgentRequest
 	(*WatchAgentResponse)(nil), // 1: roost.v1.WatchAgentResponse
@@ -1113,6 +1266,8 @@ var file_roost_v1_roost_proto_goTypes = []any{
 	(*Pending)(nil),            // 9: roost.v1.Pending
 	(*Queued)(nil),             // 10: roost.v1.Queued
 	(*TreeFile)(nil),           // 11: roost.v1.TreeFile
+	(*SayRequest)(nil),         // 12: roost.v1.SayRequest
+	(*SayResponse)(nil),        // 13: roost.v1.SayResponse
 }
 var file_roost_v1_roost_proto_depIdxs = []int32{
 	2,  // 0: roost.v1.WatchAgentResponse.agent:type_name -> roost.v1.Agent
@@ -1126,9 +1281,11 @@ var file_roost_v1_roost_proto_depIdxs = []int32{
 	6,  // 8: roost.v1.Msg.digest:type_name -> roost.v1.Digest
 	5,  // 9: roost.v1.Step.diff:type_name -> roost.v1.Diff
 	0,  // 10: roost.v1.RoostService.WatchAgent:input_type -> roost.v1.WatchAgentRequest
-	1,  // 11: roost.v1.RoostService.WatchAgent:output_type -> roost.v1.WatchAgentResponse
-	11, // [11:12] is the sub-list for method output_type
-	10, // [10:11] is the sub-list for method input_type
+	12, // 11: roost.v1.RoostService.Say:input_type -> roost.v1.SayRequest
+	1,  // 12: roost.v1.RoostService.WatchAgent:output_type -> roost.v1.WatchAgentResponse
+	13, // 13: roost.v1.RoostService.Say:output_type -> roost.v1.SayResponse
+	12, // [12:14] is the sub-list for method output_type
+	10, // [10:12] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -1145,7 +1302,7 @@ func file_roost_v1_roost_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_roost_v1_roost_proto_rawDesc), len(file_roost_v1_roost_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -41,11 +41,14 @@ const (
 const (
 	// RoostServiceWatchAgentProcedure is the fully-qualified name of the RoostService's WatchAgent RPC.
 	RoostServiceWatchAgentProcedure = "/roost.v1.RoostService/WatchAgent"
+	// RoostServiceSayProcedure is the fully-qualified name of the RoostService's Say RPC.
+	RoostServiceSayProcedure = "/roost.v1.RoostService/Say"
 )
 
 // RoostServiceClient is a client for the roost.v1.RoostService service.
 type RoostServiceClient interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest]) (*connect.ServerStreamForClient[v1.WatchAgentResponse], error)
+	Say(context.Context, *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error)
 }
 
 // NewRoostServiceClient constructs a client for the roost.v1.RoostService service. By default, it
@@ -65,12 +68,19 @@ func NewRoostServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(roostServiceMethods.ByName("WatchAgent")),
 			connect.WithClientOptions(opts...),
 		),
+		say: connect.NewClient[v1.SayRequest, v1.SayResponse](
+			httpClient,
+			baseURL+RoostServiceSayProcedure,
+			connect.WithSchema(roostServiceMethods.ByName("Say")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // roostServiceClient implements RoostServiceClient.
 type roostServiceClient struct {
 	watchAgent *connect.Client[v1.WatchAgentRequest, v1.WatchAgentResponse]
+	say        *connect.Client[v1.SayRequest, v1.SayResponse]
 }
 
 // WatchAgent calls roost.v1.RoostService.WatchAgent.
@@ -78,9 +88,15 @@ func (c *roostServiceClient) WatchAgent(ctx context.Context, req *connect.Reques
 	return c.watchAgent.CallServerStream(ctx, req)
 }
 
+// Say calls roost.v1.RoostService.Say.
+func (c *roostServiceClient) Say(ctx context.Context, req *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error) {
+	return c.say.CallUnary(ctx, req)
+}
+
 // RoostServiceHandler is an implementation of the roost.v1.RoostService service.
 type RoostServiceHandler interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error
+	Say(context.Context, *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error)
 }
 
 // NewRoostServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -96,10 +112,18 @@ func NewRoostServiceHandler(svc RoostServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(roostServiceMethods.ByName("WatchAgent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	roostServiceSayHandler := connect.NewUnaryHandler(
+		RoostServiceSayProcedure,
+		svc.Say,
+		connect.WithSchema(roostServiceMethods.ByName("Say")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/roost.v1.RoostService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RoostServiceWatchAgentProcedure:
 			roostServiceWatchAgentHandler.ServeHTTP(w, r)
+		case RoostServiceSayProcedure:
+			roostServiceSayHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -111,4 +135,8 @@ type UnimplementedRoostServiceHandler struct{}
 
 func (UnimplementedRoostServiceHandler) WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.WatchAgent is not implemented"))
+}
+
+func (UnimplementedRoostServiceHandler) Say(context.Context, *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.Say is not implemented"))
 }

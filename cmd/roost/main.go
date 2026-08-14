@@ -106,6 +106,14 @@ func main() {
 	s.loadJournals()
 	go s.hub.watch(*dir)
 	go s.uc.Loop()
+	// Attachments outlive their usefulness with the agents that carried
+	// them: sweep orphaned upload dirs at start and every few hours.
+	go func() {
+		for {
+			s.pruneUploads(*window)
+			time.Sleep(6 * time.Hour)
+		}
+	}()
 	// A missing key is a standing notice only where the default API
 	// lives; a custom base is a local server that wants no auth.
 	if key == "" && *apiBase == "" {
@@ -655,36 +663,55 @@ func isCommand(text string) bool { return strings.HasPrefix(text, "/") }
 // runs one headless turn, and BOTH texts stay on the record — the
 // membrane never speaks invisibly.
 func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Text     string   `json:"text"`
-		Verbatim bool     `json:"verbatim"`
-		Direct   bool     `json:"direct"` // direct mode: no membrane, ever
-		Perm     string   `json:"perm"`   // "" | "read" | "edit" | "all"
-		Images   []string `json:"images"` // paths handleUpload answered with
-	}
+	var req sayReq
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req) != nil {
 		httpErr(w, 400, "the request did not parse")
 		return
 	}
+	status, serr := s.say(r.PathValue("id"), req)
+	if serr != nil {
+		httpErr(w, serr.code, serr.msg)
+		return
+	}
+	writeJSON(w, map[string]string{"status": status})
+}
+
+// sayReq is one chat message however it arrives — the REST body and
+// the Connect request both reduce to this.
+type sayReq struct {
+	Text     string   `json:"text"`
+	Verbatim bool     `json:"verbatim"`
+	Direct   bool     `json:"direct"` // direct mode: no membrane, ever
+	Perm     string   `json:"perm"`   // "" | "read" | "edit" | "all"
+	Images   []string `json:"images"` // paths handleUpload answered with
+}
+
+// sayErr names a refusal in HTTP's vocabulary; the Connect handler
+// translates the code, the message travels as-is.
+type sayErr struct {
+	code int
+	msg  string
+}
+
+// say is the outbound rail with no transport on it: validate, queue or
+// refuse if busy, otherwise start the turn and answer the pending
+// status. Both the REST endpoint and the Say RPC end here.
+func (s *server) say(id string, req sayReq) (string, *sayErr) {
 	req.Text = strings.TrimSpace(req.Text)
 	if req.Text == "" {
-		httpErr(w, 400, "say something")
-		return
+		return "", &sayErr{400, "say something"}
 	}
 	permTools, permMode, permErr := permPolicy(req.Perm)
 	if permErr != "" {
-		httpErr(w, 400, permErr)
-		return
+		return "", &sayErr{400, permErr}
 	}
 	now := time.Now()
-	root, head := s.resolveAgent(r.PathValue("id"), now)
+	root, head := s.resolveAgent(id, now)
 	if head == nil {
-		httpErr(w, 404, "that agent is gone from the window")
-		return
+		return "", &sayErr{404, "that agent is gone from the window"}
 	}
 	if msg := s.checkImages(root, req.Images); msg != "" {
-		httpErr(w, 400, msg)
-		return
+		return "", &sayErr{400, msg}
 	}
 	expand := !req.Direct && !req.Verbatim && s.llm != nil && !isCommand(req.Text)
 	s.mu.Lock()
@@ -695,25 +722,21 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		if req.Direct {
 			if len(s.queues[root]) >= queueCap {
 				s.mu.Unlock()
-				httpErr(w, 409, "the queue is full — three ahead is enough")
-				return
+				return "", &sayErr{409, "the queue is full — three ahead is enough"}
 			}
 			if s.queues == nil {
 				s.queues = map[string][]queuedSay{}
 			}
 			s.queues[root] = append(s.queues[root], queuedSay{Text: req.Text, Perm: req.Perm, Images: req.Images})
 			s.mu.Unlock()
-			writeJSON(w, map[string]string{"status": "queued"})
-			return
+			return "queued", nil
 		}
 		s.mu.Unlock()
-		httpErr(w, 409, "still working on the last message")
-		return
+		return "", &sayErr{409, "still working on the last message"}
 	}
 	if s.drivingLocked(root) {
 		s.mu.Unlock()
-		httpErr(w, 409, "a drive is running — stop it to chat")
-		return
+		return "", &sayErr{409, "a drive is running — stop it to chat"}
 	}
 	status := "thinking"
 	if expand {
@@ -780,7 +803,7 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		delete(s.says, root)
 		go s.drainQueue(root)
 	}()
-	writeJSON(w, map[string]string{"status": status})
+	return status, nil
 }
 
 // drainQueue runs the next queued direct message, if the agent is

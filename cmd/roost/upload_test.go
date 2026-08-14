@@ -6,6 +6,8 @@ import (
 	"image"
 	"image/png"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -81,5 +83,40 @@ func TestWithImagesAppendsTheMarkers(t *testing.T) {
 	}
 	if withImages("bare", nil) != "bare" {
 		t.Fatal("no images must mean no markers")
+	}
+}
+
+// Orphaned attachments go with their agents: a directory whose newest
+// file predates the scan window is unreachable and is removed; a live
+// agent's images stay.
+func TestPruneUploadsSweepsOnlyUnreachableAgents(t *testing.T) {
+	s := testServer(t, t.TempDir())
+
+	old := filepath.Join(s.uploads, "agent-old")
+	live := filepath.Join(s.uploads, "agent-live")
+	for _, d := range []string{old, live} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stale := time.Now().Add(-72 * time.Hour)
+	for path, at := range map[string]time.Time{
+		filepath.Join(old, "img-1.png"):  stale,
+		filepath.Join(live, "img-2.png"): time.Now(),
+	} {
+		if err := os.WriteFile(path, []byte("png"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s.pruneUploads(48 * time.Hour)
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("the orphaned directory must be gone")
+	}
+	if _, err := os.Stat(filepath.Join(live, "img-2.png")); err != nil {
+		t.Fatal("the live agent's image must stay")
 	}
 }

@@ -14,6 +14,29 @@ import (
 	"github.com/incantery/rook-host/engine/gen/roost/v1/roostv1connect"
 )
 
+// The Say RPC and the REST endpoint are one rail: refusals arrive in
+// Connect's vocabulary with the server's own words intact.
+func TestSayRPCTranslatesRefusals(t *testing.T) {
+	dir := t.TempDir()
+	writeTranscript(t, dir, "-repo-alpha", "sess-live", time.Now().Add(-time.Minute))
+	s := testServer(t, dir)
+	r := &roostRPC{s: s}
+	ctx := context.Background()
+
+	_, err := r.Say(ctx, connect.NewRequest(&roostv1.SayRequest{Id: "stranger", Text: "hi"}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("a gone agent must be NotFound: %v", err)
+	}
+	_, err = r.Say(ctx, connect.NewRequest(&roostv1.SayRequest{Id: "sess-live", Text: "   "}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("an empty message must be InvalidArgument: %v", err)
+	}
+	_, err = r.Say(ctx, connect.NewRequest(&roostv1.SayRequest{Id: "sess-live", Text: "hi", Perm: "sudo"}))
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("a bad perm must be InvalidArgument: %v", err)
+	}
+}
+
 // The watch contract a phone will rely on: the first frame is a full
 // snapshot; a new turn arrives as a tail delta, not a resend.
 func TestWatchAgentStreamsSnapshotThenDelta(t *testing.T) {

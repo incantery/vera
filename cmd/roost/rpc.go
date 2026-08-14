@@ -83,6 +83,27 @@ func (r *roostRPC) WatchAgent(ctx context.Context, req *connect.Request[roostv1.
 	}
 }
 
+// Say is the outbound rail on the typed wire — the same core the REST
+// endpoint calls, refusals translated into Connect's vocabulary.
+func (r *roostRPC) Say(ctx context.Context, req *connect.Request[roostv1.SayRequest]) (*connect.Response[roostv1.SayResponse], error) {
+	m := req.Msg
+	status, serr := r.s.say(m.Id, sayReq{
+		Text: m.Text, Verbatim: m.Verbatim, Direct: m.Direct,
+		Perm: m.Perm, Images: m.Images,
+	})
+	if serr != nil {
+		code := connect.CodeInvalidArgument
+		switch serr.code {
+		case 404:
+			code = connect.CodeNotFound
+		case 409:
+			code = connect.CodeFailedPrecondition
+		}
+		return nil, connect.NewError(code, errors.New(serr.msg))
+	}
+	return connect.NewResponse(&roostv1.SayResponse{Status: status}), nil
+}
+
 // commonPrefix: how many leading message hashes still agree.
 func commonPrefix(a, b []uint64) int {
 	n := min(len(a), len(b))
@@ -182,6 +203,7 @@ func protoMsg(m wireMsg) *roostv1.Msg {
 	out := &roostv1.Msg{
 		Role: m.Role, Text: m.Text, Tools: int32(m.Tools),
 		Think: m.Think, Ctx: int64(m.Ctx), Rough: m.Rough,
+		Secs: int32(m.Secs),
 	}
 	for _, st := range m.Steps {
 		p := &roostv1.Step{Tool: st.Tool, Detail: st.Detail, Out: st.Out, Lines: int32(st.Lines), Err: st.Err}
@@ -212,7 +234,9 @@ func msgHash(m wireMsg) uint64 {
 	h.Write([]byte(m.Text))
 	h.Write([]byte(m.Rough))
 	var b [8]byte
-	putI64(b[:], int64(m.Tools)<<32|int64(len(m.Think))<<16|int64(len(m.Steps)))
+	// Secs rides the open turn's hash: the duration ticking up must
+	// ship a delta even when no other field moved.
+	putI64(b[:], int64(m.Tools)<<40|int64(m.Secs)<<24|int64(len(m.Think))<<16|int64(len(m.Steps)))
 	h.Write(b[:])
 	if m.Digest != nil {
 		h.Write([]byte(m.Digest.State + m.Digest.Headline))

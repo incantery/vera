@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file roost/v1/roost.proto.
  */
 export const file_roost_v1_roost: GenFile = /*@__PURE__*/
-  fileDesc("ChRyb29zdC92MS9yb29zdC5wcm90bxIIcm9vc3QudjEiLAoRV2F0Y2hBZ2VudFJlcXVlc3QSCgoCaWQYASABKAkSCwoDcmF3GAIgASgIIrcCChJXYXRjaEFnZW50UmVzcG9uc2USHgoFYWdlbnQYASABKAsyDy5yb29zdC52MS5BZ2VudBINCgVyZXNldBgCIAEoCBIMCgRmcm9tGAMgASgFEh4KB2hpc3RvcnkYBCADKAsyDS5yb29zdC52MS5Nc2cSGgoDY3R4GAUgASgLMg0ucm9vc3QudjEuQ3R4Eh4KBXNwZW5kGAYgASgLMg8ucm9vc3QudjEuU3BlbmQSIgoHcGVuZGluZxgHIAEoCzIRLnJvb3N0LnYxLlBlbmRpbmcSHwoFcXVldWUYCCADKAsyEC5yb29zdC52MS5RdWV1ZWQSIAoEdHJlZRgJIAMoCzISLnJvb3N0LnYxLlRyZWVGaWxlEg4KBnJlc3VtZRgKIAEoCRIRCglhcnRpZmFjdHMYCyABKAUijwEKBUFnZW50EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEg0KBXN0YXRlGAMgASgJEgsKA2RpchgEIAEoCRIOCgZicmFuY2gYBSABKAkSDAoEdG9vbBgGIAEoCRITCgt0b29sX2RldGFpbBgHIAEoCRIPCgdjdHhfcGN0GAggASgFEgsKA2FnZRgJIAEoCSKcAQoDTXNnEgwKBHJvbGUYASABKAkSDAoEdGV4dBgCIAEoCRINCgV0b29scxgDIAEoBRIdCgVzdGVwcxgEIAMoCzIOLnJvb3N0LnYxLlN0ZXASDQoFdGhpbmsYBSADKAkSCwoDY3R4GAYgASgDEg0KBXJvdWdoGAcgASgJEiAKBmRpZ2VzdBgIIAEoCzIQLnJvb3N0LnYxLkRpZ2VzdCJrCgRTdGVwEgwKBHRvb2wYASABKAkSDgoGZGV0YWlsGAIgASgJEhwKBGRpZmYYAyABKAsyDi5yb29zdC52MS5EaWZmEgsKA291dBgEIAEoCRINCgVsaW5lcxgFIAEoBRILCgNlcnIYBiABKAgiQwoERGlmZhIMCgRmaWxlGAEgASgJEgsKA29sZBgCIAEoCRILCgNuZXcYAyABKAkSEwoLcmVwbGFjZV9hbGwYBCABKAgiOgoGRGlnZXN0Eg0KBXN0YXRlGAEgASgJEhAKCGhlYWRsaW5lGAIgASgJEg8KB2J1bGxldHMYAyADKAkifAoDQ3R4Eg4KBnRva2VucxgBIAEoAxIQCghmcmVzaF9pbhgCIAEoAxISCgpjYWNoZV9yZWFkGAMgASgDEhMKC2NhY2hlX3dyaXRlGAQgASgDEgsKA291dBgFIAEoAxIOCgZ3aW5kb3cYBiABKAMSDQoFbW9kZWwYByABKAkiLgoFU3BlbmQSEgoKY2xhdWRlX3VzZBgBIAEoARIRCglqdWRnZV91c2QYAiABKAEihgEKB1BlbmRpbmcSDAoEdGV4dBgBIAEoCRIMCgRzZW50GAIgASgJEg4KBnN0YXR1cxgDIAEoCRINCgVlcnJvchgEIAEoCRIOCgZkaXJlY3QYBSABKAgSDAoEcGVybRgGIAEoCRIOCgZpbWFnZXMYByADKAkSEgoKYXRfdW5peF9tcxgIIAEoAyIkCgZRdWV1ZWQSDAoEdGV4dBgBIAEoCRIMCgRwZXJtGAIgASgJIkIKCFRyZWVGaWxlEgwKBHBhdGgYASABKAkSCwoDYWRkGAIgASgFEgsKA2RlbBgDIAEoBRIOCgZpc19uZXcYBCABKAgyWQoMUm9vc3RTZXJ2aWNlEkkKCldhdGNoQWdlbnQSGy5yb29zdC52MS5XYXRjaEFnZW50UmVxdWVzdBocLnJvb3N0LnYxLldhdGNoQWdlbnRSZXNwb25zZTABQjxaOmdpdGh1Yi5jb20vaW5jYW50ZXJ5L3Jvb2staG9zdC9lbmdpbmUvZ2VuL3Jvb3N0L3YxO3Jvb3N0djFiBnByb3RvMw");
+  fileDesc("ChRyb29zdC92MS9yb29zdC5wcm90bxIIcm9vc3QudjEiLAoRV2F0Y2hBZ2VudFJlcXVlc3QSCgoCaWQYASABKAkSCwoDcmF3GAIgASgIIrcCChJXYXRjaEFnZW50UmVzcG9uc2USHgoFYWdlbnQYASABKAsyDy5yb29zdC52MS5BZ2VudBINCgVyZXNldBgCIAEoCBIMCgRmcm9tGAMgASgFEh4KB2hpc3RvcnkYBCADKAsyDS5yb29zdC52MS5Nc2cSGgoDY3R4GAUgASgLMg0ucm9vc3QudjEuQ3R4Eh4KBXNwZW5kGAYgASgLMg8ucm9vc3QudjEuU3BlbmQSIgoHcGVuZGluZxgHIAEoCzIRLnJvb3N0LnYxLlBlbmRpbmcSHwoFcXVldWUYCCADKAsyEC5yb29zdC52MS5RdWV1ZWQSIAoEdHJlZRgJIAMoCzISLnJvb3N0LnYxLlRyZWVGaWxlEg4KBnJlc3VtZRgKIAEoCRIRCglhcnRpZmFjdHMYCyABKAUijwEKBUFnZW50EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEg0KBXN0YXRlGAMgASgJEgsKA2RpchgEIAEoCRIOCgZicmFuY2gYBSABKAkSDAoEdG9vbBgGIAEoCRITCgt0b29sX2RldGFpbBgHIAEoCRIPCgdjdHhfcGN0GAggASgFEgsKA2FnZRgJIAEoCSKqAQoDTXNnEgwKBHJvbGUYASABKAkSDAoEdGV4dBgCIAEoCRINCgV0b29scxgDIAEoBRIdCgVzdGVwcxgEIAMoCzIOLnJvb3N0LnYxLlN0ZXASDQoFdGhpbmsYBSADKAkSCwoDY3R4GAYgASgDEg0KBXJvdWdoGAcgASgJEiAKBmRpZ2VzdBgIIAEoCzIQLnJvb3N0LnYxLkRpZ2VzdBIMCgRzZWNzGAkgASgFImsKBFN0ZXASDAoEdG9vbBgBIAEoCRIOCgZkZXRhaWwYAiABKAkSHAoEZGlmZhgDIAEoCzIOLnJvb3N0LnYxLkRpZmYSCwoDb3V0GAQgASgJEg0KBWxpbmVzGAUgASgFEgsKA2VychgGIAEoCCJDCgREaWZmEgwKBGZpbGUYASABKAkSCwoDb2xkGAIgASgJEgsKA25ldxgDIAEoCRITCgtyZXBsYWNlX2FsbBgEIAEoCCI6CgZEaWdlc3QSDQoFc3RhdGUYASABKAkSEAoIaGVhZGxpbmUYAiABKAkSDwoHYnVsbGV0cxgDIAMoCSJ8CgNDdHgSDgoGdG9rZW5zGAEgASgDEhAKCGZyZXNoX2luGAIgASgDEhIKCmNhY2hlX3JlYWQYAyABKAMSEwoLY2FjaGVfd3JpdGUYBCABKAMSCwoDb3V0GAUgASgDEg4KBndpbmRvdxgGIAEoAxINCgVtb2RlbBgHIAEoCSIuCgVTcGVuZBISCgpjbGF1ZGVfdXNkGAEgASgBEhEKCWp1ZGdlX3VzZBgCIAEoASKGAQoHUGVuZGluZxIMCgR0ZXh0GAEgASgJEgwKBHNlbnQYAiABKAkSDgoGc3RhdHVzGAMgASgJEg0KBWVycm9yGAQgASgJEg4KBmRpcmVjdBgFIAEoCBIMCgRwZXJtGAYgASgJEg4KBmltYWdlcxgHIAMoCRISCgphdF91bml4X21zGAggASgDIiQKBlF1ZXVlZBIMCgR0ZXh0GAEgASgJEgwKBHBlcm0YAiABKAkiQgoIVHJlZUZpbGUSDAoEcGF0aBgBIAEoCRILCgNhZGQYAiABKAUSCwoDZGVsGAMgASgFEg4KBmlzX25ldxgEIAEoCCJmCgpTYXlSZXF1ZXN0EgoKAmlkGAEgASgJEgwKBHRleHQYAiABKAkSEAoIdmVyYmF0aW0YAyABKAgSDgoGZGlyZWN0GAQgASgIEgwKBHBlcm0YBSABKAkSDgoGaW1hZ2VzGAYgAygJIh0KC1NheVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCTKNAQoMUm9vc3RTZXJ2aWNlEkkKCldhdGNoQWdlbnQSGy5yb29zdC52MS5XYXRjaEFnZW50UmVxdWVzdBocLnJvb3N0LnYxLldhdGNoQWdlbnRSZXNwb25zZTABEjIKA1NheRIULnJvb3N0LnYxLlNheVJlcXVlc3QaFS5yb29zdC52MS5TYXlSZXNwb25zZUI8WjpnaXRodWIuY29tL2luY2FudGVyeS9yb29rLWhvc3QvZW5naW5lL2dlbi9yb29zdC92MTtyb29zdHYxYgZwcm90bzM");
 
 /**
  * WatchAgent streams one agent's whole present: a full snapshot
@@ -230,6 +230,13 @@ export type Msg = Message<"roost.v1.Msg"> & {
    * @generated from field: roost.v1.Digest digest = 8;
    */
   digest?: Digest | undefined;
+
+  /**
+   * how long the assistant turn ran, wall-clock
+   *
+   * @generated from field: int32 secs = 9;
+   */
+  secs: number;
 };
 
 /**
@@ -528,6 +535,81 @@ export const TreeFileSchema: GenMessage<TreeFile> = /*@__PURE__*/
   messageDesc(file_roost_v1_roost, 11);
 
 /**
+ * Say sends one chat message to an agent — the same rail the REST
+ * endpoint served, typed. The answer is the pending status the watch
+ * stream will confirm: "phrasing" (the membrane is wording it),
+ * "thinking" (the turn is running), or "queued" (direct mode typed
+ * ahead of a busy turn).
+ *
+ * @generated from message roost.v1.SayRequest
+ */
+export type SayRequest = Message<"roost.v1.SayRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string text = 2;
+   */
+  text: string;
+
+  /**
+   * membrane mode: skip the phrasing, send as typed
+   *
+   * @generated from field: bool verbatim = 3;
+   */
+  verbatim: boolean;
+
+  /**
+   * direct mode: no membrane, ever
+   *
+   * @generated from field: bool direct = 4;
+   */
+  direct: boolean;
+
+  /**
+   * "" | "read" | "edit" | "all"
+   *
+   * @generated from field: string perm = 5;
+   */
+  perm: string;
+
+  /**
+   * paths the upload endpoint answered with
+   *
+   * @generated from field: repeated string images = 6;
+   */
+  images: string[];
+};
+
+/**
+ * Describes the message roost.v1.SayRequest.
+ * Use `create(SayRequestSchema)` to create a new message.
+ */
+export const SayRequestSchema: GenMessage<SayRequest> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 12);
+
+/**
+ * @generated from message roost.v1.SayResponse
+ */
+export type SayResponse = Message<"roost.v1.SayResponse"> & {
+  /**
+   * "phrasing" | "thinking" | "queued"
+   *
+   * @generated from field: string status = 1;
+   */
+  status: string;
+};
+
+/**
+ * Describes the message roost.v1.SayResponse.
+ * Use `create(SayResponseSchema)` to create a new message.
+ */
+export const SayResponseSchema: GenMessage<SayResponse> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 13);
+
+/**
  * @generated from service roost.v1.RoostService
  */
 export const RoostService: GenService<{
@@ -538,6 +620,14 @@ export const RoostService: GenService<{
     methodKind: "server_streaming";
     input: typeof WatchAgentRequestSchema;
     output: typeof WatchAgentResponseSchema;
+  },
+  /**
+   * @generated from rpc roost.v1.RoostService.Say
+   */
+  say: {
+    methodKind: "unary";
+    input: typeof SayRequestSchema;
+    output: typeof SayResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_roost_v1_roost, 0);

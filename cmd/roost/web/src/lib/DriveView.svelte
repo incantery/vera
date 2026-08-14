@@ -50,6 +50,13 @@
 		return String(n);
 	}
 
+	// dur: turn wall-clock, the transcript's own timestamps.
+	function dur(s) {
+		if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
+		if (s >= 60) return `${Math.floor(s / 60)}m ${s % 60}s`;
+		return `${s}s`;
+	}
+
 	// ── the event timeline ─────────────────────────────────────────
 	// One transcript message fans out into typed events: a user msg is
 	// a divider + a human event; an assistant msg is its reasoning,
@@ -92,6 +99,7 @@
 				const bits = [];
 				if (reply?.ctx) bits.push(`${k(reply.ctx)} ctx`);
 				if (reply?.tools) bits.push(`${reply.tools} tool ${reply.tools === 1 ? 'call' : 'calls'}`);
+				if (reply?.secs) bits.push(dur(reply.secs));
 				out.push({ kind: 'divider', id: `d${mi}`, turn, text: `turn ${turn}${bits.length ? ' · ' + bits.join(' · ') : ''}` });
 				const parts = imageParts(m.text);
 				out.push({
@@ -164,6 +172,7 @@
 			const bits = [m.rough ? 'you · via rook' : 'you'];
 			if (reply?.ctx) bits.push(`${k(reply.ctx)} ctx`);
 			if (reply?.tools) bits.push(`${reply.tools} events`);
+			if (reply?.secs) bits.push(dur(reply.secs));
 			out.push({ n: out.length + 1, id: `m${mi}`, title: (m.rough || imageParts(m.text).text).slice(0, 64), sub: bits.join(' · ') });
 		});
 		return out;

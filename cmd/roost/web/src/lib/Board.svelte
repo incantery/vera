@@ -389,6 +389,13 @@
 							>
 								{sel.live?.dir ?? 'agent'} · chat →
 							</a>
+							<a
+								href="/agent/{sel.agent}?mode=direct"
+								style="font-size: 11px; color: var(--color-neutral-500); text-decoration: none;"
+								title="straight into the cockpit — the event timeline, live"
+							>
+								direct →
+							</a>
 						{:else}
 							<span style="font-size: 11px; color: var(--color-neutral-600);">unassigned</span>
 						{/if}

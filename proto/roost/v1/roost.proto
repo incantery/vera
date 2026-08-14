@@ -55,6 +55,7 @@ message Msg {
   int64 ctx = 6;
   string rough = 7;  // membrane provenance on user turns
   Digest digest = 8; // membrane compression, absent in raw watches
+  int32 secs = 9;    // how long the assistant turn ran, wall-clock
 }
 
 message Step {
@@ -117,6 +118,25 @@ message TreeFile {
   bool is_new = 4;
 }
 
+// Say sends one chat message to an agent — the same rail the REST
+// endpoint served, typed. The answer is the pending status the watch
+// stream will confirm: "phrasing" (the membrane is wording it),
+// "thinking" (the turn is running), or "queued" (direct mode typed
+// ahead of a busy turn).
+message SayRequest {
+  string id = 1;
+  string text = 2;
+  bool verbatim = 3;          // membrane mode: skip the phrasing, send as typed
+  bool direct = 4;            // direct mode: no membrane, ever
+  string perm = 5;            // "" | "read" | "edit" | "all"
+  repeated string images = 6; // paths the upload endpoint answered with
+}
+
+message SayResponse {
+  string status = 1; // "phrasing" | "thinking" | "queued"
+}
+
 service RoostService {
   rpc WatchAgent(WatchAgentRequest) returns (stream WatchAgentResponse);
+  rpc Say(SayRequest) returns (SayResponse);
 }

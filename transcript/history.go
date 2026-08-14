@@ -21,6 +21,11 @@ type Msg struct {
 	Steps []Step    `json:"steps,omitempty"` // the same calls, named and in order
 	Think []string  `json:"think,omitempty"` // reasoning excerpts, bounded
 	Ctx   int       `json:"ctx,omitempty"`   // context tokens after this turn
+	// Secs is how long the assistant turn ran: the prompt's own
+	// timestamp (stamped at send, so the human's silence sits before
+	// it, never inside) to the last event that landed on the turn —
+	// tool results included.
+	Secs int `json:"secs,omitempty"`
 }
 
 // Step is one tool call as a reader would skim it: the tool and the
@@ -75,15 +80,26 @@ func History(path string) []Msg {
 	}
 	var out []Msg
 	var cur *Msg // the assistant turn being accumulated
+	var curEnd, promptAt time.Time
 	// pend routes each tool_result back to the step that called it,
 	// by tool_use id — results ride separate user-typed lines while
 	// the assistant turn is still open.
 	pend := map[string]int{}
 	flush := func() {
 		if cur != nil && (cur.Text != "" || cur.Tools > 0) {
+			// The turn starts at its prompt; a tail cut mid-turn has no
+			// prompt and falls back to the first assistant line.
+			start := promptAt
+			if start.IsZero() || (!cur.At.IsZero() && cur.At.Before(start)) {
+				start = cur.At
+			}
+			if !start.IsZero() && curEnd.After(start) {
+				cur.Secs = int(curEnd.Sub(start).Seconds())
+			}
 			out = append(out, *cur)
 		}
 		cur = nil
+		curEnd = time.Time{}
 		pend = map[string]int{}
 	}
 	for raw := range bytes.SplitSeq(data, []byte("\n")) {
@@ -106,8 +122,11 @@ func History(path string) []Msg {
 			if isToolResult(l.Message.Content) {
 				// The assistant's own machinery coming back — not
 				// conversation, but the step that called it wants to
-				// show what it got.
+				// show what it got. A result landing extends the turn.
 				if cur != nil {
+					if !ts.IsZero() {
+						curEnd = ts
+					}
 					for _, r := range toolResults(l.Message.Content) {
 						if i, ok := pend[r.id]; ok && i < len(cur.Steps) {
 							cur.Steps[i].Out, cur.Steps[i].Lines = clipOut(r.text)
@@ -122,10 +141,14 @@ func History(path string) []Msg {
 				continue
 			}
 			flush()
+			promptAt = ts
 			out = append(out, Msg{Role: "user", Text: text, At: ts})
 		case "assistant":
 			if cur == nil {
 				cur = &Msg{Role: "assistant", At: ts}
+			}
+			if !ts.IsZero() {
+				curEnd = ts
 			}
 			cur.Tools += countToolUse(l.Message.Content)
 			for _, st := range toolSteps(l.Message.Content) {

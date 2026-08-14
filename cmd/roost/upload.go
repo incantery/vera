@@ -71,6 +71,40 @@ func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"path": path, "name": name})
 }
 
+// pruneUploads clears attachment directories no page can reach: an
+// upload is only served through its agent, and an agent older than the
+// scan window is gone from every list — its images are orphans. A
+// directory lives as long as its newest file.
+func (s *server) pruneUploads(window time.Duration) {
+	if s.uploads == "" {
+		return
+	}
+	agents, err := os.ReadDir(s.uploads)
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	for _, a := range agents {
+		if !a.IsDir() {
+			continue
+		}
+		dir := filepath.Join(s.uploads, a.Name())
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		var newest time.Time
+		for _, f := range files {
+			if info, err := f.Info(); err == nil && info.ModTime().After(newest) {
+				newest = info.ModTime()
+			}
+		}
+		if now.Sub(newest) > window {
+			os.RemoveAll(dir)
+		}
+	}
+}
+
 // handleUploadGet serves a stored attachment back to the UI, by
 // basename only — the agent's namespace is the whole universe.
 func (s *server) handleUploadGet(w http.ResponseWriter, r *http.Request) {

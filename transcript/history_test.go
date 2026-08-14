@@ -53,6 +53,32 @@ func TestHistoryRendersTurnsAndFoldsTools(t *testing.T) {
 	}
 }
 
+func TestHistoryMeasuresTheTurnNotTheHumansSilence(t *testing.T) {
+	path := writeHistoryFixture(t,
+		prompt(0, "warmup"),
+		assistantEndTurn(2*time.Second, "sure"),
+		// The human sat quiet for ten minutes — their time, before the
+		// next prompt's own timestamp, never inside the turn.
+		prompt(600*time.Second, "go"),
+		toolUse(610*time.Second),
+		toolResult(655*time.Second),
+		assistantEndTurn(670*time.Second, "done"),
+	)
+	h := History(path)
+	if len(h) != 4 {
+		t.Fatalf("turns: %+v", h)
+	}
+	if h[0].Secs != 0 {
+		t.Fatalf("a user turn has no duration: %+v", h[0])
+	}
+	if h[1].Secs != 2 {
+		t.Fatalf("the warmup turn ran 2s: %+v", h[1])
+	}
+	if h[3].Secs != 70 {
+		t.Fatalf("turn duration: want 70s (prompt to last event), got %ds", h[3].Secs)
+	}
+}
+
 func TestHistoryDropsHarnessNoiseAndSidechains(t *testing.T) {
 	path := writeHistoryFixture(t,
 		prompt(0, "<local-command-caveat>Caveat: local commands</local-command-caveat>"),
