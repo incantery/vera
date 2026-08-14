@@ -102,12 +102,41 @@ export async function fetchAgent(id, { raw = false } = {}) {
 }
 
 export async function sayTo(id, text, opts = {}) {
-	const { verbatim = false, direct = false, perm = '' } = opts === true ? { verbatim: true } : opts;
+	const { verbatim = false, direct = false, perm = '', images = [] } = opts === true ? { verbatim: true } : opts;
 	const r = await api(`/api/agent/${id}/say`, {
 		method: 'POST',
-		body: JSON.stringify({ text, verbatim, direct, perm })
+		body: JSON.stringify({ text, verbatim, direct, perm, images })
 	});
 	if (!r.ok) throw new Error((await r.json()).error ?? 'the message was refused');
+}
+
+// uploadImage stores one pasted image on the server; the answer's
+// `path` rides the next say, its `name` serves the thumbnail back.
+export async function uploadImage(id, blob) {
+	const r = await api(`/api/agent/${id}/upload`, { method: 'POST', body: blob });
+	if (!r.ok) throw new Error((await r.json()).error ?? 'the image was refused');
+	return r.json();
+}
+
+// uploadUrl: <img> tags cannot send a Bearer header, so the key (when
+// one guards the door) rides the query string the server also honors.
+export function uploadUrl(id, name) {
+	const key = typeof localStorage !== 'undefined' ? (localStorage.getItem('roost-key') ?? '') : '';
+	return `/api/agent/${id}/uploads/${name}${key ? `?key=${encodeURIComponent(key)}` : ''}`;
+}
+
+// imageParts splits a message into its text and the attachment names
+// the marker lines carry — the render-side twin of the server's
+// withImages.
+export function imageParts(text) {
+	const names = [];
+	const kept = [];
+	for (const line of (text ?? '').split('\n')) {
+		const m = line.match(/^\[image attached: (.+) — read this file to see it\]$/);
+		if (m) names.push(m[1].split('/').pop());
+		else kept.push(line);
+	}
+	return { text: kept.join('\n').trim(), names };
 }
 
 export async function interruptAgent(id) {

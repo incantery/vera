@@ -98,6 +98,7 @@ func main() {
 		scratch:    &scratchStore{parent: defaultScratchParent()},
 		spendPath:  defaultSpendPath(),
 		digestPath: defaultDigestPath(),
+		uploads:    defaultUploadsDir(),
 	}
 	s.loadJournals()
 	go s.uc.Loop()
@@ -124,6 +125,8 @@ func main() {
 	mux.HandleFunc("GET /api/agent/{id}", s.handleAgent)
 	mux.HandleFunc("POST /api/agent/{id}/say", s.handleSay)
 	mux.HandleFunc("POST /api/agent/{id}/interrupt", s.handleInterrupt)
+	mux.HandleFunc("POST /api/agent/{id}/upload", s.handleUpload)
+	mux.HandleFunc("GET /api/agent/{id}/uploads/{name}", s.handleUploadGet)
 	mux.HandleFunc("GET /api/agent/{id}/artifacts", s.handleArtifactList)
 	mux.HandleFunc("POST /api/agent/{id}/artifacts", s.handleArtifactCreate)
 	mux.HandleFunc("GET /api/agent/{id}/artifacts/{aid}", s.handleArtifactGet)
@@ -216,6 +219,7 @@ type server struct {
 
 	spendPath  string // spend journal; "" = remember only while running
 	digestPath string // digest journal; same deal
+	uploads    string // pasted-image directory, namespaced per agent
 
 	mu      sync.Mutex
 	runs    []*run                 // newest first
@@ -274,6 +278,7 @@ type sayJob struct {
 	Err     string    `json:"error,omitempty"`
 	Direct  bool      `json:"direct,omitempty"` // straight to claude, no membrane
 	Perm    string    `json:"perm,omitempty"`   // the tool policy the turn ran under
+	Images  []string  `json:"images,omitempty"` // attached files riding this message
 	CostUSD float64   `json:"costUsd,omitempty"`
 	At      time.Time `json:"at"`
 
@@ -284,8 +289,9 @@ type sayJob struct {
 // queuedSay is a direct-mode message typed while a turn was in
 // flight; it lands when that turn ends, in order, with its own policy.
 type queuedSay struct {
-	Text string `json:"text"`
-	Perm string `json:"perm,omitempty"`
+	Text   string   `json:"text"`
+	Perm   string   `json:"perm,omitempty"`
+	Images []string `json:"images,omitempty"`
 }
 
 const queueCap = 3
@@ -622,10 +628,11 @@ func isCommand(text string) bool { return strings.HasPrefix(text, "/") }
 // membrane never speaks invisibly.
 func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Text     string `json:"text"`
-		Verbatim bool   `json:"verbatim"`
-		Direct   bool   `json:"direct"` // direct mode: no membrane, ever
-		Perm     string `json:"perm"`   // "" | "read" | "edit" | "all"
+		Text     string   `json:"text"`
+		Verbatim bool     `json:"verbatim"`
+		Direct   bool     `json:"direct"` // direct mode: no membrane, ever
+		Perm     string   `json:"perm"`   // "" | "read" | "edit" | "all"
+		Images   []string `json:"images"` // paths handleUpload answered with
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req) != nil {
 		httpErr(w, 400, "the request did not parse")
@@ -647,6 +654,10 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 404, "that agent is gone from the window")
 		return
 	}
+	if msg := s.checkImages(root, req.Images); msg != "" {
+		httpErr(w, 400, msg)
+		return
+	}
 	expand := !req.Direct && !req.Verbatim && s.llm != nil && !isCommand(req.Text)
 	s.mu.Lock()
 	if j := s.says[root]; j != nil && (j.Status == "thinking" || j.Status == "phrasing") {
@@ -662,7 +673,7 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 			if s.queues == nil {
 				s.queues = map[string][]queuedSay{}
 			}
-			s.queues[root] = append(s.queues[root], queuedSay{Text: req.Text, Perm: req.Perm})
+			s.queues[root] = append(s.queues[root], queuedSay{Text: req.Text, Perm: req.Perm, Images: req.Images})
 			s.mu.Unlock()
 			writeJSON(w, map[string]string{"status": "queued"})
 			return
@@ -681,7 +692,7 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		status = "phrasing"
 	}
 	turnCtx, cancel := context.WithCancel(context.Background())
-	job := &sayJob{Text: req.Text, Status: status, Direct: req.Direct, Perm: req.Perm, At: now, cancel: cancel}
+	job := &sayJob{Text: req.Text, Status: status, Direct: req.Direct, Perm: req.Perm, Images: req.Images, At: now, cancel: cancel}
 	s.says[root] = job
 	s.mu.Unlock()
 
@@ -719,7 +730,7 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		}
 		turner := &drive.Headless{Bin: s.claudeBin, Dir: cwd,
 			AllowedTools: permTools, PermissionMode: permMode}
-		turn, err := turner.RunTurn(turnCtx, headID, sent)
+		turn, err := turner.RunTurn(turnCtx, headID, withImages(sent, req.Images))
 		s.addSpend(root, turn.CostUSD, 0)
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -763,7 +774,7 @@ func (s *server) drainQueue(root string) {
 	next := q[0]
 	s.queues[root] = q[1:]
 	turnCtx, cancel := context.WithCancel(context.Background())
-	job := &sayJob{Text: next.Text, Status: "thinking", Direct: true, Perm: next.Perm, At: now, cancel: cancel}
+	job := &sayJob{Text: next.Text, Status: "thinking", Direct: true, Perm: next.Perm, Images: next.Images, At: now, cancel: cancel}
 	s.says[root] = job
 	s.mu.Unlock()
 
@@ -780,7 +791,7 @@ func (s *server) drainQueue(root string) {
 		}
 		turner := &drive.Headless{Bin: s.claudeBin, Dir: head.Cwd,
 			AllowedTools: permTools, PermissionMode: permMode}
-		turn, err := turner.RunTurn(turnCtx, head.ID, next.Text)
+		turn, err := turner.RunTurn(turnCtx, head.ID, withImages(next.Text, next.Images))
 		s.addSpend(root, turn.CostUSD, 0)
 		s.mu.Lock()
 		defer s.mu.Unlock()

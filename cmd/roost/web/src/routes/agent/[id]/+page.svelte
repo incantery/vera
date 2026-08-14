@@ -1,6 +1,6 @@
 <script>
 	import { page } from '$app/state';
-	import { fetchAgent, sayTo, startDrive, stopDrive, interruptAgent } from '$lib/state.svelte.js';
+	import { fetchAgent, sayTo, startDrive, stopDrive, interruptAgent, uploadImage, uploadUrl, imageParts } from '$lib/state.svelte.js';
 	import UsageBar from '$lib/UsageBar.svelte';
 	import ArtifactPane from '$lib/ArtifactPane.svelte';
 	import DriveView from '$lib/DriveView.svelte';
@@ -132,12 +132,18 @@
 
 	async function send(e) {
 		e?.preventDefault();
-		if (!text.trim() || sending) return;
+		if ((!text.trim() && !attachments.length) || sending) return;
 		sending = true;
 		error = '';
 		try {
 			if (driveMode) await startDrive(id, text);
-			else await sayTo(id, text, { verbatim });
+			else {
+				const images = attachments.map((a) => a.path);
+				const t = text.trim() || (images.length === 1 ? 'Look at the attached image.' : 'Look at the attached images.');
+				await sayTo(id, t, { verbatim, images });
+				attachments.forEach((a) => URL.revokeObjectURL(a.preview));
+				attachments = [];
+			}
 			text = '';
 			nearBottom = true;
 			await refresh();
@@ -150,14 +156,39 @@
 
 	// The cockpit's send: direct, under the sticky policy; a busy
 	// agent queues it server-side.
-	async function sendDirect(t) {
+	async function sendDirect(t, images = []) {
 		error = '';
 		try {
-			await sayTo(id, t, { direct: true, perm });
+			await sayTo(id, t, { direct: true, perm, images });
 			await refresh();
 		} catch (err) {
 			error = err.message;
 		}
+	}
+
+	// Pasted images on the membrane composer: same upload rail as the
+	// cockpit; the paths ride the next send whatever the phrasing does.
+	let attachments = $state([]);
+	let uploadErr = $state('');
+	async function onPaste(e) {
+		const items = [...(e.clipboardData?.items ?? [])].filter((it) => it.type.startsWith('image/'));
+		if (!items.length) return;
+		e.preventDefault();
+		uploadErr = '';
+		for (const it of items) {
+			const file = it.getAsFile();
+			if (!file) continue;
+			try {
+				const ans = await uploadImage(id, file);
+				attachments.push({ ...ans, preview: URL.createObjectURL(file) });
+			} catch (err) {
+				uploadErr = err.message;
+			}
+		}
+	}
+	function dropAttachment(i) {
+		URL.revokeObjectURL(attachments[i]?.preview);
+		attachments.splice(i, 1);
 	}
 
 	function onKeydown(e) {
@@ -307,12 +338,22 @@
 		{#if data?.history?.length}
 			{#each data.history as m, i (i)}
 				{#if m.role === 'user'}
+					{@const parts = imageParts(m.text)}
 					<div class="flex flex-col items-end">
 						<div
 							class="max-w-[85%] rounded-2xl rounded-br-md border border-sky-900/60 bg-sky-950/40 px-4 py-2.5 text-[13px] whitespace-pre-wrap"
 						>
-							{m.rough || m.text}
+							{m.rough || parts.text}
 						</div>
+						{#if parts.names.length}
+							<div class="mt-1 flex max-w-[85%] flex-wrap justify-end gap-2">
+								{#each parts.names as n (n)}
+									<a href={uploadUrl(id, n)} target="_blank" rel="noreferrer">
+										<img src={uploadUrl(id, n)} alt="attachment" class="max-h-28 rounded-lg border border-zinc-800" />
+									</a>
+								{/each}
+							</div>
+						{/if}
 						{#if m.rough && m.rough !== m.text}
 							<details class="mt-1 max-w-[85%] text-right">
 								<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
@@ -506,10 +547,28 @@
 		{#if error}
 			<div class="mb-2 text-xs text-rose-400">{error}</div>
 		{/if}
+		{#if attachments.length || uploadErr}
+			<div class="mb-2 flex flex-wrap items-center gap-2">
+				{#each attachments as a, ai (a.name)}
+					<span class="relative inline-flex">
+						<img src={a.preview} alt={a.name} class="h-11 rounded-md border border-sky-900" />
+						<button
+							onclick={() => dropAttachment(ai)}
+							class="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full border border-zinc-700 bg-zinc-950 text-[10px] leading-none text-zinc-400"
+							title="drop this attachment"
+						>✕</button>
+					</span>
+				{/each}
+				{#if uploadErr}
+					<span class="text-[11px] text-rose-400">{uploadErr}</span>
+				{/if}
+			</div>
+		{/if}
 		<form class="flex items-end gap-2" onsubmit={send}>
 			<textarea
 				bind:value={text}
 				onkeydown={onKeydown}
+				onpaste={onPaste}
 				rows="2"
 				placeholder={driveMode
 					? `a goal — the supervisor keeps pushing until it’s met (${data?.turns ?? 4} turns max)`

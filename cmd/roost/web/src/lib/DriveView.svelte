@@ -18,10 +18,39 @@
 		compacting
 	} = $props();
 
+	import { uploadImage, uploadUrl, imageParts } from './state.svelte.js';
+
 	let text = $state('');
 	let showThinking = $state(true);
 	let chatEl = $state(null);
 	let nearBottom = true;
+
+	// Pasted images: uploaded the moment they land, held as chips until
+	// the send carries their paths.
+	let attachments = $state([]);
+	let uploadErr = $state('');
+	const agentId = $derived(data?.agent?.id);
+
+	async function onPaste(e) {
+		const items = [...(e.clipboardData?.items ?? [])].filter((it) => it.type.startsWith('image/'));
+		if (!items.length) return;
+		e.preventDefault();
+		uploadErr = '';
+		for (const it of items) {
+			const file = it.getAsFile();
+			if (!file) continue;
+			try {
+				const ans = await uploadImage(agentId, file);
+				attachments.push({ ...ans, preview: URL.createObjectURL(file) });
+			} catch (err) {
+				uploadErr = err.message;
+			}
+		}
+	}
+	function dropAttachment(i) {
+		URL.revokeObjectURL(attachments[i]?.preview);
+		attachments.splice(i, 1);
+	}
 
 	const busy = $derived(data?.pending?.status === 'thinking' || data?.pending?.status === 'phrasing');
 	const history = $derived(data?.history ?? []);
@@ -108,11 +137,15 @@
 
 	function submit(e) {
 		e?.preventDefault();
-		const t = text.trim();
-		if (!t) return;
+		let t = text.trim();
+		if (!t && !attachments.length) return;
+		if (!t) t = attachments.length === 1 ? 'Look at the attached image.' : 'Look at the attached images.';
+		const images = attachments.map((a) => a.path);
+		attachments.forEach((a) => URL.revokeObjectURL(a.preview));
+		attachments = [];
 		text = '';
 		nearBottom = true;
-		onsend(t);
+		onsend(t, images);
 	}
 	function onKeydown(e) {
 		if (e.key === 'Enter' && !e.shiftKey) {
@@ -160,9 +193,19 @@
 		<div bind:this={chatEl} onscroll={onScroll} style="flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px 8px; display: flex; flex-direction: column; gap: 15px;">
 			{#each history as m, i (i)}
 				{#if m.role === 'user'}
+					{@const parts = imageParts(m.text)}
 					<div id="turn-{i}" style="display: flex; flex-direction: column; gap: 4px;">
 						<span style="font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-accent-300);">{m.rough ? 'you · via rook' : 'you'}</span>
-						<span style="font-size: 13.5px; line-height: 1.6; color: var(--color-neutral-100); white-space: pre-wrap; text-wrap: pretty;">{m.rough || m.text}</span>
+						<span style="font-size: 13.5px; line-height: 1.6; color: var(--color-neutral-100); white-space: pre-wrap; text-wrap: pretty;">{m.rough || parts.text}</span>
+						{#if parts.names.length}
+							<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px;">
+								{#each parts.names as n (n)}
+									<a href={uploadUrl(agentId, n)} target="_blank" rel="noreferrer">
+										<img src={uploadUrl(agentId, n)} alt="attachment" style="max-height: 120px; max-width: 220px; border-radius: var(--radius-md); border: 1px solid var(--color-neutral-800);" />
+									</a>
+								{/each}
+							</div>
+						{/if}
 						{#if m.rough && m.rough !== m.text}
 							<details style="margin-top: 2px;">
 								<summary style="cursor: pointer; font-size: 10.5px; color: var(--color-neutral-600);">what rook sent</summary>
@@ -226,6 +269,13 @@
 					<div style="display: flex; flex-direction: column; gap: 4px;">
 						<span style="font-size: 10.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-accent-300);">you</span>
 						<span style="font-size: 13.5px; line-height: 1.6; color: var(--color-neutral-100); white-space: pre-wrap; opacity: 0.85;">{data.pending.text}</span>
+						{#if data.pending.images?.length}
+							<div style="display: flex; gap: 8px; flex-wrap: wrap;">
+								{#each data.pending.images as p (p)}
+									<img src={uploadUrl(agentId, p.split('/').pop())} alt="attachment" style="max-height: 90px; border-radius: var(--radius-md); border: 1px solid var(--color-neutral-800); opacity: 0.85;" />
+								{/each}
+							</div>
+						{/if}
 					</div>
 					<div style="display: flex; align-items: center; gap: 10px; padding: 2px 0 6px;">
 						<span style="width: 5px; height: 5px; border-radius: 99px; background: var(--color-accent); box-shadow: 0 0 8px var(--color-accent);"></span>
@@ -255,16 +305,34 @@
 					<span style="color: var(--color-neutral-600);">lands when this turn ends</span>
 				</div>
 			{/if}
+			{#if attachments.length || uploadErr}
+				<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+					{#each attachments as a, ai (a.name)}
+						<span style="position: relative; display: inline-flex;">
+							<img src={a.preview} alt={a.name} style="height: 44px; border-radius: var(--radius-sm); border: 1px solid var(--color-accent-800);" />
+							<button
+								onclick={() => dropAttachment(ai)}
+								style="position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; line-height: 1; font-size: 10px; cursor: pointer; border-radius: 99px; border: 1px solid var(--color-neutral-700); background: var(--color-bg); color: var(--color-neutral-400);"
+								title="drop this attachment"
+							>✕</button>
+						</span>
+					{/each}
+					{#if uploadErr}
+						<span style="font-size: 11px; color: rgb(251,113,133);">{uploadErr}</span>
+					{/if}
+				</div>
+			{/if}
 			<form style="display: flex; align-items: flex-end; gap: 10px;" onsubmit={submit}>
 				<textarea
 					bind:value={text}
 					onkeydown={onKeydown}
+					onpaste={onPaste}
 					rows="1"
-					placeholder={busy ? 'interject — lands when this turn ends…' : 'tell claude code what to do next…'}
+					placeholder={busy ? 'interject — lands when this turn ends…' : 'tell claude code what to do next… (paste an image to attach)'}
 					class="input"
 					style="flex: 1; background: transparent; font-size: 13.5px; resize: none; font-family: inherit;"
 				></textarea>
-				<button type="submit" class="btn btn-primary" style="font-size: 12.5px;" disabled={!text.trim()}>
+				<button type="submit" class="btn btn-primary" style="font-size: 12.5px;" disabled={!text.trim() && !attachments.length}>
 					{busy ? 'Queue' : 'Send'}
 				</button>
 			</form>

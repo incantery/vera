@@ -64,6 +64,7 @@ func testServer(t *testing.T, dir string) *server {
 		sent:    map[string]string{},
 		tasks:   &taskStore{dir: t.TempDir()},
 		scratch: &scratchStore{parent: t.TempDir()},
+		uploads: t.TempDir(),
 	}
 }
 
