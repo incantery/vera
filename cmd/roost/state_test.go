@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,5 +169,16 @@ func TestStateMarksAgentsOnOpenTasks(t *testing.T) {
 	}
 	if byID["bystander"].Task != "" {
 		t.Fatalf("a bystander wears nothing: %+v", byID["bystander"])
+	}
+}
+
+func TestTheGuideTravelsInTheBinary(t *testing.T) {
+	if len(guideMD) < 1000 {
+		t.Fatal("the embedded guide is missing or hollow")
+	}
+	for _, want := range []string{"scratch workspace ≠ sandbox", "DO-NOT-DELETE.txt", "Accept as done"} {
+		if !strings.Contains(string(guideMD), want) {
+			t.Fatalf("the guide lost its %q", want)
+		}
 	}
 }

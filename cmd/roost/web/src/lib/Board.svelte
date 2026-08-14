@@ -199,6 +199,12 @@
 					></span>{board.inflight} run{board.inflight === 1 ? '' : 's'} in flight</span
 				>
 			{/if}
+			<a
+				href="/guide"
+				style="color: var(--color-accent-300); text-decoration: none;"
+				title="the step-by-step guide: testing rook's agent-guiding-Claude-Code flow, from scratch"
+				>guide</a
+			>
 		</div>
 	</header>
 

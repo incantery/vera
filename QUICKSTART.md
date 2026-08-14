@@ -93,7 +93,10 @@ directory you don't mind changing."
 
 ## The five-minute demo
 
-**GUIDE.md** walks the whole flow through the web app, click by click:
+The **guide** link in the board's header (top right) opens the full
+step-by-step walkthrough in the app itself — no repository needed.
+(Source: `cmd/roost/GUIDE.md`.) It covers the whole flow, click by
+click:
 a roost-made scratch workspace, a fresh agent in work mode building
 and testing real Go code, the rook agent approving the routine asks,
 you personally denying a file deletion from the card, verification in
