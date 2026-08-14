@@ -44,12 +44,6 @@ import (
 //go:embed all:web/build
 var webFS embed.FS
 
-// The guide travels inside the binary: a user who installed roost with
-// one command must not need the repository to read how to use it.
-//
-//go:embed GUIDE.md
-var guideMD []byte
-
 func main() {
 	addr := flag.String("addr", "127.0.0.1:4770", "listen address (\":4770\" opens it to your LAN)")
 	dir := flag.String("dir", "", "projects directory (default ~/.claude/projects)")
@@ -106,6 +100,7 @@ func main() {
 		digestPath: defaultDigestPath(),
 	}
 	s.loadJournals()
+	s.syncGuide()
 	go s.uc.Loop()
 	// A missing key is a standing notice only where the default API
 	// lives; a custom base is a local server that wants no auth.
@@ -126,12 +121,7 @@ func main() {
 	mux.HandleFunc("GET /api/auth", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]bool{"ok": true})
 	})
-	// The guide is documentation, not data: served open (like the SPA
-	// shell) so it is readable even before the login screen.
-	mux.HandleFunc("GET /guide.md", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Write(guideMD)
-	})
+	mux.HandleFunc("GET /api/docs/{id}", s.handleDocGet)
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/agent/{id}", s.handleAgent)
 	mux.HandleFunc("POST /api/agent/{id}/say", s.handleSay)

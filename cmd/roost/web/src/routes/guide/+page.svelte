@@ -1,16 +1,22 @@
 <script>
-	// The guide, readable where the work happens. The markdown ships
-	// inside the binary and is served open at /guide.md (documentation,
-	// not data), so it renders even before login.
+	// The guide, readable where the work happens. It rides the artifact
+	// mechanism: the canonical engine/GUIDE.md is mirrored onto the
+	// docs shelf at startup, and this page reads the shelf — the same
+	// storage model every artifact uses.
 	import { marked } from 'marked';
+	import { api } from '$lib/state.svelte.js';
 
 	let html = $state('');
+	let title = $state('');
 	let failed = $state(false);
 
 	$effect(() => {
-		fetch('/guide.md')
-			.then((r) => (r.ok ? r.text() : Promise.reject()))
-			.then((md) => (html = marked.parse(md)))
+		api('/api/docs/guide')
+			.then((r) => (r.ok ? r.json() : Promise.reject()))
+			.then((doc) => {
+				title = doc.title;
+				html = marked.parse(doc.content);
+			})
 			.catch(() => (failed = true));
 	});
 </script>
@@ -31,7 +37,7 @@
 			<span style="font-size: 12px; color: var(--color-neutral-500);">guide</span>
 			<span style="flex: 1;"></span>
 			<span style="font-size: 11px; color: var(--color-neutral-600);"
-				>the step-by-step agent-guiding-Claude-Code testing guide</span
+				>{title || 'the step-by-step rook agent-guiding-Claude-Code testing guide'}</span
 			>
 		</header>
 
