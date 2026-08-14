@@ -1134,6 +1134,1081 @@ func (x *SayResponse) GetStatus() string {
 	return ""
 }
 
+// Interrupt kills the in-flight say turn — the TUI's Esc. The
+// subprocess dies, the transcript keeps whatever landed, the session
+// resumes cleanly on the next send.
+type InterruptRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InterruptRequest) Reset() {
+	*x = InterruptRequest{}
+	mi := &file_roost_v1_roost_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InterruptRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InterruptRequest) ProtoMessage() {}
+
+func (x *InterruptRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InterruptRequest.ProtoReflect.Descriptor instead.
+func (*InterruptRequest) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *InterruptRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type InterruptResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InterruptResponse) Reset() {
+	*x = InterruptResponse{}
+	mi := &file_roost_v1_roost_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InterruptResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InterruptResponse) ProtoMessage() {}
+
+func (x *InterruptResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InterruptResponse.ProtoReflect.Descriptor instead.
+func (*InterruptResponse) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{15}
+}
+
+// WatchBoard streams the home screen's whole present: the board's
+// columns, the fleet's numbers, the agents rail, the subscription
+// budgets. Frames are whole (the payload is small); one arrives
+// whenever anything in it changes.
+type WatchBoardRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchBoardRequest) Reset() {
+	*x = WatchBoardRequest{}
+	mi := &file_roost_v1_roost_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchBoardRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchBoardRequest) ProtoMessage() {}
+
+func (x *WatchBoardRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchBoardRequest.ProtoReflect.Descriptor instead.
+func (*WatchBoardRequest) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{16}
+}
+
+type WatchBoardResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Tasks         []*BoardTask           `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	Inflight      int32                  `protobuf:"varint,2,opt,name=inflight,proto3" json:"inflight,omitempty"` // drives running right now
+	Spend         float64                `protobuf:"fixed64,3,opt,name=spend,proto3" json:"spend,omitempty"`      // everything this process has spent, rolled up
+	Fleet         *Fleet                 `protobuf:"bytes,4,opt,name=fleet,proto3" json:"fleet,omitempty"`
+	Repos         []*Repo                `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"`
+	Notice        string                 `protobuf:"bytes,6,opt,name=notice,proto3" json:"notice,omitempty"`
+	Sessions      []*Session             `protobuf:"bytes,7,rep,name=sessions,proto3" json:"sessions,omitempty"` // the rail: one row per lineage
+	Current       string                 `protobuf:"bytes,8,opt,name=current,proto3" json:"current,omitempty"`   // the agent with the freshest activity
+	Usage         *Usage                 `protobuf:"bytes,9,opt,name=usage,proto3" json:"usage,omitempty"`       // absent until the collector has answered
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchBoardResponse) Reset() {
+	*x = WatchBoardResponse{}
+	mi := &file_roost_v1_roost_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchBoardResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchBoardResponse) ProtoMessage() {}
+
+func (x *WatchBoardResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchBoardResponse.ProtoReflect.Descriptor instead.
+func (*WatchBoardResponse) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *WatchBoardResponse) GetTasks() []*BoardTask {
+	if x != nil {
+		return x.Tasks
+	}
+	return nil
+}
+
+func (x *WatchBoardResponse) GetInflight() int32 {
+	if x != nil {
+		return x.Inflight
+	}
+	return 0
+}
+
+func (x *WatchBoardResponse) GetSpend() float64 {
+	if x != nil {
+		return x.Spend
+	}
+	return 0
+}
+
+func (x *WatchBoardResponse) GetFleet() *Fleet {
+	if x != nil {
+		return x.Fleet
+	}
+	return nil
+}
+
+func (x *WatchBoardResponse) GetRepos() []*Repo {
+	if x != nil {
+		return x.Repos
+	}
+	return nil
+}
+
+func (x *WatchBoardResponse) GetNotice() string {
+	if x != nil {
+		return x.Notice
+	}
+	return ""
+}
+
+func (x *WatchBoardResponse) GetSessions() []*Session {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+func (x *WatchBoardResponse) GetCurrent() string {
+	if x != nil {
+		return x.Current
+	}
+	return ""
+}
+
+func (x *WatchBoardResponse) GetUsage() *Usage {
+	if x != nil {
+		return x.Usage
+	}
+	return nil
+}
+
+type Fleet struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Agents        int32                  `protobuf:"varint,1,opt,name=agents,proto3" json:"agents,omitempty"`
+	Working       int32                  `protobuf:"varint,2,opt,name=working,proto3" json:"working,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Fleet) Reset() {
+	*x = Fleet{}
+	mi := &file_roost_v1_roost_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Fleet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Fleet) ProtoMessage() {}
+
+func (x *Fleet) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Fleet.ProtoReflect.Descriptor instead.
+func (*Fleet) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *Fleet) GetAgents() int32 {
+	if x != nil {
+		return x.Agents
+	}
+	return 0
+}
+
+func (x *Fleet) GetWorking() int32 {
+	if x != nil {
+		return x.Working
+	}
+	return 0
+}
+
+// Repo is a directory a fresh agent could be born into — a place the
+// fleet has already shown, or a scratch workspace roost made.
+type Repo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Dir           string                 `protobuf:"bytes,1,opt,name=dir,proto3" json:"dir,omitempty"`
+	Cwd           string                 `protobuf:"bytes,2,opt,name=cwd,proto3" json:"cwd,omitempty"`
+	Scratch       bool                   `protobuf:"varint,3,opt,name=scratch,proto3" json:"scratch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Repo) Reset() {
+	*x = Repo{}
+	mi := &file_roost_v1_roost_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Repo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Repo) ProtoMessage() {}
+
+func (x *Repo) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Repo.ProtoReflect.Descriptor instead.
+func (*Repo) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *Repo) GetDir() string {
+	if x != nil {
+		return x.Dir
+	}
+	return ""
+}
+
+func (x *Repo) GetCwd() string {
+	if x != nil {
+		return x.Cwd
+	}
+	return ""
+}
+
+func (x *Repo) GetScratch() bool {
+	if x != nil {
+		return x.Scratch
+	}
+	return false
+}
+
+// Session is one rail row: a lineage root wearing its head's live
+// state — the same shape the REST rail serves.
+type Session struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"` // "working" | "needs you" | "blocked?" | "idle"
+	Dir           string                 `protobuf:"bytes,4,opt,name=dir,proto3" json:"dir,omitempty"`
+	Cwd           string                 `protobuf:"bytes,5,opt,name=cwd,proto3" json:"cwd,omitempty"`
+	Branch        string                 `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`
+	Prompt        string                 `protobuf:"bytes,7,opt,name=prompt,proto3" json:"prompt,omitempty"`                     // the last thing the human asked, snipped
+	LastText      string                 `protobuf:"bytes,8,opt,name=last_text,json=lastText,proto3" json:"last_text,omitempty"` // the last thing the assistant said, snipped
+	CtxPct        int32                  `protobuf:"varint,9,opt,name=ctx_pct,json=ctxPct,proto3" json:"ctx_pct,omitempty"`
+	Model         string                 `protobuf:"bytes,10,opt,name=model,proto3" json:"model,omitempty"`
+	Age           string                 `protobuf:"bytes,11,opt,name=age,proto3" json:"age,omitempty"`
+	Driving       bool                   `protobuf:"varint,12,opt,name=driving,proto3" json:"driving,omitempty"`
+	Tool          string                 `protobuf:"bytes,13,opt,name=tool,proto3" json:"tool,omitempty"`
+	ToolDetail    string                 `protobuf:"bytes,14,opt,name=tool_detail,json=toolDetail,proto3" json:"tool_detail,omitempty"`
+	Task          string                 `protobuf:"bytes,15,opt,name=task,proto3" json:"task,omitempty"` // the open board task assigned to this agent
+	Scratch       bool                   `protobuf:"varint,16,opt,name=scratch,proto3" json:"scratch,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Session) Reset() {
+	*x = Session{}
+	mi := &file_roost_v1_roost_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Session) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Session) ProtoMessage() {}
+
+func (x *Session) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Session.ProtoReflect.Descriptor instead.
+func (*Session) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *Session) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Session) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *Session) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Session) GetDir() string {
+	if x != nil {
+		return x.Dir
+	}
+	return ""
+}
+
+func (x *Session) GetCwd() string {
+	if x != nil {
+		return x.Cwd
+	}
+	return ""
+}
+
+func (x *Session) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *Session) GetPrompt() string {
+	if x != nil {
+		return x.Prompt
+	}
+	return ""
+}
+
+func (x *Session) GetLastText() string {
+	if x != nil {
+		return x.LastText
+	}
+	return ""
+}
+
+func (x *Session) GetCtxPct() int32 {
+	if x != nil {
+		return x.CtxPct
+	}
+	return 0
+}
+
+func (x *Session) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *Session) GetAge() string {
+	if x != nil {
+		return x.Age
+	}
+	return ""
+}
+
+func (x *Session) GetDriving() bool {
+	if x != nil {
+		return x.Driving
+	}
+	return false
+}
+
+func (x *Session) GetTool() string {
+	if x != nil {
+		return x.Tool
+	}
+	return ""
+}
+
+func (x *Session) GetToolDetail() string {
+	if x != nil {
+		return x.ToolDetail
+	}
+	return ""
+}
+
+func (x *Session) GetTask() string {
+	if x != nil {
+		return x.Task
+	}
+	return ""
+}
+
+func (x *Session) GetScratch() bool {
+	if x != nil {
+		return x.Scratch
+	}
+	return false
+}
+
+// Usage is the subscription's rate-limit windows, from claude's own
+// report. Percentages are the truth; resets are prose.
+type Usage struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Mode            string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	SessionPct      int32                  `protobuf:"varint,2,opt,name=session_pct,json=sessionPct,proto3" json:"session_pct,omitempty"`
+	SessionResets   string                 `protobuf:"bytes,3,opt,name=session_resets,json=sessionResets,proto3" json:"session_resets,omitempty"`
+	WeekAllPct      int32                  `protobuf:"varint,4,opt,name=week_all_pct,json=weekAllPct,proto3" json:"week_all_pct,omitempty"`
+	WeekAllResets   string                 `protobuf:"bytes,5,opt,name=week_all_resets,json=weekAllResets,proto3" json:"week_all_resets,omitempty"`
+	WeekModelName   string                 `protobuf:"bytes,6,opt,name=week_model_name,json=weekModelName,proto3" json:"week_model_name,omitempty"`
+	WeekModelPct    int32                  `protobuf:"varint,7,opt,name=week_model_pct,json=weekModelPct,proto3" json:"week_model_pct,omitempty"`
+	WeekModelResets string                 `protobuf:"bytes,8,opt,name=week_model_resets,json=weekModelResets,proto3" json:"week_model_resets,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *Usage) Reset() {
+	*x = Usage{}
+	mi := &file_roost_v1_roost_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Usage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Usage) ProtoMessage() {}
+
+func (x *Usage) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Usage.ProtoReflect.Descriptor instead.
+func (*Usage) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *Usage) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *Usage) GetSessionPct() int32 {
+	if x != nil {
+		return x.SessionPct
+	}
+	return 0
+}
+
+func (x *Usage) GetSessionResets() string {
+	if x != nil {
+		return x.SessionResets
+	}
+	return ""
+}
+
+func (x *Usage) GetWeekAllPct() int32 {
+	if x != nil {
+		return x.WeekAllPct
+	}
+	return 0
+}
+
+func (x *Usage) GetWeekAllResets() string {
+	if x != nil {
+		return x.WeekAllResets
+	}
+	return ""
+}
+
+func (x *Usage) GetWeekModelName() string {
+	if x != nil {
+		return x.WeekModelName
+	}
+	return ""
+}
+
+func (x *Usage) GetWeekModelPct() int32 {
+	if x != nil {
+		return x.WeekModelPct
+	}
+	return 0
+}
+
+func (x *Usage) GetWeekModelResets() string {
+	if x != nil {
+		return x.WeekModelResets
+	}
+	return ""
+}
+
+// BoardTask is one card, whole: the workflow log is the truth about
+// the work, the live overlay is the truth about the moment.
+type BoardTask struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Intent        string                 `protobuf:"bytes,3,opt,name=intent,proto3" json:"intent,omitempty"`
+	Agent         string                 `protobuf:"bytes,4,opt,name=agent,proto3" json:"agent,omitempty"` // the assignment, "" for backlog
+	Goal          string                 `protobuf:"bytes,5,opt,name=goal,proto3" json:"goal,omitempty"`
+	GoalActor     string                 `protobuf:"bytes,6,opt,name=goal_actor,json=goalActor,proto3" json:"goal_actor,omitempty"`
+	Col           string                 `protobuf:"bytes,7,opt,name=col,proto3" json:"col,omitempty"` // inbox | progress | waiting | done | dropped
+	State         string                 `protobuf:"bytes,8,opt,name=state,proto3" json:"state,omitempty"`
+	Ask           string                 `protobuf:"bytes,9,opt,name=ask,proto3" json:"ask,omitempty"`
+	Face          string                 `protobuf:"bytes,10,opt,name=face,proto3" json:"face,omitempty"`
+	Pinned        bool                   `protobuf:"varint,11,opt,name=pinned,proto3" json:"pinned,omitempty"`
+	Proposal      string                 `protobuf:"bytes,12,opt,name=proposal,proto3" json:"proposal,omitempty"`
+	ProposalWhy   string                 `protobuf:"bytes,13,opt,name=proposal_why,json=proposalWhy,proto3" json:"proposal_why,omitempty"`
+	ProposalKind  string                 `protobuf:"bytes,14,opt,name=proposal_kind,json=proposalKind,proto3" json:"proposal_kind,omitempty"` // "start" | "done"
+	CostUsd       float64                `protobuf:"fixed64,15,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	Runs          []*TaskRun             `protobuf:"bytes,16,rep,name=runs,proto3" json:"runs,omitempty"`
+	Workspace     string                 `protobuf:"bytes,17,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	ScratchName   string                 `protobuf:"bytes,18,opt,name=scratch_name,json=scratchName,proto3" json:"scratch_name,omitempty"`
+	Mode          string                 `protobuf:"bytes,19,opt,name=mode,proto3" json:"mode,omitempty"` // "" | "read" | "work"
+	Log           []*TaskEvent           `protobuf:"bytes,20,rep,name=log,proto3" json:"log,omitempty"`
+	Exchanges     []*Exchange            `protobuf:"bytes,21,rep,name=exchanges,proto3" json:"exchanges,omitempty"`
+	CreatedUnixMs int64                  `protobuf:"varint,22,opt,name=created_unix_ms,json=createdUnixMs,proto3" json:"created_unix_ms,omitempty"`
+	UpdatedUnixMs int64                  `protobuf:"varint,23,opt,name=updated_unix_ms,json=updatedUnixMs,proto3" json:"updated_unix_ms,omitempty"`
+	Live          *TaskLive              `protobuf:"bytes,24,opt,name=live,proto3" json:"live,omitempty"` // absent for backlog and closed cards
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoardTask) Reset() {
+	*x = BoardTask{}
+	mi := &file_roost_v1_roost_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoardTask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoardTask) ProtoMessage() {}
+
+func (x *BoardTask) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoardTask.ProtoReflect.Descriptor instead.
+func (*BoardTask) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *BoardTask) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *BoardTask) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *BoardTask) GetIntent() string {
+	if x != nil {
+		return x.Intent
+	}
+	return ""
+}
+
+func (x *BoardTask) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *BoardTask) GetGoal() string {
+	if x != nil {
+		return x.Goal
+	}
+	return ""
+}
+
+func (x *BoardTask) GetGoalActor() string {
+	if x != nil {
+		return x.GoalActor
+	}
+	return ""
+}
+
+func (x *BoardTask) GetCol() string {
+	if x != nil {
+		return x.Col
+	}
+	return ""
+}
+
+func (x *BoardTask) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *BoardTask) GetAsk() string {
+	if x != nil {
+		return x.Ask
+	}
+	return ""
+}
+
+func (x *BoardTask) GetFace() string {
+	if x != nil {
+		return x.Face
+	}
+	return ""
+}
+
+func (x *BoardTask) GetPinned() bool {
+	if x != nil {
+		return x.Pinned
+	}
+	return false
+}
+
+func (x *BoardTask) GetProposal() string {
+	if x != nil {
+		return x.Proposal
+	}
+	return ""
+}
+
+func (x *BoardTask) GetProposalWhy() string {
+	if x != nil {
+		return x.ProposalWhy
+	}
+	return ""
+}
+
+func (x *BoardTask) GetProposalKind() string {
+	if x != nil {
+		return x.ProposalKind
+	}
+	return ""
+}
+
+func (x *BoardTask) GetCostUsd() float64 {
+	if x != nil {
+		return x.CostUsd
+	}
+	return 0
+}
+
+func (x *BoardTask) GetRuns() []*TaskRun {
+	if x != nil {
+		return x.Runs
+	}
+	return nil
+}
+
+func (x *BoardTask) GetWorkspace() string {
+	if x != nil {
+		return x.Workspace
+	}
+	return ""
+}
+
+func (x *BoardTask) GetScratchName() string {
+	if x != nil {
+		return x.ScratchName
+	}
+	return ""
+}
+
+func (x *BoardTask) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *BoardTask) GetLog() []*TaskEvent {
+	if x != nil {
+		return x.Log
+	}
+	return nil
+}
+
+func (x *BoardTask) GetExchanges() []*Exchange {
+	if x != nil {
+		return x.Exchanges
+	}
+	return nil
+}
+
+func (x *BoardTask) GetCreatedUnixMs() int64 {
+	if x != nil {
+		return x.CreatedUnixMs
+	}
+	return 0
+}
+
+func (x *BoardTask) GetUpdatedUnixMs() int64 {
+	if x != nil {
+		return x.UpdatedUnixMs
+	}
+	return 0
+}
+
+func (x *BoardTask) GetLive() *TaskLive {
+	if x != nil {
+		return x.Live
+	}
+	return nil
+}
+
+type TaskRun struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"` // drive | say
+	Outcome       string                 `protobuf:"bytes,2,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	CostUsd       float64                `protobuf:"fixed64,3,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskRun) Reset() {
+	*x = TaskRun{}
+	mi := &file_roost_v1_roost_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskRun) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskRun) ProtoMessage() {}
+
+func (x *TaskRun) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskRun.ProtoReflect.Descriptor instead.
+func (*TaskRun) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *TaskRun) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *TaskRun) GetOutcome() string {
+	if x != nil {
+		return x.Outcome
+	}
+	return ""
+}
+
+func (x *TaskRun) GetCostUsd() float64 {
+	if x != nil {
+		return x.CostUsd
+	}
+	return 0
+}
+
+type TaskEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AtUnixMs      int64                  `protobuf:"varint,1,opt,name=at_unix_ms,json=atUnixMs,proto3" json:"at_unix_ms,omitempty"`
+	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"` // human | rook | worker
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskEvent) Reset() {
+	*x = TaskEvent{}
+	mi := &file_roost_v1_roost_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskEvent) ProtoMessage() {}
+
+func (x *TaskEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskEvent.ProtoReflect.Descriptor instead.
+func (*TaskEvent) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *TaskEvent) GetAtUnixMs() int64 {
+	if x != nil {
+		return x.AtUnixMs
+	}
+	return 0
+}
+
+func (x *TaskEvent) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *TaskEvent) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type Exchange struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Prompt        string                 `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Reply         string                 `protobuf:"bytes,2,opt,name=reply,proto3" json:"reply,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Exchange) Reset() {
+	*x = Exchange{}
+	mi := &file_roost_v1_roost_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Exchange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Exchange) ProtoMessage() {}
+
+func (x *Exchange) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Exchange.ProtoReflect.Descriptor instead.
+func (*Exchange) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *Exchange) GetPrompt() string {
+	if x != nil {
+		return x.Prompt
+	}
+	return ""
+}
+
+func (x *Exchange) GetReply() string {
+	if x != nil {
+		return x.Reply
+	}
+	return ""
+}
+
+type TaskLive struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Dir           string                 `protobuf:"bytes,1,opt,name=dir,proto3" json:"dir,omitempty"`
+	State         string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	Now           string                 `protobuf:"bytes,3,opt,name=now,proto3" json:"now,omitempty"` // ⛭ tool — detail
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskLive) Reset() {
+	*x = TaskLive{}
+	mi := &file_roost_v1_roost_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskLive) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskLive) ProtoMessage() {}
+
+func (x *TaskLive) ProtoReflect() protoreflect.Message {
+	mi := &file_roost_v1_roost_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskLive.ProtoReflect.Descriptor instead.
+func (*TaskLive) Descriptor() ([]byte, []int) {
+	return file_roost_v1_roost_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *TaskLive) GetDir() string {
+	if x != nil {
+		return x.Dir
+	}
+	return ""
+}
+
+func (x *TaskLive) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *TaskLive) GetNow() string {
+	if x != nil {
+		return x.Now
+	}
+	return ""
+}
+
 var File_roost_v1_roost_proto protoreflect.FileDescriptor
 
 const file_roost_v1_roost_proto_rawDesc = "" +
@@ -1234,11 +2309,108 @@ const file_roost_v1_roost_proto_rawDesc = "" +
 	"\x04perm\x18\x05 \x01(\tR\x04perm\x12\x16\n" +
 	"\x06images\x18\x06 \x03(\tR\x06images\"%\n" +
 	"\vSayResponse\x12\x16\n" +
-	"\x06status\x18\x01 \x01(\tR\x06status2\x8d\x01\n" +
+	"\x06status\x18\x01 \x01(\tR\x06status\"\"\n" +
+	"\x10InterruptRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x13\n" +
+	"\x11InterruptResponse\"\x13\n" +
+	"\x11WatchBoardRequest\"\xc6\x02\n" +
+	"\x12WatchBoardResponse\x12)\n" +
+	"\x05tasks\x18\x01 \x03(\v2\x13.roost.v1.BoardTaskR\x05tasks\x12\x1a\n" +
+	"\binflight\x18\x02 \x01(\x05R\binflight\x12\x14\n" +
+	"\x05spend\x18\x03 \x01(\x01R\x05spend\x12%\n" +
+	"\x05fleet\x18\x04 \x01(\v2\x0f.roost.v1.FleetR\x05fleet\x12$\n" +
+	"\x05repos\x18\x05 \x03(\v2\x0e.roost.v1.RepoR\x05repos\x12\x16\n" +
+	"\x06notice\x18\x06 \x01(\tR\x06notice\x12-\n" +
+	"\bsessions\x18\a \x03(\v2\x11.roost.v1.SessionR\bsessions\x12\x18\n" +
+	"\acurrent\x18\b \x01(\tR\acurrent\x12%\n" +
+	"\x05usage\x18\t \x01(\v2\x0f.roost.v1.UsageR\x05usage\"9\n" +
+	"\x05Fleet\x12\x16\n" +
+	"\x06agents\x18\x01 \x01(\x05R\x06agents\x12\x18\n" +
+	"\aworking\x18\x02 \x01(\x05R\aworking\"D\n" +
+	"\x04Repo\x12\x10\n" +
+	"\x03dir\x18\x01 \x01(\tR\x03dir\x12\x10\n" +
+	"\x03cwd\x18\x02 \x01(\tR\x03cwd\x12\x18\n" +
+	"\ascratch\x18\x03 \x01(\bR\ascratch\"\xf4\x02\n" +
+	"\aSession\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x10\n" +
+	"\x03dir\x18\x04 \x01(\tR\x03dir\x12\x10\n" +
+	"\x03cwd\x18\x05 \x01(\tR\x03cwd\x12\x16\n" +
+	"\x06branch\x18\x06 \x01(\tR\x06branch\x12\x16\n" +
+	"\x06prompt\x18\a \x01(\tR\x06prompt\x12\x1b\n" +
+	"\tlast_text\x18\b \x01(\tR\blastText\x12\x17\n" +
+	"\actx_pct\x18\t \x01(\x05R\x06ctxPct\x12\x14\n" +
+	"\x05model\x18\n" +
+	" \x01(\tR\x05model\x12\x10\n" +
+	"\x03age\x18\v \x01(\tR\x03age\x12\x18\n" +
+	"\adriving\x18\f \x01(\bR\adriving\x12\x12\n" +
+	"\x04tool\x18\r \x01(\tR\x04tool\x12\x1f\n" +
+	"\vtool_detail\x18\x0e \x01(\tR\n" +
+	"toolDetail\x12\x12\n" +
+	"\x04task\x18\x0f \x01(\tR\x04task\x12\x18\n" +
+	"\ascratch\x18\x10 \x01(\bR\ascratch\"\xa7\x02\n" +
+	"\x05Usage\x12\x12\n" +
+	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x1f\n" +
+	"\vsession_pct\x18\x02 \x01(\x05R\n" +
+	"sessionPct\x12%\n" +
+	"\x0esession_resets\x18\x03 \x01(\tR\rsessionResets\x12 \n" +
+	"\fweek_all_pct\x18\x04 \x01(\x05R\n" +
+	"weekAllPct\x12&\n" +
+	"\x0fweek_all_resets\x18\x05 \x01(\tR\rweekAllResets\x12&\n" +
+	"\x0fweek_model_name\x18\x06 \x01(\tR\rweekModelName\x12$\n" +
+	"\x0eweek_model_pct\x18\a \x01(\x05R\fweekModelPct\x12*\n" +
+	"\x11week_model_resets\x18\b \x01(\tR\x0fweekModelResets\"\xc4\x05\n" +
+	"\tBoardTask\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x16\n" +
+	"\x06intent\x18\x03 \x01(\tR\x06intent\x12\x14\n" +
+	"\x05agent\x18\x04 \x01(\tR\x05agent\x12\x12\n" +
+	"\x04goal\x18\x05 \x01(\tR\x04goal\x12\x1d\n" +
+	"\n" +
+	"goal_actor\x18\x06 \x01(\tR\tgoalActor\x12\x10\n" +
+	"\x03col\x18\a \x01(\tR\x03col\x12\x14\n" +
+	"\x05state\x18\b \x01(\tR\x05state\x12\x10\n" +
+	"\x03ask\x18\t \x01(\tR\x03ask\x12\x12\n" +
+	"\x04face\x18\n" +
+	" \x01(\tR\x04face\x12\x16\n" +
+	"\x06pinned\x18\v \x01(\bR\x06pinned\x12\x1a\n" +
+	"\bproposal\x18\f \x01(\tR\bproposal\x12!\n" +
+	"\fproposal_why\x18\r \x01(\tR\vproposalWhy\x12#\n" +
+	"\rproposal_kind\x18\x0e \x01(\tR\fproposalKind\x12\x19\n" +
+	"\bcost_usd\x18\x0f \x01(\x01R\acostUsd\x12%\n" +
+	"\x04runs\x18\x10 \x03(\v2\x11.roost.v1.TaskRunR\x04runs\x12\x1c\n" +
+	"\tworkspace\x18\x11 \x01(\tR\tworkspace\x12!\n" +
+	"\fscratch_name\x18\x12 \x01(\tR\vscratchName\x12\x12\n" +
+	"\x04mode\x18\x13 \x01(\tR\x04mode\x12%\n" +
+	"\x03log\x18\x14 \x03(\v2\x13.roost.v1.TaskEventR\x03log\x120\n" +
+	"\texchanges\x18\x15 \x03(\v2\x12.roost.v1.ExchangeR\texchanges\x12&\n" +
+	"\x0fcreated_unix_ms\x18\x16 \x01(\x03R\rcreatedUnixMs\x12&\n" +
+	"\x0fupdated_unix_ms\x18\x17 \x01(\x03R\rupdatedUnixMs\x12&\n" +
+	"\x04live\x18\x18 \x01(\v2\x12.roost.v1.TaskLiveR\x04live\"R\n" +
+	"\aTaskRun\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
+	"\aoutcome\x18\x02 \x01(\tR\aoutcome\x12\x19\n" +
+	"\bcost_usd\x18\x03 \x01(\x01R\acostUsd\"S\n" +
+	"\tTaskEvent\x12\x1c\n" +
+	"\n" +
+	"at_unix_ms\x18\x01 \x01(\x03R\batUnixMs\x12\x14\n" +
+	"\x05actor\x18\x02 \x01(\tR\x05actor\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\"8\n" +
+	"\bExchange\x12\x16\n" +
+	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12\x14\n" +
+	"\x05reply\x18\x02 \x01(\tR\x05reply\"D\n" +
+	"\bTaskLive\x12\x10\n" +
+	"\x03dir\x18\x01 \x01(\tR\x03dir\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\x12\x10\n" +
+	"\x03now\x18\x03 \x01(\tR\x03now2\x9e\x02\n" +
 	"\fRoostService\x12I\n" +
 	"\n" +
 	"WatchAgent\x12\x1b.roost.v1.WatchAgentRequest\x1a\x1c.roost.v1.WatchAgentResponse0\x01\x122\n" +
-	"\x03Say\x12\x14.roost.v1.SayRequest\x1a\x15.roost.v1.SayResponseB<Z:github.com/incantery/rook-host/engine/gen/roost/v1;roostv1b\x06proto3"
+	"\x03Say\x12\x14.roost.v1.SayRequest\x1a\x15.roost.v1.SayResponse\x12D\n" +
+	"\tInterrupt\x12\x1a.roost.v1.InterruptRequest\x1a\x1b.roost.v1.InterruptResponse\x12I\n" +
+	"\n" +
+	"WatchBoard\x12\x1b.roost.v1.WatchBoardRequest\x1a\x1c.roost.v1.WatchBoardResponse0\x01B<Z:github.com/incantery/rook-host/engine/gen/roost/v1;roostv1b\x06proto3"
 
 var (
 	file_roost_v1_roost_proto_rawDescOnce sync.Once
@@ -1252,7 +2424,7 @@ func file_roost_v1_roost_proto_rawDescGZIP() []byte {
 	return file_roost_v1_roost_proto_rawDescData
 }
 
-var file_roost_v1_roost_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_roost_v1_roost_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_roost_v1_roost_proto_goTypes = []any{
 	(*WatchAgentRequest)(nil),  // 0: roost.v1.WatchAgentRequest
 	(*WatchAgentResponse)(nil), // 1: roost.v1.WatchAgentResponse
@@ -1268,6 +2440,19 @@ var file_roost_v1_roost_proto_goTypes = []any{
 	(*TreeFile)(nil),           // 11: roost.v1.TreeFile
 	(*SayRequest)(nil),         // 12: roost.v1.SayRequest
 	(*SayResponse)(nil),        // 13: roost.v1.SayResponse
+	(*InterruptRequest)(nil),   // 14: roost.v1.InterruptRequest
+	(*InterruptResponse)(nil),  // 15: roost.v1.InterruptResponse
+	(*WatchBoardRequest)(nil),  // 16: roost.v1.WatchBoardRequest
+	(*WatchBoardResponse)(nil), // 17: roost.v1.WatchBoardResponse
+	(*Fleet)(nil),              // 18: roost.v1.Fleet
+	(*Repo)(nil),               // 19: roost.v1.Repo
+	(*Session)(nil),            // 20: roost.v1.Session
+	(*Usage)(nil),              // 21: roost.v1.Usage
+	(*BoardTask)(nil),          // 22: roost.v1.BoardTask
+	(*TaskRun)(nil),            // 23: roost.v1.TaskRun
+	(*TaskEvent)(nil),          // 24: roost.v1.TaskEvent
+	(*Exchange)(nil),           // 25: roost.v1.Exchange
+	(*TaskLive)(nil),           // 26: roost.v1.TaskLive
 }
 var file_roost_v1_roost_proto_depIdxs = []int32{
 	2,  // 0: roost.v1.WatchAgentResponse.agent:type_name -> roost.v1.Agent
@@ -1280,15 +2465,28 @@ var file_roost_v1_roost_proto_depIdxs = []int32{
 	4,  // 7: roost.v1.Msg.steps:type_name -> roost.v1.Step
 	6,  // 8: roost.v1.Msg.digest:type_name -> roost.v1.Digest
 	5,  // 9: roost.v1.Step.diff:type_name -> roost.v1.Diff
-	0,  // 10: roost.v1.RoostService.WatchAgent:input_type -> roost.v1.WatchAgentRequest
-	12, // 11: roost.v1.RoostService.Say:input_type -> roost.v1.SayRequest
-	1,  // 12: roost.v1.RoostService.WatchAgent:output_type -> roost.v1.WatchAgentResponse
-	13, // 13: roost.v1.RoostService.Say:output_type -> roost.v1.SayResponse
-	12, // [12:14] is the sub-list for method output_type
-	10, // [10:12] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	22, // 10: roost.v1.WatchBoardResponse.tasks:type_name -> roost.v1.BoardTask
+	18, // 11: roost.v1.WatchBoardResponse.fleet:type_name -> roost.v1.Fleet
+	19, // 12: roost.v1.WatchBoardResponse.repos:type_name -> roost.v1.Repo
+	20, // 13: roost.v1.WatchBoardResponse.sessions:type_name -> roost.v1.Session
+	21, // 14: roost.v1.WatchBoardResponse.usage:type_name -> roost.v1.Usage
+	23, // 15: roost.v1.BoardTask.runs:type_name -> roost.v1.TaskRun
+	24, // 16: roost.v1.BoardTask.log:type_name -> roost.v1.TaskEvent
+	25, // 17: roost.v1.BoardTask.exchanges:type_name -> roost.v1.Exchange
+	26, // 18: roost.v1.BoardTask.live:type_name -> roost.v1.TaskLive
+	0,  // 19: roost.v1.RoostService.WatchAgent:input_type -> roost.v1.WatchAgentRequest
+	12, // 20: roost.v1.RoostService.Say:input_type -> roost.v1.SayRequest
+	14, // 21: roost.v1.RoostService.Interrupt:input_type -> roost.v1.InterruptRequest
+	16, // 22: roost.v1.RoostService.WatchBoard:input_type -> roost.v1.WatchBoardRequest
+	1,  // 23: roost.v1.RoostService.WatchAgent:output_type -> roost.v1.WatchAgentResponse
+	13, // 24: roost.v1.RoostService.Say:output_type -> roost.v1.SayResponse
+	15, // 25: roost.v1.RoostService.Interrupt:output_type -> roost.v1.InterruptResponse
+	17, // 26: roost.v1.RoostService.WatchBoard:output_type -> roost.v1.WatchBoardResponse
+	23, // [23:27] is the sub-list for method output_type
+	19, // [19:23] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_roost_v1_roost_proto_init() }
@@ -1302,7 +2500,7 @@ func file_roost_v1_roost_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_roost_v1_roost_proto_rawDesc), len(file_roost_v1_roost_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

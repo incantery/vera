@@ -37,6 +37,73 @@ func TestSayRPCTranslatesRefusals(t *testing.T) {
 	}
 }
 
+// Interrupt in Connect's vocabulary: a gone agent is NotFound, a
+// quiet one FailedPrecondition.
+func TestInterruptRPCTranslatesRefusals(t *testing.T) {
+	dir := t.TempDir()
+	writeTranscript(t, dir, "-repo-alpha", "sess-live", time.Now().Add(-time.Minute))
+	s := testServer(t, dir)
+	s.hub = newHub()
+	r := &roostRPC{s: s}
+	ctx := context.Background()
+
+	_, err := r.Interrupt(ctx, connect.NewRequest(&roostv1.InterruptRequest{Id: "stranger"}))
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("a gone agent must be NotFound: %v", err)
+	}
+	_, err = r.Interrupt(ctx, connect.NewRequest(&roostv1.InterruptRequest{Id: "sess-live"}))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("nothing in flight must be FailedPrecondition: %v", err)
+	}
+}
+
+// The board stream: a full frame first, another when the board moves
+// (here: a capture landing between frames), silence when it does not.
+func TestWatchBoardStreamsFramesOnChange(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now)
+	s := testServer(t, dir)
+	s.hub = newHub()
+
+	mux := http.NewServeMux()
+	path, h := roostv1connect.NewRoostServiceHandler(&roostRPC{s: s})
+	mux.Handle(path, h)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := roostv1connect.NewRoostServiceClient(srv.Client(), srv.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stream, err := client.WatchBoard(ctx, connect.NewRequest(&roostv1.WatchBoardRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() {
+		t.Fatalf("no first frame: %v", stream.Err())
+	}
+	first := stream.Msg()
+	if len(first.Tasks) != 1 || first.Fleet.Working != 1 || len(first.Sessions) != 1 {
+		t.Fatalf("first frame must carry the whole present: tasks=%d working=%d sessions=%d",
+			len(first.Tasks), first.Fleet.Working, len(first.Sessions))
+	}
+	if first.Tasks[0].Live == nil || first.Tasks[0].Live.State != "working" {
+		t.Fatalf("the adopted card must wear its live overlay: %+v", first.Tasks[0].Live)
+	}
+
+	// A capture lands; the hub pokes; the next frame carries it.
+	if _, err := s.tasks.capture("new backlog", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	s.hub.notify()
+	if !stream.Receive() {
+		t.Fatalf("no frame after the capture: %v", stream.Err())
+	}
+	if len(stream.Msg().Tasks) != 2 {
+		t.Fatalf("the capture must ride the next frame: %d tasks", len(stream.Msg().Tasks))
+	}
+}
+
 // The watch contract a phone will rely on: the first frame is a full
 // snapshot; a new turn arrives as a tail delta, not a resend.
 func TestWatchAgentStreamsSnapshotThenDelta(t *testing.T) {

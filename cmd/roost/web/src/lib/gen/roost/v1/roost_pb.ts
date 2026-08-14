@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file roost/v1/roost.proto.
  */
 export const file_roost_v1_roost: GenFile = /*@__PURE__*/
-  fileDesc("ChRyb29zdC92MS9yb29zdC5wcm90bxIIcm9vc3QudjEiLAoRV2F0Y2hBZ2VudFJlcXVlc3QSCgoCaWQYASABKAkSCwoDcmF3GAIgASgIIrcCChJXYXRjaEFnZW50UmVzcG9uc2USHgoFYWdlbnQYASABKAsyDy5yb29zdC52MS5BZ2VudBINCgVyZXNldBgCIAEoCBIMCgRmcm9tGAMgASgFEh4KB2hpc3RvcnkYBCADKAsyDS5yb29zdC52MS5Nc2cSGgoDY3R4GAUgASgLMg0ucm9vc3QudjEuQ3R4Eh4KBXNwZW5kGAYgASgLMg8ucm9vc3QudjEuU3BlbmQSIgoHcGVuZGluZxgHIAEoCzIRLnJvb3N0LnYxLlBlbmRpbmcSHwoFcXVldWUYCCADKAsyEC5yb29zdC52MS5RdWV1ZWQSIAoEdHJlZRgJIAMoCzISLnJvb3N0LnYxLlRyZWVGaWxlEg4KBnJlc3VtZRgKIAEoCRIRCglhcnRpZmFjdHMYCyABKAUijwEKBUFnZW50EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEg0KBXN0YXRlGAMgASgJEgsKA2RpchgEIAEoCRIOCgZicmFuY2gYBSABKAkSDAoEdG9vbBgGIAEoCRITCgt0b29sX2RldGFpbBgHIAEoCRIPCgdjdHhfcGN0GAggASgFEgsKA2FnZRgJIAEoCSKqAQoDTXNnEgwKBHJvbGUYASABKAkSDAoEdGV4dBgCIAEoCRINCgV0b29scxgDIAEoBRIdCgVzdGVwcxgEIAMoCzIOLnJvb3N0LnYxLlN0ZXASDQoFdGhpbmsYBSADKAkSCwoDY3R4GAYgASgDEg0KBXJvdWdoGAcgASgJEiAKBmRpZ2VzdBgIIAEoCzIQLnJvb3N0LnYxLkRpZ2VzdBIMCgRzZWNzGAkgASgFImsKBFN0ZXASDAoEdG9vbBgBIAEoCRIOCgZkZXRhaWwYAiABKAkSHAoEZGlmZhgDIAEoCzIOLnJvb3N0LnYxLkRpZmYSCwoDb3V0GAQgASgJEg0KBWxpbmVzGAUgASgFEgsKA2VychgGIAEoCCJDCgREaWZmEgwKBGZpbGUYASABKAkSCwoDb2xkGAIgASgJEgsKA25ldxgDIAEoCRITCgtyZXBsYWNlX2FsbBgEIAEoCCI6CgZEaWdlc3QSDQoFc3RhdGUYASABKAkSEAoIaGVhZGxpbmUYAiABKAkSDwoHYnVsbGV0cxgDIAMoCSJ8CgNDdHgSDgoGdG9rZW5zGAEgASgDEhAKCGZyZXNoX2luGAIgASgDEhIKCmNhY2hlX3JlYWQYAyABKAMSEwoLY2FjaGVfd3JpdGUYBCABKAMSCwoDb3V0GAUgASgDEg4KBndpbmRvdxgGIAEoAxINCgVtb2RlbBgHIAEoCSIuCgVTcGVuZBISCgpjbGF1ZGVfdXNkGAEgASgBEhEKCWp1ZGdlX3VzZBgCIAEoASKGAQoHUGVuZGluZxIMCgR0ZXh0GAEgASgJEgwKBHNlbnQYAiABKAkSDgoGc3RhdHVzGAMgASgJEg0KBWVycm9yGAQgASgJEg4KBmRpcmVjdBgFIAEoCBIMCgRwZXJtGAYgASgJEg4KBmltYWdlcxgHIAMoCRISCgphdF91bml4X21zGAggASgDIiQKBlF1ZXVlZBIMCgR0ZXh0GAEgASgJEgwKBHBlcm0YAiABKAkiQgoIVHJlZUZpbGUSDAoEcGF0aBgBIAEoCRILCgNhZGQYAiABKAUSCwoDZGVsGAMgASgFEg4KBmlzX25ldxgEIAEoCCJmCgpTYXlSZXF1ZXN0EgoKAmlkGAEgASgJEgwKBHRleHQYAiABKAkSEAoIdmVyYmF0aW0YAyABKAgSDgoGZGlyZWN0GAQgASgIEgwKBHBlcm0YBSABKAkSDgoGaW1hZ2VzGAYgAygJIh0KC1NheVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCTKNAQoMUm9vc3RTZXJ2aWNlEkkKCldhdGNoQWdlbnQSGy5yb29zdC52MS5XYXRjaEFnZW50UmVxdWVzdBocLnJvb3N0LnYxLldhdGNoQWdlbnRSZXNwb25zZTABEjIKA1NheRIULnJvb3N0LnYxLlNheVJlcXVlc3QaFS5yb29zdC52MS5TYXlSZXNwb25zZUI8WjpnaXRodWIuY29tL2luY2FudGVyeS9yb29rLWhvc3QvZW5naW5lL2dlbi9yb29zdC92MTtyb29zdHYxYgZwcm90bzM");
+  fileDesc("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bWUYEiABKAkSDAoEbW9kZRgTIAEoCRIgCgNsb2cYFCADKAsyEy5yb29zdC52MS5UYXNrRXZlbnQSJQoJZXhjaGFuZ2VzGBUgAygLMhIucm9vc3QudjEuRXhjaGFuZ2USFwoPY3JlYXRlZF91bml4X21zGBYgASgDEhcKD3VwZGF0ZWRfdW5peF9tcxgXIAEoAxIgCgRsaXZlGBggASgLMhIucm9vc3QudjEuVGFza0xpdmUiOgoHVGFza1J1bhIMCgRraW5kGAEgASgJEg8KB291dGNvbWUYAiABKAkSEAoIY29zdF91c2QYAyABKAEiPAoJVGFza0V2ZW50EhIKCmF0X3VuaXhfbXMYASABKAMSDQoFYWN0b3IYAiABKAkSDAoEdGV4dBgDIAEoCSIpCghFeGNoYW5nZRIOCgZwcm9tcHQYASABKAkSDQoFcmVwbHkYAiABKAkiMwoIVGFza0xpdmUSCwoDZGlyGAEgASgJEg0KBXN0YXRlGAIgASgJEgsKA25vdxgDIAEoCTKeAgoMUm9vc3RTZXJ2aWNlEkkKCldhdGNoQWdlbnQSGy5yb29zdC52MS5XYXRjaEFnZW50UmVxdWVzdBocLnJvb3N0LnYxLldhdGNoQWdlbnRSZXNwb25zZTABEjIKA1NheRIULnJvb3N0LnYxLlNheVJlcXVlc3QaFS5yb29zdC52MS5TYXlSZXNwb25zZRJECglJbnRlcnJ1cHQSGi5yb29zdC52MS5JbnRlcnJ1cHRSZXF1ZXN0Ghsucm9vc3QudjEuSW50ZXJydXB0UmVzcG9uc2USSQoKV2F0Y2hCb2FyZBIbLnJvb3N0LnYxLldhdGNoQm9hcmRSZXF1ZXN0Ghwucm9vc3QudjEuV2F0Y2hCb2FyZFJlc3BvbnNlMAFCPFo6Z2l0aHViLmNvbS9pbmNhbnRlcnkvcm9vay1ob3N0L2VuZ2luZS9nZW4vcm9vc3QvdjE7cm9vc3R2MWIGcHJvdG8z");
 
 /**
  * WatchAgent streams one agent's whole present: a full snapshot
@@ -610,6 +610,589 @@ export const SayResponseSchema: GenMessage<SayResponse> = /*@__PURE__*/
   messageDesc(file_roost_v1_roost, 13);
 
 /**
+ * Interrupt kills the in-flight say turn — the TUI's Esc. The
+ * subprocess dies, the transcript keeps whatever landed, the session
+ * resumes cleanly on the next send.
+ *
+ * @generated from message roost.v1.InterruptRequest
+ */
+export type InterruptRequest = Message<"roost.v1.InterruptRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message roost.v1.InterruptRequest.
+ * Use `create(InterruptRequestSchema)` to create a new message.
+ */
+export const InterruptRequestSchema: GenMessage<InterruptRequest> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 14);
+
+/**
+ * @generated from message roost.v1.InterruptResponse
+ */
+export type InterruptResponse = Message<"roost.v1.InterruptResponse"> & {
+};
+
+/**
+ * Describes the message roost.v1.InterruptResponse.
+ * Use `create(InterruptResponseSchema)` to create a new message.
+ */
+export const InterruptResponseSchema: GenMessage<InterruptResponse> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 15);
+
+/**
+ * WatchBoard streams the home screen's whole present: the board's
+ * columns, the fleet's numbers, the agents rail, the subscription
+ * budgets. Frames are whole (the payload is small); one arrives
+ * whenever anything in it changes.
+ *
+ * @generated from message roost.v1.WatchBoardRequest
+ */
+export type WatchBoardRequest = Message<"roost.v1.WatchBoardRequest"> & {
+};
+
+/**
+ * Describes the message roost.v1.WatchBoardRequest.
+ * Use `create(WatchBoardRequestSchema)` to create a new message.
+ */
+export const WatchBoardRequestSchema: GenMessage<WatchBoardRequest> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 16);
+
+/**
+ * @generated from message roost.v1.WatchBoardResponse
+ */
+export type WatchBoardResponse = Message<"roost.v1.WatchBoardResponse"> & {
+  /**
+   * @generated from field: repeated roost.v1.BoardTask tasks = 1;
+   */
+  tasks: BoardTask[];
+
+  /**
+   * drives running right now
+   *
+   * @generated from field: int32 inflight = 2;
+   */
+  inflight: number;
+
+  /**
+   * everything this process has spent, rolled up
+   *
+   * @generated from field: double spend = 3;
+   */
+  spend: number;
+
+  /**
+   * @generated from field: roost.v1.Fleet fleet = 4;
+   */
+  fleet?: Fleet | undefined;
+
+  /**
+   * @generated from field: repeated roost.v1.Repo repos = 5;
+   */
+  repos: Repo[];
+
+  /**
+   * @generated from field: string notice = 6;
+   */
+  notice: string;
+
+  /**
+   * the rail: one row per lineage
+   *
+   * @generated from field: repeated roost.v1.Session sessions = 7;
+   */
+  sessions: Session[];
+
+  /**
+   * the agent with the freshest activity
+   *
+   * @generated from field: string current = 8;
+   */
+  current: string;
+
+  /**
+   * absent until the collector has answered
+   *
+   * @generated from field: roost.v1.Usage usage = 9;
+   */
+  usage?: Usage | undefined;
+};
+
+/**
+ * Describes the message roost.v1.WatchBoardResponse.
+ * Use `create(WatchBoardResponseSchema)` to create a new message.
+ */
+export const WatchBoardResponseSchema: GenMessage<WatchBoardResponse> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 17);
+
+/**
+ * @generated from message roost.v1.Fleet
+ */
+export type Fleet = Message<"roost.v1.Fleet"> & {
+  /**
+   * @generated from field: int32 agents = 1;
+   */
+  agents: number;
+
+  /**
+   * @generated from field: int32 working = 2;
+   */
+  working: number;
+};
+
+/**
+ * Describes the message roost.v1.Fleet.
+ * Use `create(FleetSchema)` to create a new message.
+ */
+export const FleetSchema: GenMessage<Fleet> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 18);
+
+/**
+ * Repo is a directory a fresh agent could be born into — a place the
+ * fleet has already shown, or a scratch workspace roost made.
+ *
+ * @generated from message roost.v1.Repo
+ */
+export type Repo = Message<"roost.v1.Repo"> & {
+  /**
+   * @generated from field: string dir = 1;
+   */
+  dir: string;
+
+  /**
+   * @generated from field: string cwd = 2;
+   */
+  cwd: string;
+
+  /**
+   * @generated from field: bool scratch = 3;
+   */
+  scratch: boolean;
+};
+
+/**
+ * Describes the message roost.v1.Repo.
+ * Use `create(RepoSchema)` to create a new message.
+ */
+export const RepoSchema: GenMessage<Repo> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 19);
+
+/**
+ * Session is one rail row: a lineage root wearing its head's live
+ * state — the same shape the REST rail serves.
+ *
+ * @generated from message roost.v1.Session
+ */
+export type Session = Message<"roost.v1.Session"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * "working" | "needs you" | "blocked?" | "idle"
+   *
+   * @generated from field: string state = 3;
+   */
+  state: string;
+
+  /**
+   * @generated from field: string dir = 4;
+   */
+  dir: string;
+
+  /**
+   * @generated from field: string cwd = 5;
+   */
+  cwd: string;
+
+  /**
+   * @generated from field: string branch = 6;
+   */
+  branch: string;
+
+  /**
+   * the last thing the human asked, snipped
+   *
+   * @generated from field: string prompt = 7;
+   */
+  prompt: string;
+
+  /**
+   * the last thing the assistant said, snipped
+   *
+   * @generated from field: string last_text = 8;
+   */
+  lastText: string;
+
+  /**
+   * @generated from field: int32 ctx_pct = 9;
+   */
+  ctxPct: number;
+
+  /**
+   * @generated from field: string model = 10;
+   */
+  model: string;
+
+  /**
+   * @generated from field: string age = 11;
+   */
+  age: string;
+
+  /**
+   * @generated from field: bool driving = 12;
+   */
+  driving: boolean;
+
+  /**
+   * @generated from field: string tool = 13;
+   */
+  tool: string;
+
+  /**
+   * @generated from field: string tool_detail = 14;
+   */
+  toolDetail: string;
+
+  /**
+   * the open board task assigned to this agent
+   *
+   * @generated from field: string task = 15;
+   */
+  task: string;
+
+  /**
+   * @generated from field: bool scratch = 16;
+   */
+  scratch: boolean;
+};
+
+/**
+ * Describes the message roost.v1.Session.
+ * Use `create(SessionSchema)` to create a new message.
+ */
+export const SessionSchema: GenMessage<Session> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 20);
+
+/**
+ * Usage is the subscription's rate-limit windows, from claude's own
+ * report. Percentages are the truth; resets are prose.
+ *
+ * @generated from message roost.v1.Usage
+ */
+export type Usage = Message<"roost.v1.Usage"> & {
+  /**
+   * @generated from field: string mode = 1;
+   */
+  mode: string;
+
+  /**
+   * @generated from field: int32 session_pct = 2;
+   */
+  sessionPct: number;
+
+  /**
+   * @generated from field: string session_resets = 3;
+   */
+  sessionResets: string;
+
+  /**
+   * @generated from field: int32 week_all_pct = 4;
+   */
+  weekAllPct: number;
+
+  /**
+   * @generated from field: string week_all_resets = 5;
+   */
+  weekAllResets: string;
+
+  /**
+   * @generated from field: string week_model_name = 6;
+   */
+  weekModelName: string;
+
+  /**
+   * @generated from field: int32 week_model_pct = 7;
+   */
+  weekModelPct: number;
+
+  /**
+   * @generated from field: string week_model_resets = 8;
+   */
+  weekModelResets: string;
+};
+
+/**
+ * Describes the message roost.v1.Usage.
+ * Use `create(UsageSchema)` to create a new message.
+ */
+export const UsageSchema: GenMessage<Usage> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 21);
+
+/**
+ * BoardTask is one card, whole: the workflow log is the truth about
+ * the work, the live overlay is the truth about the moment.
+ *
+ * @generated from message roost.v1.BoardTask
+ */
+export type BoardTask = Message<"roost.v1.BoardTask"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string title = 2;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string intent = 3;
+   */
+  intent: string;
+
+  /**
+   * the assignment, "" for backlog
+   *
+   * @generated from field: string agent = 4;
+   */
+  agent: string;
+
+  /**
+   * @generated from field: string goal = 5;
+   */
+  goal: string;
+
+  /**
+   * @generated from field: string goal_actor = 6;
+   */
+  goalActor: string;
+
+  /**
+   * inbox | progress | waiting | done | dropped
+   *
+   * @generated from field: string col = 7;
+   */
+  col: string;
+
+  /**
+   * @generated from field: string state = 8;
+   */
+  state: string;
+
+  /**
+   * @generated from field: string ask = 9;
+   */
+  ask: string;
+
+  /**
+   * @generated from field: string face = 10;
+   */
+  face: string;
+
+  /**
+   * @generated from field: bool pinned = 11;
+   */
+  pinned: boolean;
+
+  /**
+   * @generated from field: string proposal = 12;
+   */
+  proposal: string;
+
+  /**
+   * @generated from field: string proposal_why = 13;
+   */
+  proposalWhy: string;
+
+  /**
+   * "start" | "done"
+   *
+   * @generated from field: string proposal_kind = 14;
+   */
+  proposalKind: string;
+
+  /**
+   * @generated from field: double cost_usd = 15;
+   */
+  costUsd: number;
+
+  /**
+   * @generated from field: repeated roost.v1.TaskRun runs = 16;
+   */
+  runs: TaskRun[];
+
+  /**
+   * @generated from field: string workspace = 17;
+   */
+  workspace: string;
+
+  /**
+   * @generated from field: string scratch_name = 18;
+   */
+  scratchName: string;
+
+  /**
+   * "" | "read" | "work"
+   *
+   * @generated from field: string mode = 19;
+   */
+  mode: string;
+
+  /**
+   * @generated from field: repeated roost.v1.TaskEvent log = 20;
+   */
+  log: TaskEvent[];
+
+  /**
+   * @generated from field: repeated roost.v1.Exchange exchanges = 21;
+   */
+  exchanges: Exchange[];
+
+  /**
+   * @generated from field: int64 created_unix_ms = 22;
+   */
+  createdUnixMs: bigint;
+
+  /**
+   * @generated from field: int64 updated_unix_ms = 23;
+   */
+  updatedUnixMs: bigint;
+
+  /**
+   * absent for backlog and closed cards
+   *
+   * @generated from field: roost.v1.TaskLive live = 24;
+   */
+  live?: TaskLive | undefined;
+};
+
+/**
+ * Describes the message roost.v1.BoardTask.
+ * Use `create(BoardTaskSchema)` to create a new message.
+ */
+export const BoardTaskSchema: GenMessage<BoardTask> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 22);
+
+/**
+ * @generated from message roost.v1.TaskRun
+ */
+export type TaskRun = Message<"roost.v1.TaskRun"> & {
+  /**
+   * drive | say
+   *
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string outcome = 2;
+   */
+  outcome: string;
+
+  /**
+   * @generated from field: double cost_usd = 3;
+   */
+  costUsd: number;
+};
+
+/**
+ * Describes the message roost.v1.TaskRun.
+ * Use `create(TaskRunSchema)` to create a new message.
+ */
+export const TaskRunSchema: GenMessage<TaskRun> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 23);
+
+/**
+ * @generated from message roost.v1.TaskEvent
+ */
+export type TaskEvent = Message<"roost.v1.TaskEvent"> & {
+  /**
+   * @generated from field: int64 at_unix_ms = 1;
+   */
+  atUnixMs: bigint;
+
+  /**
+   * human | rook | worker
+   *
+   * @generated from field: string actor = 2;
+   */
+  actor: string;
+
+  /**
+   * @generated from field: string text = 3;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message roost.v1.TaskEvent.
+ * Use `create(TaskEventSchema)` to create a new message.
+ */
+export const TaskEventSchema: GenMessage<TaskEvent> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 24);
+
+/**
+ * @generated from message roost.v1.Exchange
+ */
+export type Exchange = Message<"roost.v1.Exchange"> & {
+  /**
+   * @generated from field: string prompt = 1;
+   */
+  prompt: string;
+
+  /**
+   * @generated from field: string reply = 2;
+   */
+  reply: string;
+};
+
+/**
+ * Describes the message roost.v1.Exchange.
+ * Use `create(ExchangeSchema)` to create a new message.
+ */
+export const ExchangeSchema: GenMessage<Exchange> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 25);
+
+/**
+ * @generated from message roost.v1.TaskLive
+ */
+export type TaskLive = Message<"roost.v1.TaskLive"> & {
+  /**
+   * @generated from field: string dir = 1;
+   */
+  dir: string;
+
+  /**
+   * @generated from field: string state = 2;
+   */
+  state: string;
+
+  /**
+   * ⛭ tool — detail
+   *
+   * @generated from field: string now = 3;
+   */
+  now: string;
+};
+
+/**
+ * Describes the message roost.v1.TaskLive.
+ * Use `create(TaskLiveSchema)` to create a new message.
+ */
+export const TaskLiveSchema: GenMessage<TaskLive> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 26);
+
+/**
  * @generated from service roost.v1.RoostService
  */
 export const RoostService: GenService<{
@@ -628,6 +1211,22 @@ export const RoostService: GenService<{
     methodKind: "unary";
     input: typeof SayRequestSchema;
     output: typeof SayResponseSchema;
+  },
+  /**
+   * @generated from rpc roost.v1.RoostService.Interrupt
+   */
+  interrupt: {
+    methodKind: "unary";
+    input: typeof InterruptRequestSchema;
+    output: typeof InterruptResponseSchema;
+  },
+  /**
+   * @generated from rpc roost.v1.RoostService.WatchBoard
+   */
+  watchBoard: {
+    methodKind: "server_streaming";
+    input: typeof WatchBoardRequestSchema;
+    output: typeof WatchBoardResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_roost_v1_roost, 0);

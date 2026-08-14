@@ -437,7 +437,26 @@ func overlay(tasks []task, fleet map[string]*transcript.Session) {
 // ---- the routes ----
 
 func (s *server) handleTaskList(w http.ResponseWriter, r *http.Request) {
-	now := time.Now()
+	b := s.boardData(time.Now())
+	writeJSON(w, map[string]any{
+		"tasks": b.tasks, "inflight": b.inflight, "spend": b.spend, "notice": s.notice,
+		"fleet": map[string]int{"agents": b.agents, "working": b.working},
+		"repos": b.repos,
+	})
+}
+
+// boardPayload is one read of the whole board — what the REST list
+// serves and what a WatchBoard frame carries.
+type boardPayload struct {
+	tasks    []task
+	inflight int
+	spend    float64
+	agents   int
+	working  int
+	repos    []map[string]string
+}
+
+func (s *server) boardData(now time.Time) boardPayload {
 	fleet := s.boardSessions(now)
 	tasks := s.syncBoard(s.tasks.list(), fleet, now)
 	if tasks == nil {
@@ -468,11 +487,11 @@ func (s *server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 		spent += sp.ClaudeUSD + sp.JudgeUSD
 	}
 	s.mu.Unlock()
-	writeJSON(w, map[string]any{
-		"tasks": tasks, "inflight": inflight, "spend": spent, "notice": s.notice,
-		"fleet": map[string]int{"agents": len(fleet), "working": working},
-		"repos": repoList(fleet, homeDir(), s.scratch.list()),
-	})
+	return boardPayload{
+		tasks: tasks, inflight: inflight, spend: spent,
+		agents: len(fleet), working: working,
+		repos: repoList(fleet, homeDir(), s.scratch.list()),
+	}
 }
 
 // repoList names the directories a fresh agent could be born into —
@@ -508,6 +527,8 @@ func homeDir() string {
 }
 
 func (s *server) handleTaskCapture(w http.ResponseWriter, r *http.Request) {
+	// A board mutation is a frame the watchers are owed.
+	defer s.hub.notify()
 	var req struct {
 		Text string `json:"text"`
 	}
@@ -536,6 +557,8 @@ func (s *server) handleTaskCapture(w http.ResponseWriter, r *http.Request) {
 // it has one, the caller's choice if given, else the CURRENT agent —
 // the one live session. Assignment is an event; nothing is implicit.
 func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
+	// A board mutation is a frame the watchers are owed.
+	defer s.hub.notify()
 	if s.llm == nil {
 		httpErr(w, 409, s.notice)
 		return
@@ -620,6 +643,8 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 // prompt, the recorded exchanges as the seed, the judge still judging
 // against the original goal.
 func (s *server) handleTaskReply(w http.ResponseWriter, r *http.Request) {
+	// A board mutation is a frame the watchers are owed.
+	defer s.hub.notify()
 	if s.llm == nil {
 		httpErr(w, 409, s.notice)
 		return
@@ -951,6 +976,8 @@ func (s *server) taskRunLanded(taskID string, res drive.Result, runErr error, se
 
 // handleTaskAct is the small verbs: accept, decline, drop, pin, merge.
 func (s *server) handleTaskAct(w http.ResponseWriter, r *http.Request) {
+	// A board mutation is a frame the watchers are owed.
+	defer s.hub.notify()
 	var req struct {
 		Action string `json:"action"`
 		Reason string `json:"reason"`

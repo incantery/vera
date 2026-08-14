@@ -4,11 +4,37 @@
 	// first, then live sessions, with everything stale folded away
 	// rather than presented as an equal. The rail is navigation: each
 	// row opens that agent's conversation.
-	import { app, startPolling } from '$lib/state.svelte.js';
+	import { app, startPolling, watchBoard, boardFrame } from '$lib/state.svelte.js';
 	import Board from '$lib/Board.svelte';
 	import UsageBar from '$lib/UsageBar.svelte';
 
-	$effect(() => startPolling());
+	// The home screen lives on the WatchBoard stream: one frame
+	// whenever anything changes, no polling. If the stream dies, the
+	// old poll rail takes over — same shapes, slower truth.
+	let board = $state(null);
+	$effect(() => {
+		let stopPoll = null;
+		const stop = watchBoard(
+			(f) => {
+				const b = boardFrame(f);
+				board = b;
+				app.sessions = b.sessions;
+				app.current = b.current;
+				app.usage = b.usage;
+				app.notice = b.notice;
+				app.connected = true;
+				app.loaded = true;
+			},
+			() => {
+				board = null;
+				stopPoll = startPolling();
+			}
+		);
+		return () => {
+			stop();
+			stopPoll?.();
+		};
+	});
 
 	let showIdle = $state(false);
 
@@ -139,5 +165,5 @@
 		</div>
 	</section>
 
-	<Board />
+	<Board data={board} />
 </div>

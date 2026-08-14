@@ -110,6 +110,8 @@ func (sc *scratchStore) remove(name string) error {
 // ---- the routes ----
 
 func (s *server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
+	// A board mutation is a frame the watchers are owed.
+	defer s.hub.notify()
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -131,6 +133,8 @@ func (s *server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleWorkspaceDelete(w http.ResponseWriter, r *http.Request) {
+	// A board mutation is a frame the watchers are owed.
+	defer s.hub.notify()
 	if err := s.scratch.remove(r.PathValue("name")); err != nil {
 		httpErr(w, 400, err.Error())
 		return

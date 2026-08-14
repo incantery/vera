@@ -396,7 +396,28 @@ type wireSession struct {
 // wears the fork's live state, so the list reads as agents, not as the
 // thread-management the fork mechanic would otherwise leak.
 func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
-	now := time.Now()
+	sessions, current := s.railSessions(time.Now())
+	s.mu.Lock()
+	runs := make([]run, 0, len(s.runs))
+	for _, r := range s.runs {
+		runs = append(runs, *r)
+	}
+	s.mu.Unlock()
+	writeJSON(w, map[string]any{
+		"sessions": sessions,
+		"current":  current,
+		"drives":   runs,
+		"notice":   s.notice,
+		"turns":    s.turns,
+		"usage":    s.uc.Latest(),
+	})
+}
+
+// railSessions builds the rail: one row per lineage, each root wearing
+// its head's live state, plus which agent is "current" — the lineage
+// whose transcript moved most recently. Both the REST rail and the
+// WatchBoard stream read from here.
+func (s *server) railSessions(now time.Time) ([]wireSession, string) {
 	scanned := s.sc.Scan(now)
 	byID := map[string]*transcript.Session{}
 	for i := range scanned {
@@ -444,20 +465,7 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 		}
 		sessions = append(sessions, ws)
 	}
-	s.mu.Lock()
-	runs := make([]run, 0, len(s.runs))
-	for _, r := range s.runs {
-		runs = append(runs, *r)
-	}
-	s.mu.Unlock()
-	writeJSON(w, map[string]any{
-		"sessions": sessions,
-		"current":  current,
-		"drives":   runs,
-		"notice":   s.notice,
-		"turns":    s.turns,
-		"usage":    s.uc.Latest(),
-	})
+	return sessions, current
 }
 
 // resolveAgent finds an agent's root and its live head session. The
@@ -870,24 +878,32 @@ func (s *server) drainQueue(root string) {
 // the web. The subprocess dies; the transcript keeps whatever landed;
 // the session resumes cleanly on the next send.
 func (s *server) handleInterrupt(w http.ResponseWriter, r *http.Request) {
-	now := time.Now()
-	root, head := s.resolveAgent(r.PathValue("id"), now)
-	if head == nil {
-		httpErr(w, 404, "that agent is gone from the window")
+	if serr := s.interrupt(r.PathValue("id")); serr != nil {
+		httpErr(w, serr.code, serr.msg)
 		return
+	}
+	writeJSON(w, map[string]string{"status": "interrupting"})
+}
+
+// interrupt is the cancel rail with no transport on it — the REST
+// endpoint and the Interrupt RPC both end here.
+func (s *server) interrupt(id string) *sayErr {
+	now := time.Now()
+	root, head := s.resolveAgent(id, now)
+	if head == nil {
+		return &sayErr{404, "that agent is gone from the window"}
 	}
 	s.mu.Lock()
 	j := s.says[root]
 	if j == nil || (j.Status != "thinking" && j.Status != "phrasing") || j.cancel == nil {
 		s.mu.Unlock()
-		httpErr(w, 409, "nothing in flight to interrupt")
-		return
+		return &sayErr{409, "nothing in flight to interrupt"}
 	}
 	j.interrupted = true
 	j.cancel()
 	s.mu.Unlock()
 	s.hub.notify()
-	writeJSON(w, map[string]string{"status": "interrupting"})
+	return nil
 }
 
 func (s *server) driving(root string) bool {
@@ -906,6 +922,8 @@ func (s *server) drivingLocked(root string) bool {
 }
 
 func (s *server) handleDrive(w http.ResponseWriter, r *http.Request) {
+	// A board mutation is a frame the watchers are owed.
+	defer s.hub.notify()
 	var req struct {
 		SessionID string `json:"sessionId"`
 		Goal      string `json:"goal"`
@@ -987,6 +1005,8 @@ func (s *server) handleDrive(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleStop(w http.ResponseWriter, r *http.Request) {
+	// A board mutation is a frame the watchers are owed.
+	defer s.hub.notify()
 	var req struct {
 		ID string `json:"id"`
 	}

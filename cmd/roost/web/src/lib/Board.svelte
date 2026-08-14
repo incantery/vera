@@ -7,7 +7,12 @@
 	// unassigned backlog.
 	import { api } from '$lib/state.svelte.js';
 
-	let board = $state(null); // {tasks, inflight, spend, fleet, notice}
+	// data: the WatchBoard stream's frame, when the page holds one.
+	// Without it (stream down, or a page that still polls) the board
+	// feeds itself from the REST list — same shapes, slower truth.
+	let { data = null } = $props();
+	let polled = $state(null); // {tasks, inflight, spend, fleet, notice}
+	const board = $derived(data ?? polled);
 	let selId = $state(null);
 	let capture = $state('');
 	let triage = $state(null); // {id, near:{id,title}}
@@ -15,16 +20,20 @@
 	let err = $state('');
 
 	async function refresh() {
+		// Under the stream, a mutation's new truth arrives as the next
+		// frame — the hub was poked server-side; fetching would race it.
+		if (data) return;
 		try {
 			const r = await api('/api/tasks');
 			if (!r.ok) throw new Error((await r.json()).error ?? 'the board did not answer');
-			board = await r.json();
+			polled = await r.json();
 			err = '';
 		} catch (e) {
 			err = e.message;
 		}
 	}
 	$effect(() => {
+		if (data) return;
 		refresh();
 		const t = setInterval(refresh, 3000);
 		return () => clearInterval(t);

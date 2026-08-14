@@ -231,9 +231,80 @@ export function imageParts(text) {
 	return { text: kept.join('\n').trim(), names };
 }
 
+// interruptAgent rides the typed wire — the TUI's Esc as an RPC.
 export async function interruptAgent(id) {
-	const r = await api(`/api/agent/${id}/interrupt`, { method: 'POST' });
-	if (!r.ok) throw new Error((await r.json()).error ?? 'nothing to interrupt');
+	try {
+		await roostClient.interrupt({ id });
+	} catch (err) {
+		throw new Error(err?.rawMessage || 'nothing to interrupt');
+	}
+}
+
+// ---- the board stream ----
+
+const iso = (ms) => (ms ? new Date(Number(ms)).toISOString() : undefined);
+
+// boardFrame reshapes one WatchBoard frame into exactly what the REST
+// payloads served — the board and the rail cannot tell which rail fed
+// them.
+export function boardFrame(f) {
+	return {
+		tasks: (f.tasks ?? []).map((t) => ({
+			id: t.id, title: t.title, intent: t.intent,
+			agent: t.agent || undefined,
+			goal: t.goal || undefined, goalActor: t.goalActor || undefined,
+			col: t.col, state: t.state,
+			ask: t.ask || undefined, face: t.face || undefined,
+			pinned: t.pinned || undefined,
+			proposal: t.proposal || undefined, proposalWhy: t.proposalWhy || undefined,
+			proposalKind: t.proposalKind || undefined,
+			costUsd: t.costUsd || undefined,
+			runs: t.runs?.length ? t.runs.map((r) => ({ kind: r.kind, outcome: r.outcome, costUsd: r.costUsd })) : undefined,
+			workspace: t.workspace || undefined, scratchName: t.scratchName || undefined,
+			mode: t.mode || undefined,
+			log: (t.log ?? []).map((e) => ({ at: iso(e.atUnixMs), actor: e.actor, text: e.text })),
+			exchanges: t.exchanges?.length ? t.exchanges.map((x) => ({ prompt: x.prompt, reply: x.reply })) : undefined,
+			createdAt: iso(t.createdUnixMs), updatedAt: iso(t.updatedUnixMs),
+			live: t.live ? { dir: t.live.dir, state: t.live.state, now: t.live.now || undefined } : undefined
+		})),
+		inflight: f.inflight, spend: f.spend, notice: f.notice,
+		fleet: { agents: f.fleet?.agents ?? 0, working: f.fleet?.working ?? 0 },
+		repos: (f.repos ?? []).map((r) => ({ dir: r.dir, cwd: r.cwd, ...(r.scratch ? { scratch: 'yes' } : {}) })),
+		sessions: (f.sessions ?? []).map((s) => ({
+			id: s.id, title: s.title, state: s.state, dir: s.dir, cwd: s.cwd,
+			branch: s.branch || undefined, prompt: s.prompt || undefined,
+			lastText: s.lastText || undefined, ctxPct: s.ctxPct || undefined,
+			model: s.model || undefined, age: s.age, driving: s.driving,
+			tool: s.tool || undefined, toolDetail: s.toolDetail || undefined,
+			task: s.task || undefined, scratch: s.scratch || undefined
+		})),
+		current: f.current,
+		usage: f.usage
+			? {
+					mode: f.usage.mode, sessionPct: f.usage.sessionPct, sessionResets: f.usage.sessionResets,
+					weekAllPct: f.usage.weekAllPct, weekAllResets: f.usage.weekAllResets,
+					weekModelName: f.usage.weekModelName, weekModelPct: f.usage.weekModelPct,
+					weekModelResets: f.usage.weekModelResets
+				}
+			: null
+	};
+}
+
+// watchBoard opens the home screen's stream; the caller owns the
+// fallback story, same as watchAgent.
+export function watchBoard(onFrame, onDone) {
+	const ac = new AbortController();
+	(async () => {
+		try {
+			for await (const frame of roostClient.watchBoard({}, { signal: ac.signal })) {
+				onFrame(frame);
+			}
+			onDone?.(null);
+		} catch (err) {
+			if (!ac.signal.aborted) onDone?.(err);
+		}
+	})();
+	return () => ac.abort();
 }
 
 export async function startDrive(sessionId, goal) {

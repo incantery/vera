@@ -104,6 +104,138 @@ func (r *roostRPC) Say(ctx context.Context, req *connect.Request[roostv1.SayRequ
 	return connect.NewResponse(&roostv1.SayResponse{Status: status}), nil
 }
 
+// Interrupt is the cancel rail on the typed wire.
+func (r *roostRPC) Interrupt(ctx context.Context, req *connect.Request[roostv1.InterruptRequest]) (*connect.Response[roostv1.InterruptResponse], error) {
+	if serr := r.s.interrupt(req.Msg.Id); serr != nil {
+		code := connect.CodeFailedPrecondition
+		if serr.code == 404 {
+			code = connect.CodeNotFound
+		}
+		return nil, connect.NewError(code, errors.New(serr.msg))
+	}
+	return connect.NewResponse(&roostv1.InterruptResponse{}), nil
+}
+
+// WatchBoard streams the home screen's present: whole frames (the
+// payload is small), one whenever anything in it changes. The hub
+// pokes on transcript writes and board mutations; the slow tick
+// catches what neither announces (ages, the usage collector).
+func (r *roostRPC) WatchBoard(ctx context.Context, req *connect.Request[roostv1.WatchBoardRequest], stream *connect.ServerStream[roostv1.WatchBoardResponse]) error {
+	s := r.s
+	poke, cancel := s.hub.subscribe()
+	defer cancel()
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+
+	var prev uint64
+	first := true
+	for {
+		resp, sum := s.boardView()
+		if first || sum != prev {
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+			prev, first = sum, false
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-poke:
+		case <-tick.C:
+		}
+	}
+}
+
+// boardView computes one WatchBoard frame and its change hash. It is
+// the typed twin of handleTaskList + handleState's rail.
+func (s *server) boardView() (*roostv1.WatchBoardResponse, uint64) {
+	now := time.Now()
+	b := s.boardData(now)
+	sessions, current := s.railSessions(now)
+
+	resp := &roostv1.WatchBoardResponse{
+		Inflight: int32(b.inflight), Spend: b.spend,
+		Fleet:   &roostv1.Fleet{Agents: int32(b.agents), Working: int32(b.working)},
+		Notice:  s.notice,
+		Current: current,
+	}
+	for _, t := range b.tasks {
+		resp.Tasks = append(resp.Tasks, protoTask(t))
+	}
+	for _, rp := range b.repos {
+		resp.Repos = append(resp.Repos, &roostv1.Repo{Dir: rp["dir"], Cwd: rp["cwd"], Scratch: rp["scratch"] == "yes"})
+	}
+	for _, ws := range sessions {
+		resp.Sessions = append(resp.Sessions, &roostv1.Session{
+			Id: ws.ID, Title: ws.Title, State: ws.State, Dir: ws.Dir, Cwd: ws.Cwd,
+			Branch: ws.Branch, Prompt: ws.Prompt, LastText: ws.LastText,
+			CtxPct: int32(ws.CtxPct), Model: ws.Model, Age: ws.Age,
+			Driving: ws.Driving, Tool: ws.Tool, ToolDetail: ws.ToolDetail,
+			Task: ws.Task, Scratch: ws.Scratch,
+		})
+	}
+	if u := s.uc.Latest(); u != nil {
+		resp.Usage = &roostv1.Usage{
+			Mode: u.Mode, SessionPct: int32(u.SessionPct), SessionResets: u.SessionResets,
+			WeekAllPct: int32(u.WeekAllPct), WeekAllResets: u.WeekAllResets,
+			WeekModelName: u.WeekModelName, WeekModelPct: int32(u.WeekModelPct),
+			WeekModelResets: u.WeekModelResets,
+		}
+	}
+
+	h := fnv.New64a()
+	var buf [8]byte
+	putI64(buf[:], int64(b.inflight)<<32|int64(b.agents)<<16|int64(b.working))
+	h.Write(buf[:])
+	putF64(buf[:], b.spend)
+	h.Write(buf[:])
+	h.Write([]byte(s.notice + "|" + current))
+	for _, t := range resp.Tasks {
+		h.Write([]byte(t.Id + t.Col + t.State + t.Face + t.Ask + t.Proposal))
+		putI64(buf[:], t.UpdatedUnixMs)
+		h.Write(buf[:])
+		if t.Live != nil {
+			h.Write([]byte(t.Live.State + t.Live.Now))
+		}
+		putI64(buf[:], int64(len(t.Log))<<16|int64(len(t.Exchanges)))
+		h.Write(buf[:])
+	}
+	for _, ws := range resp.Sessions {
+		h.Write([]byte(ws.Id + ws.State + ws.Age + ws.Tool + ws.ToolDetail + ws.Task + ws.Title))
+	}
+	if resp.Usage != nil {
+		putI64(buf[:], int64(resp.Usage.SessionPct)<<32|int64(resp.Usage.WeekAllPct)<<16|int64(resp.Usage.WeekModelPct))
+		h.Write(buf[:])
+	}
+	return resp, h.Sum64()
+}
+
+// protoTask lifts one card onto the wire, timestamps as unix ms.
+func protoTask(t task) *roostv1.BoardTask {
+	out := &roostv1.BoardTask{
+		Id: t.ID, Title: t.Title, Intent: t.Intent, Agent: t.Agent,
+		Goal: t.Goal, GoalActor: t.GoalActor,
+		Col: t.Col, State: t.State, Ask: t.Ask, Face: t.Face,
+		Pinned: t.Pinned, Proposal: t.Proposal, ProposalWhy: t.ProposalWhy,
+		ProposalKind: t.ProposalKind, CostUsd: t.CostUSD,
+		Workspace: t.Workspace, ScratchName: t.ScratchName, Mode: t.Mode,
+		CreatedUnixMs: t.CreatedAt.UnixMilli(), UpdatedUnixMs: t.UpdatedAt.UnixMilli(),
+	}
+	for _, r := range t.Runs {
+		out.Runs = append(out.Runs, &roostv1.TaskRun{Kind: r.Kind, Outcome: r.Outcome, CostUsd: r.CostUSD})
+	}
+	for _, e := range t.Log {
+		out.Log = append(out.Log, &roostv1.TaskEvent{AtUnixMs: e.At.UnixMilli(), Actor: e.Actor, Text: e.Text})
+	}
+	for _, x := range t.Exchanges {
+		out.Exchanges = append(out.Exchanges, &roostv1.Exchange{Prompt: x.Prompt, Reply: x.Reply})
+	}
+	if t.Live != nil {
+		out.Live = &roostv1.TaskLive{Dir: t.Live.Dir, State: t.Live.State, Now: t.Live.Now}
+	}
+	return out
+}
+
 // commonPrefix: how many leading message hashes still agree.
 func commonPrefix(a, b []uint64) int {
 	n := min(len(a), len(b))

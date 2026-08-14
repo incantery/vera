@@ -43,12 +43,18 @@ const (
 	RoostServiceWatchAgentProcedure = "/roost.v1.RoostService/WatchAgent"
 	// RoostServiceSayProcedure is the fully-qualified name of the RoostService's Say RPC.
 	RoostServiceSayProcedure = "/roost.v1.RoostService/Say"
+	// RoostServiceInterruptProcedure is the fully-qualified name of the RoostService's Interrupt RPC.
+	RoostServiceInterruptProcedure = "/roost.v1.RoostService/Interrupt"
+	// RoostServiceWatchBoardProcedure is the fully-qualified name of the RoostService's WatchBoard RPC.
+	RoostServiceWatchBoardProcedure = "/roost.v1.RoostService/WatchBoard"
 )
 
 // RoostServiceClient is a client for the roost.v1.RoostService service.
 type RoostServiceClient interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest]) (*connect.ServerStreamForClient[v1.WatchAgentResponse], error)
 	Say(context.Context, *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error)
+	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
+	WatchBoard(context.Context, *connect.Request[v1.WatchBoardRequest]) (*connect.ServerStreamForClient[v1.WatchBoardResponse], error)
 }
 
 // NewRoostServiceClient constructs a client for the roost.v1.RoostService service. By default, it
@@ -74,6 +80,18 @@ func NewRoostServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(roostServiceMethods.ByName("Say")),
 			connect.WithClientOptions(opts...),
 		),
+		interrupt: connect.NewClient[v1.InterruptRequest, v1.InterruptResponse](
+			httpClient,
+			baseURL+RoostServiceInterruptProcedure,
+			connect.WithSchema(roostServiceMethods.ByName("Interrupt")),
+			connect.WithClientOptions(opts...),
+		),
+		watchBoard: connect.NewClient[v1.WatchBoardRequest, v1.WatchBoardResponse](
+			httpClient,
+			baseURL+RoostServiceWatchBoardProcedure,
+			connect.WithSchema(roostServiceMethods.ByName("WatchBoard")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -81,6 +99,8 @@ func NewRoostServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 type roostServiceClient struct {
 	watchAgent *connect.Client[v1.WatchAgentRequest, v1.WatchAgentResponse]
 	say        *connect.Client[v1.SayRequest, v1.SayResponse]
+	interrupt  *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
+	watchBoard *connect.Client[v1.WatchBoardRequest, v1.WatchBoardResponse]
 }
 
 // WatchAgent calls roost.v1.RoostService.WatchAgent.
@@ -93,10 +113,22 @@ func (c *roostServiceClient) Say(ctx context.Context, req *connect.Request[v1.Sa
 	return c.say.CallUnary(ctx, req)
 }
 
+// Interrupt calls roost.v1.RoostService.Interrupt.
+func (c *roostServiceClient) Interrupt(ctx context.Context, req *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error) {
+	return c.interrupt.CallUnary(ctx, req)
+}
+
+// WatchBoard calls roost.v1.RoostService.WatchBoard.
+func (c *roostServiceClient) WatchBoard(ctx context.Context, req *connect.Request[v1.WatchBoardRequest]) (*connect.ServerStreamForClient[v1.WatchBoardResponse], error) {
+	return c.watchBoard.CallServerStream(ctx, req)
+}
+
 // RoostServiceHandler is an implementation of the roost.v1.RoostService service.
 type RoostServiceHandler interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error
 	Say(context.Context, *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error)
+	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
+	WatchBoard(context.Context, *connect.Request[v1.WatchBoardRequest], *connect.ServerStream[v1.WatchBoardResponse]) error
 }
 
 // NewRoostServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -118,12 +150,28 @@ func NewRoostServiceHandler(svc RoostServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(roostServiceMethods.ByName("Say")),
 		connect.WithHandlerOptions(opts...),
 	)
+	roostServiceInterruptHandler := connect.NewUnaryHandler(
+		RoostServiceInterruptProcedure,
+		svc.Interrupt,
+		connect.WithSchema(roostServiceMethods.ByName("Interrupt")),
+		connect.WithHandlerOptions(opts...),
+	)
+	roostServiceWatchBoardHandler := connect.NewServerStreamHandler(
+		RoostServiceWatchBoardProcedure,
+		svc.WatchBoard,
+		connect.WithSchema(roostServiceMethods.ByName("WatchBoard")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/roost.v1.RoostService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RoostServiceWatchAgentProcedure:
 			roostServiceWatchAgentHandler.ServeHTTP(w, r)
 		case RoostServiceSayProcedure:
 			roostServiceSayHandler.ServeHTTP(w, r)
+		case RoostServiceInterruptProcedure:
+			roostServiceInterruptHandler.ServeHTTP(w, r)
+		case RoostServiceWatchBoardProcedure:
+			roostServiceWatchBoardHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -139,4 +187,12 @@ func (UnimplementedRoostServiceHandler) WatchAgent(context.Context, *connect.Req
 
 func (UnimplementedRoostServiceHandler) Say(context.Context, *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.Say is not implemented"))
+}
+
+func (UnimplementedRoostServiceHandler) Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.Interrupt is not implemented"))
+}
+
+func (UnimplementedRoostServiceHandler) WatchBoard(context.Context, *connect.Request[v1.WatchBoardRequest], *connect.ServerStream[v1.WatchBoardResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.WatchBoard is not implemented"))
 }

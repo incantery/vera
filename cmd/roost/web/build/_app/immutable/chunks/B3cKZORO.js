@@ -1,1 +1,0 @@
-import{P as o,Q as t,u as c}from"./Bbljpt3T.js";function u(e){throw new Error("https://svelte.dev/e/lifecycle_outside_component")}function r(e){t===null&&u(),o(()=>{const n=c(e);if(typeof n=="function")return n})}export{r as o};

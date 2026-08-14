@@ -136,7 +136,135 @@ message SayResponse {
   string status = 1; // "phrasing" | "thinking" | "queued"
 }
 
+// Interrupt kills the in-flight say turn — the TUI's Esc. The
+// subprocess dies, the transcript keeps whatever landed, the session
+// resumes cleanly on the next send.
+message InterruptRequest {
+  string id = 1;
+}
+
+message InterruptResponse {}
+
+// WatchBoard streams the home screen's whole present: the board's
+// columns, the fleet's numbers, the agents rail, the subscription
+// budgets. Frames are whole (the payload is small); one arrives
+// whenever anything in it changes.
+message WatchBoardRequest {}
+
+message WatchBoardResponse {
+  repeated BoardTask tasks = 1;
+  int32 inflight = 2;    // drives running right now
+  double spend = 3;      // everything this process has spent, rolled up
+  Fleet fleet = 4;
+  repeated Repo repos = 5;
+  string notice = 6;
+  repeated Session sessions = 7;  // the rail: one row per lineage
+  string current = 8;             // the agent with the freshest activity
+  Usage usage = 9;                // absent until the collector has answered
+}
+
+message Fleet {
+  int32 agents = 1;
+  int32 working = 2;
+}
+
+// Repo is a directory a fresh agent could be born into — a place the
+// fleet has already shown, or a scratch workspace roost made.
+message Repo {
+  string dir = 1;
+  string cwd = 2;
+  bool scratch = 3;
+}
+
+// Session is one rail row: a lineage root wearing its head's live
+// state — the same shape the REST rail serves.
+message Session {
+  string id = 1;
+  string title = 2;
+  string state = 3;  // "working" | "needs you" | "blocked?" | "idle"
+  string dir = 4;
+  string cwd = 5;
+  string branch = 6;
+  string prompt = 7;     // the last thing the human asked, snipped
+  string last_text = 8;  // the last thing the assistant said, snipped
+  int32 ctx_pct = 9;
+  string model = 10;
+  string age = 11;
+  bool driving = 12;
+  string tool = 13;
+  string tool_detail = 14;
+  string task = 15;  // the open board task assigned to this agent
+  bool scratch = 16;
+}
+
+// Usage is the subscription's rate-limit windows, from claude's own
+// report. Percentages are the truth; resets are prose.
+message Usage {
+  string mode = 1;
+  int32 session_pct = 2;
+  string session_resets = 3;
+  int32 week_all_pct = 4;
+  string week_all_resets = 5;
+  string week_model_name = 6;
+  int32 week_model_pct = 7;
+  string week_model_resets = 8;
+}
+
+// BoardTask is one card, whole: the workflow log is the truth about
+// the work, the live overlay is the truth about the moment.
+message BoardTask {
+  string id = 1;
+  string title = 2;
+  string intent = 3;
+  string agent = 4;  // the assignment, "" for backlog
+  string goal = 5;
+  string goal_actor = 6;
+  string col = 7;    // inbox | progress | waiting | done | dropped
+  string state = 8;
+  string ask = 9;
+  string face = 10;
+  bool pinned = 11;
+  string proposal = 12;
+  string proposal_why = 13;
+  string proposal_kind = 14;  // "start" | "done"
+  double cost_usd = 15;
+  repeated TaskRun runs = 16;
+  string workspace = 17;
+  string scratch_name = 18;
+  string mode = 19;  // "" | "read" | "work"
+  repeated TaskEvent log = 20;
+  repeated Exchange exchanges = 21;
+  int64 created_unix_ms = 22;
+  int64 updated_unix_ms = 23;
+  TaskLive live = 24;  // absent for backlog and closed cards
+}
+
+message TaskRun {
+  string kind = 1;  // drive | say
+  string outcome = 2;
+  double cost_usd = 3;
+}
+
+message TaskEvent {
+  int64 at_unix_ms = 1;
+  string actor = 2;  // human | rook | worker
+  string text = 3;
+}
+
+message Exchange {
+  string prompt = 1;
+  string reply = 2;
+}
+
+message TaskLive {
+  string dir = 1;
+  string state = 2;
+  string now = 3;  // ⛭ tool — detail
+}
+
 service RoostService {
   rpc WatchAgent(WatchAgentRequest) returns (stream WatchAgentResponse);
   rpc Say(SayRequest) returns (SayResponse);
+  rpc Interrupt(InterruptRequest) returns (InterruptResponse);
+  rpc WatchBoard(WatchBoardRequest) returns (stream WatchBoardResponse);
 }
