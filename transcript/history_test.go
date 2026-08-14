@@ -116,6 +116,34 @@ func TestHistoryCarriesToolSteps(t *testing.T) {
 	}
 }
 
+// A tool's result comes back through a user-typed transcript line;
+// the step that called it wears the excerpt, the true line count, and
+// the failure flag — that is what lets a row expand on the page.
+func TestHistoryAttachesResultsToTheirSteps(t *testing.T) {
+	long := strings.Repeat("line\n", 30) + "last"
+	path := writeHistoryFixture(t,
+		prompt(0, "run the tests"),
+		`{"type":"assistant","timestamp":"`+ts(1)+`","message":{"role":"assistant","content":[{"type":"tool_use","id":"call-ok","name":"Bash","input":{"command":"go test ./..."}},{"type":"tool_use","id":"call-bad","name":"Bash","input":{"command":"protoc-gen-connect-go --version"}}]}}`,
+		`{"type":"user","timestamp":"`+ts(2)+`","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-ok","content":`+fmt.Sprintf("%q", long)+`}]}}`,
+		`{"type":"user","timestamp":"`+ts(3)+`","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"call-bad","is_error":true,"content":[{"type":"text","text":"zsh: command not found"}]}]}}`,
+		assistantEndTurn(4, "toolchain is short one plugin"),
+	)
+	h := History(path)
+	if len(h) != 2 || len(h[1].Steps) != 2 {
+		t.Fatalf("h: %+v", h)
+	}
+	ok, bad := h[1].Steps[0], h[1].Steps[1]
+	if ok.Err || !strings.HasPrefix(ok.Out, "line\n") || ok.Lines != 31 {
+		t.Fatalf("ok step: %+v", ok)
+	}
+	if strings.Count(ok.Out, "\n") > 11 {
+		t.Fatalf("excerpt unbounded: %q", ok.Out)
+	}
+	if !bad.Err || bad.Out != "zsh: command not found" || bad.Lines != 1 {
+		t.Fatalf("bad step: %+v", bad)
+	}
+}
+
 // An Edit's own input IS the change: the step carries a reviewable
 // diff, and thinking blocks surface as bounded reasoning excerpts.
 func TestHistoryLiftsDiffsAndThinking(t *testing.T) {

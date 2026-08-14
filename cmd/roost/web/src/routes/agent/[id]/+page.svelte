@@ -26,7 +26,18 @@
 	let perm = $state('read'); // direct mode's tool policy: read | edit | all
 	const direct = $derived(mode === 'direct');
 	$effect(() => {
-		mode = localStorage.getItem(`roost-mode:${id}`) ?? 'membrane';
+		// ?mode= deep-links a view (board links, shared URLs); the
+		// stash keeps whichever way you last talked to this agent.
+		// location, not page.url: the key stash rewrites history before
+		// the router wakes, and the router's snapshot can miss it.
+		id;
+		let q = null;
+		try {
+			q = new URLSearchParams(location.search).get('mode');
+		} catch {
+			/* no window — SSR shell */
+		}
+		mode = q === 'direct' || q === 'membrane' ? q : (localStorage.getItem(`roost-mode:${id}`) ?? 'membrane');
 		perm = localStorage.getItem(`roost-perm:${id}`) ?? 'read';
 	});
 	function setMode(m) {
@@ -244,10 +255,11 @@
 	};
 </script>
 
-<div class="mx-auto flex h-dvh gap-4 {direct ? 'max-w-none px-0' : shelfOpen ? 'max-w-6xl px-4' : 'max-w-3xl px-4'}">
+<div class="mx-auto flex h-dvh {direct ? 'max-w-none gap-0 px-0' : shelfOpen ? 'max-w-6xl gap-4 px-4' : 'max-w-3xl gap-4 px-4'}">
 <div class="flex h-dvh min-w-0 grow flex-col">
+	{#if !direct}
 	<!-- header -->
-	<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-zinc-800 py-3 {direct ? 'px-4' : ''}">
+	<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-zinc-800 py-3">
 		<a href="/" class="text-zinc-500 hover:text-zinc-300">←</a>
 		{#if data}
 			<span class="font-semibold">{data.agent.title}</span>
@@ -308,9 +320,10 @@
 		{/if}
 	</header>
 	{#if data?.usage}
-		<div class="border-b border-zinc-800/60 py-1.5 {direct ? 'px-4' : ''}">
+		<div class="border-b border-zinc-800/60 py-1.5">
 			<UsageBar usage={data.usage} />
 		</div>
+	{/if}
 	{/if}
 
 	<!-- the session strip: what this conversation costs and the
@@ -345,7 +358,7 @@
 			<button
 				onclick={() => navigator.clipboard?.writeText(`claude --resume ${data.resume}`)}
 				class="rounded-md border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-400 hover:border-zinc-500"
-				title="copy `claude --resume {data.resume}` — take this conversation to a terminal"
+				title="copy the claude --resume command — take this conversation to a terminal"
 			>
 				copy resume
 			</button>
@@ -366,8 +379,12 @@
 			{data}
 			{perm}
 			{setPerm}
+			{setMode}
 			{pendingSecs}
 			{interrupting}
+			{streaming}
+			{shelfOpen}
+			onshelf={() => (shelfOpen = !shelfOpen)}
 			onsend={sendDirect}
 			oninterrupt={interrupt}
 			oncompact={sendCompact}

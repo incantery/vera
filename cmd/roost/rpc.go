@@ -184,7 +184,7 @@ func protoMsg(m wireMsg) *roostv1.Msg {
 		Think: m.Think, Ctx: int64(m.Ctx), Rough: m.Rough,
 	}
 	for _, st := range m.Steps {
-		p := &roostv1.Step{Tool: st.Tool, Detail: st.Detail}
+		p := &roostv1.Step{Tool: st.Tool, Detail: st.Detail, Out: st.Out, Lines: int32(st.Lines), Err: st.Err}
 		if st.Diff != nil {
 			p.Diff = &roostv1.Diff{File: st.Diff.File, Old: st.Diff.Old, New: st.Diff.New, ReplaceAll: st.Diff.All}
 		}
@@ -218,7 +218,12 @@ func msgHash(m wireMsg) uint64 {
 		h.Write([]byte(m.Digest.State + m.Digest.Headline))
 	}
 	for _, st := range m.Steps {
-		h.Write([]byte(st.Tool + st.Detail))
+		// Out/Err land after the call on the same message — a result
+		// arriving must read as a change or the delta never ships.
+		h.Write([]byte(st.Tool + st.Detail + st.Out))
+		if st.Err {
+			h.Write([]byte("!"))
+		}
 	}
 	return h.Sum64()
 }

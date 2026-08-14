@@ -153,3 +153,16 @@ body {
 .md table { border-collapse: collapse; margin: 0.6em 0; font-size: 0.92em; }
 .md th, .md td { border: 1px solid rgba(148, 163, 184, 0.2); padding: 3px 9px; text-align: left; }
 .md strong { font-weight: 600; color: inherit; }
+
+/* rk-* — the Direct Mode design's motion vocabulary. Keyframes live
+   globally because the cockpit references them from inline styles,
+   which Svelte's scoped-keyframe rewriting never touches. */
+@keyframes rk-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+@keyframes rk-spin { to { transform: rotate(360deg); } }
+@keyframes rk-travel { 0% { transform: translateY(-24px); } 100% { transform: translateY(150px); } }
+@keyframes rk-glow { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.9; } }
+@keyframes rk-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes rk-sweep { from { opacity: 0.16; transform: translateX(-100%); } to { opacity: 0; transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+	.nk *, .nk *::before, .nk *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}

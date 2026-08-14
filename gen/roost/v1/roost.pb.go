@@ -422,6 +422,9 @@ type Step struct {
 	Tool          string                 `protobuf:"bytes,1,opt,name=tool,proto3" json:"tool,omitempty"`
 	Detail        string                 `protobuf:"bytes,2,opt,name=detail,proto3" json:"detail,omitempty"`
 	Diff          *Diff                  `protobuf:"bytes,3,opt,name=diff,proto3" json:"diff,omitempty"`
+	Out           string                 `protobuf:"bytes,4,opt,name=out,proto3" json:"out,omitempty"`      // result excerpt, bounded server-side
+	Lines         int32                  `protobuf:"varint,5,opt,name=lines,proto3" json:"lines,omitempty"` // total result lines before bounding
+	Err           bool                   `protobuf:"varint,6,opt,name=err,proto3" json:"err,omitempty"`     // the tool_result carried is_error
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -475,6 +478,27 @@ func (x *Step) GetDiff() *Diff {
 		return x.Diff
 	}
 	return nil
+}
+
+func (x *Step) GetOut() string {
+	if x != nil {
+		return x.Out
+	}
+	return ""
+}
+
+func (x *Step) GetLines() int32 {
+	if x != nil {
+		return x.Lines
+	}
+	return 0
+}
+
+func (x *Step) GetErr() bool {
+	if x != nil {
+		return x.Err
+	}
+	return false
 }
 
 type Diff struct {
@@ -1009,11 +1033,14 @@ const file_roost_v1_roost_proto_rawDesc = "" +
 	"\x05think\x18\x05 \x03(\tR\x05think\x12\x10\n" +
 	"\x03ctx\x18\x06 \x01(\x03R\x03ctx\x12\x14\n" +
 	"\x05rough\x18\a \x01(\tR\x05rough\x12(\n" +
-	"\x06digest\x18\b \x01(\v2\x10.roost.v1.DigestR\x06digest\"V\n" +
+	"\x06digest\x18\b \x01(\v2\x10.roost.v1.DigestR\x06digest\"\x90\x01\n" +
 	"\x04Step\x12\x12\n" +
 	"\x04tool\x18\x01 \x01(\tR\x04tool\x12\x16\n" +
 	"\x06detail\x18\x02 \x01(\tR\x06detail\x12\"\n" +
-	"\x04diff\x18\x03 \x01(\v2\x0e.roost.v1.DiffR\x04diff\"_\n" +
+	"\x04diff\x18\x03 \x01(\v2\x0e.roost.v1.DiffR\x04diff\x12\x10\n" +
+	"\x03out\x18\x04 \x01(\tR\x03out\x12\x14\n" +
+	"\x05lines\x18\x05 \x01(\x05R\x05lines\x12\x10\n" +
+	"\x03err\x18\x06 \x01(\bR\x03err\"_\n" +
 	"\x04Diff\x12\x12\n" +
 	"\x04file\x18\x01 \x01(\tR\x04file\x12\x10\n" +
 	"\x03old\x18\x02 \x01(\tR\x03old\x12\x10\n" +

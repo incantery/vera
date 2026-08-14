@@ -61,6 +61,9 @@ message Step {
   string tool = 1;
   string detail = 2;
   Diff diff = 3;
+  string out = 4;   // result excerpt, bounded server-side
+  int32 lines = 5;  // total result lines before bounding
+  bool err = 6;     // the tool_result carried is_error
 }
 
 message Diff {

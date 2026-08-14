@@ -140,7 +140,10 @@ function fromMsg(m) {
 			? m.steps.map((s) => ({
 					tool: s.tool,
 					detail: s.detail,
-					diff: s.diff ? { file: s.diff.file, old: s.diff.old, new: s.diff.new, all: s.diff.replaceAll } : undefined
+					diff: s.diff ? { file: s.diff.file, old: s.diff.old, new: s.diff.new, all: s.diff.replaceAll } : undefined,
+					out: s.out || undefined,
+					lines: s.lines || undefined,
+					err: s.err || undefined
 				}))
 			: undefined,
 		think: m.think?.length ? m.think : undefined,

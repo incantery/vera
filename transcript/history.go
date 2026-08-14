@@ -24,12 +24,17 @@ type Msg struct {
 }
 
 // Step is one tool call as a reader would skim it: the tool and the
-// most human-salient input field. An edit carries its diff. The step
-// list is capped; Tools keeps the true count.
+// most human-salient input field. An edit carries its diff. Once the
+// call's result comes back through the transcript it lands here too —
+// an excerpt, the true line count, and whether the tool failed. The
+// step list is capped; Tools keeps the true count.
 type Step struct {
 	Tool   string `json:"tool"`
 	Detail string `json:"detail,omitempty"`
 	Diff   *Diff  `json:"diff,omitempty"`
+	Out    string `json:"out,omitempty"`   // result excerpt, bounded
+	Lines  int    `json:"lines,omitempty"` // total result lines before bounding
+	Err    bool   `json:"err,omitempty"`   // the tool_result carried is_error
 }
 
 // Diff is one Edit/Write as the reader would review it — the old and
@@ -48,6 +53,8 @@ const (
 	stepCap   = 40
 	thinkCap  = 3
 	diffChars = 1600
+	outChars  = 900
+	outLines  = 12
 )
 
 // historyBytes bounds one history read. Deep transcripts lose their
@@ -68,11 +75,16 @@ func History(path string) []Msg {
 	}
 	var out []Msg
 	var cur *Msg // the assistant turn being accumulated
+	// pend routes each tool_result back to the step that called it,
+	// by tool_use id — results ride separate user-typed lines while
+	// the assistant turn is still open.
+	pend := map[string]int{}
 	flush := func() {
 		if cur != nil && (cur.Text != "" || cur.Tools > 0) {
 			out = append(out, *cur)
 		}
 		cur = nil
+		pend = map[string]int{}
 	}
 	for raw := range bytes.SplitSeq(data, []byte("\n")) {
 		if len(bytes.TrimSpace(raw)) == 0 {
@@ -92,7 +104,18 @@ func History(path string) []Msg {
 		switch l.Type {
 		case "user":
 			if isToolResult(l.Message.Content) {
-				continue // the assistant's own machinery coming back
+				// The assistant's own machinery coming back — not
+				// conversation, but the step that called it wants to
+				// show what it got.
+				if cur != nil {
+					for _, r := range toolResults(l.Message.Content) {
+						if i, ok := pend[r.id]; ok && i < len(cur.Steps) {
+							cur.Steps[i].Out, cur.Steps[i].Lines = clipOut(r.text)
+							cur.Steps[i].Err = r.err
+						}
+					}
+				}
+				continue
 			}
 			text := strings.TrimSpace(contentText(l.Message.Content))
 			if text == "" || harnessNoise(text) {
@@ -107,7 +130,10 @@ func History(path string) []Msg {
 			cur.Tools += countToolUse(l.Message.Content)
 			for _, st := range toolSteps(l.Message.Content) {
 				if len(cur.Steps) < stepCap {
-					cur.Steps = append(cur.Steps, st)
+					if st.id != "" {
+						pend[st.id] = len(cur.Steps)
+					}
+					cur.Steps = append(cur.Steps, st.Step)
 				}
 			}
 			for _, th := range thinkingText(l.Message.Content) {
@@ -148,22 +174,77 @@ func harnessNoise(text string) bool {
 	return false
 }
 
-func toolSteps(raw json.RawMessage) []Step {
+// idStep is a Step still wearing the tool_use id its result will
+// answer to; the id never leaves this file.
+type idStep struct {
+	Step
+	id string
+}
+
+func toolSteps(raw json.RawMessage) []idStep {
 	var blocks []struct {
 		Type  string          `json:"type"`
+		ID    string          `json:"id"`
 		Name  string          `json:"name"`
 		Input json.RawMessage `json:"input"`
 	}
 	if json.Unmarshal(raw, &blocks) != nil {
 		return nil
 	}
-	var out []Step
+	var out []idStep
 	for _, b := range blocks {
 		if b.Type == "tool_use" && b.Name != "" {
-			out = append(out, Step{Tool: b.Name, Detail: toolDetail(b.Input), Diff: editDiff(b.Name, b.Input)})
+			out = append(out, idStep{
+				Step: Step{Tool: b.Name, Detail: toolDetail(b.Input), Diff: editDiff(b.Name, b.Input)},
+				id:   b.ID,
+			})
 		}
 	}
 	return out
+}
+
+// toolResults lifts every tool_result block: which call it answers,
+// the text it carried (string or text blocks; images yield nothing),
+// and whether the tool failed.
+type stepResult struct {
+	id   string
+	text string
+	err  bool
+}
+
+func toolResults(raw json.RawMessage) []stepResult {
+	var blocks []struct {
+		Type    string          `json:"type"`
+		ID      string          `json:"tool_use_id"`
+		Err     bool            `json:"is_error"`
+		Content json.RawMessage `json:"content"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return nil
+	}
+	var out []stepResult
+	for _, b := range blocks {
+		if b.Type == "tool_result" && b.ID != "" {
+			out = append(out, stepResult{id: b.ID, text: contentText(b.Content), err: b.Err})
+		}
+	}
+	return out
+}
+
+// clipOut bounds a tool result for the page — the first outLines
+// lines within outChars — and reports the true line count beside the
+// excerpt, so "241 lines" stays honest when 12 are shown.
+func clipOut(s string) (string, int) {
+	s = strings.TrimRight(s, "\n")
+	if s == "" {
+		return "", 0
+	}
+	lines := strings.Split(s, "\n")
+	n := len(lines)
+	if len(lines) > outLines {
+		lines = lines[:outLines]
+	}
+	return clip(strings.Join(lines, "\n"), outChars), n
 }
 
 // editDiff lifts an Edit or Write into a reviewable diff — the tool
