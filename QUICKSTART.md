@@ -120,6 +120,9 @@ deletion answer is NO; confirm the file and finish" — and the same
 drive continues to a done proposal. Total: three turns, well under a
 dollar, and DO-NOT-DELETE.txt still standing.
 
+Prefer the terminal? `demo.sh` beside this file runs the same flow
+through the API, payload for payload, with the verification built in.
+
 This demo is honest about what it is: a scratch directory, not a
 sandbox. The safety you watched came from the judge's escalation line
 and the tool policy — not from filesystem isolation.
