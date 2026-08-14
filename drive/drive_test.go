@@ -306,7 +306,7 @@ func TestContinueSeedsTheJudgeWithHistory(t *testing.T) {
 }
 
 func TestHeadlessCarriesTheToolPolicy(t *testing.T) {
-	bin := stubClaude(t, `case "$*" in *"--allowedTools Edit,Bash(go test:*)"*) ;; *) echo "policy missing: $*" >&2; exit 1;; esac
+	bin := stubClaude(t, `case "$*" in *"--allowedTools=Edit,Bash(go test:*)"*) ;; *) echo "policy missing: $*" >&2; exit 1;; esac
 echo '{"type":"result","result":"ok","session_id":"s1"}'`)
 	h := &Headless{Bin: bin, Dir: t.TempDir(), AllowedTools: []string{"Edit", "Bash(go test:*)"}}
 	if _, err := h.RunTurn(context.Background(), "abc", "go"); err != nil {

@@ -11,7 +11,7 @@ or the turn budget runs out.
 go run github.com/incantery/rook-host/engine/cmd/roost@latest
 ```
 
-Open http://localhost:4770. That's it.
+Open http://localhost:4770. That's it. (First ride: QUICKSTART.md.)
 
 ## What you get
 

@@ -76,10 +76,11 @@ func (h *Headless) StartTurn(ctx context.Context, prompt string) (Turn, error) {
 func (h *Headless) exec(ctx context.Context, args []string) (Turn, error) {
 	if len(h.AllowedTools) > 0 {
 		// The tool policy rides before the trailing prompt, into
-		// claude's own permission system.
+		// claude's own permission system. One =-joined token: the flag
+		// is variadic, and a bare form would swallow the prompt.
 		prompt := args[len(args)-1]
 		args = append(append(args[:len(args)-1:len(args)-1],
-			"--allowedTools", strings.Join(h.AllowedTools, ",")), prompt)
+			"--allowedTools="+strings.Join(h.AllowedTools, ",")), prompt)
 	}
 	ctx, cancel := context.WithTimeout(ctx, h.timeout())
 	defer cancel()
