@@ -1,0 +1,13 @@
+# Generated code is committed: `go run` and `npm run build` must work
+# without buf installed. Regenerate with `buf generate` from engine/.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: gen
+    opt: paths=source_relative
+  - local: cmd/roost/web/node_modules/.bin/protoc-gen-es
+    out: cmd/roost/web/src/lib/gen
+    opt: target=ts

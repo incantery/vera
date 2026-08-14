@@ -80,7 +80,8 @@ func loopbackOnly(addr string) bool {
 // the keyed URL can bootstrap the page.
 func requireKey(next http.Handler, key string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") || authOK(r, key) {
+		guarded := strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/roost.")
+		if !guarded || authOK(r, key) {
 			next.ServeHTTP(w, r)
 			return
 		}

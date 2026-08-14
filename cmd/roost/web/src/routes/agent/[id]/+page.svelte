@@ -1,6 +1,6 @@
 <script>
 	import { page } from '$app/state';
-	import { fetchAgent, sayTo, startDrive, stopDrive, interruptAgent, uploadImage, uploadUrl, imageParts } from '$lib/state.svelte.js';
+	import { fetchAgent, sayTo, startDrive, stopDrive, interruptAgent, uploadImage, uploadUrl, imageParts, watchAgent, applyFrame } from '$lib/state.svelte.js';
 	import UsageBar from '$lib/UsageBar.svelte';
 	import ArtifactPane from '$lib/ArtifactPane.svelte';
 	import DriveView from '$lib/DriveView.svelte';
@@ -48,11 +48,48 @@
 		}
 	}
 
+	// The data loop: the Connect stream feeds frames the moment the
+	// transcript moves; REST fills what the stream does not carry
+	// (usage, drives, notice) and is the whole story if the stream
+	// drops — polling is the fallback, not the norm.
+	let streaming = $state(false);
 	$effect(() => {
-		id; // re-arm when the route changes
+		id;
+		mode; // re-arm on route or mode change
 		refresh();
-		const t = setInterval(refresh, 3000);
-		return () => clearInterval(t);
+		let stop = null;
+		let retry = null;
+		let alive = true;
+		const open = () => {
+			stop = watchAgent(
+				id,
+				mode === 'direct',
+				(frame) => {
+					streaming = true;
+					data = applyFrame(data, frame);
+					lost = '';
+				},
+				() => {
+					streaming = false;
+					if (alive) retry = setTimeout(open, 5000);
+				}
+			);
+		};
+		open();
+		let ticks = 0;
+		const t = setInterval(() => {
+			ticks++;
+			// Streaming: a slow REST merge for usage/drives. Fallen back:
+			// the old 3s poll.
+			if (!streaming || ticks % 5 === 0) refresh();
+		}, 3000);
+		return () => {
+			alive = false;
+			stop?.();
+			clearTimeout(retry);
+			clearInterval(t);
+			streaming = false;
+		};
 	});
 
 	// A live second-hand for the in-flight turn — the wait is honest
@@ -263,6 +300,9 @@
 			<span class="text-xs {stateStyle[data.agent.state] ?? 'text-zinc-500'}">
 				{data.agent.state} · {data.agent.age}
 			</span>
+			{#if streaming}
+				<span class="text-[10px] text-emerald-400/80" title="the Connect stream is live — updates land as the transcript moves, no polling">⚡ live</span>
+			{/if}
 		{:else}
 			<span class="text-zinc-500">…</span>
 		{/if}

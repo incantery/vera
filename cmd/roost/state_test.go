@@ -65,6 +65,7 @@ func testServer(t *testing.T, dir string) *server {
 		tasks:   &taskStore{dir: t.TempDir()},
 		scratch: &scratchStore{parent: t.TempDir()},
 		uploads: t.TempDir(),
+		shelf:   &artifactStore{dir: t.TempDir()},
 	}
 }
 

@@ -110,6 +110,91 @@ export async function sayTo(id, text, opts = {}) {
 	if (!r.ok) throw new Error((await r.json()).error ?? 'the message was refused');
 }
 
+// ---- the typed wire: Connect streaming ----
+// WatchAgent replaces polling on the agent page: full snapshot first,
+// tail deltas after, every frame shaped exactly like the REST payload
+// so the page cannot tell which rail fed it.
+import { createClient } from '@connectrpc/connect';
+import { createConnectTransport } from '@connectrpc/connect-web';
+import { RoostService } from './gen/roost/v1/roost_pb';
+
+const transport = createConnectTransport({
+	baseUrl: '/',
+	interceptors: [
+		(next) => (req) => {
+			if (apiKey) req.header.set('Authorization', `Bearer ${apiKey}`);
+			return next(req);
+		}
+	]
+});
+const roostClient = createClient(RoostService, transport);
+
+const n = (v) => Number(v ?? 0);
+
+function fromMsg(m) {
+	return {
+		role: m.role,
+		text: m.text,
+		tools: m.tools || undefined,
+		steps: m.steps?.length
+			? m.steps.map((s) => ({
+					tool: s.tool,
+					detail: s.detail,
+					diff: s.diff ? { file: s.diff.file, old: s.diff.old, new: s.diff.new, all: s.diff.replaceAll } : undefined
+				}))
+			: undefined,
+		think: m.think?.length ? m.think : undefined,
+		ctx: n(m.ctx) || undefined,
+		rough: m.rough || undefined,
+		digest: m.digest ? { state: m.digest.state, headline: m.digest.headline, bullets: m.digest.bullets } : undefined
+	};
+}
+
+// applyFrame folds one stream frame into the page's data object,
+// preserving the REST-only fields (usage, drives, notice, turns) the
+// stream does not carry.
+export function applyFrame(prev, f) {
+	const history = f.reset || !prev?.history ? f.history.map(fromMsg) : [...prev.history.slice(0, f.from), ...f.history.map(fromMsg)];
+	return {
+		...(prev ?? {}),
+		agent: {
+			id: f.agent.id, title: f.agent.title, state: f.agent.state,
+			dir: f.agent.dir, branch: f.agent.branch || undefined,
+			tool: f.agent.tool || undefined, toolDetail: f.agent.toolDetail || undefined,
+			ctxPct: f.agent.ctxPct || undefined, age: f.agent.age
+		},
+		history,
+		ctx: f.ctx
+			? { tokens: n(f.ctx.tokens), in: n(f.ctx.freshIn), cacheRead: n(f.ctx.cacheRead), cacheWrite: n(f.ctx.cacheWrite), out: n(f.ctx.out), window: n(f.ctx.window), model: f.ctx.model }
+			: null,
+		spend: f.spend ? { claudeUsd: f.spend.claudeUsd, judgeUsd: f.spend.judgeUsd } : (prev?.spend ?? null),
+		pending: f.pending
+			? { text: f.pending.text, sent: f.pending.sent || undefined, status: f.pending.status, error: f.pending.error || undefined, direct: f.pending.direct, perm: f.pending.perm, images: f.pending.images, at: new Date(n(f.pending.atUnixMs)).toISOString() }
+			: null,
+		queue: f.queue?.map((q) => ({ text: q.text, perm: q.perm })) ?? [],
+		tree: f.tree?.map((t) => ({ path: t.path, add: t.add, del: t.del, new: t.isNew })) ?? [],
+		resume: f.resume,
+		artifacts: f.artifacts
+	};
+}
+
+// watchAgent opens the stream and feeds frames until aborted or the
+// stream errors; the caller owns the fallback story.
+export function watchAgent(id, raw, onFrame, onDone) {
+	const ac = new AbortController();
+	(async () => {
+		try {
+			for await (const frame of roostClient.watchAgent({ id, raw }, { signal: ac.signal })) {
+				onFrame(frame);
+			}
+			onDone?.(null);
+		} catch (err) {
+			if (!ac.signal.aborted) onDone?.(err);
+		}
+	})();
+	return () => ac.abort();
+}
+
 // uploadImage stores one pasted image on the server; the answer's
 // `path` rides the next say, its `name` serves the thumbnail back.
 export async function uploadImage(id, blob) {

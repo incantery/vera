@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/incantery/rook-host/engine/drive"
+	"github.com/incantery/rook-host/engine/gen/roost/v1/roostv1connect"
 	"github.com/incantery/rook-host/engine/transcript"
 	"github.com/incantery/rook-host/engine/usage"
 )
@@ -99,8 +100,10 @@ func main() {
 		spendPath:  defaultSpendPath(),
 		digestPath: defaultDigestPath(),
 		uploads:    defaultUploadsDir(),
+		hub:        newHub(),
 	}
 	s.loadJournals()
+	go s.hub.watch(*dir)
 	go s.uc.Loop()
 	// A missing key is a standing notice only where the default API
 	// lives; a custom base is a local server that wants no auth.
@@ -141,6 +144,12 @@ func main() {
 	mux.HandleFunc("DELETE /api/workspaces/{name}", s.handleWorkspaceDelete)
 	mux.HandleFunc("POST /api/drive", s.handleDrive)
 	mux.HandleFunc("POST /api/drive/stop", s.handleStop)
+	// The typed wire: Connect handlers mount beside the REST rails in
+	// the same binary; requireKey guards the /roost. prefix too.
+	// POST-only: every Connect RPC is a POST, and a method-less
+	// pattern would fight the SPA's "GET /" under Go 1.22 mux rules.
+	rpcPath, rpcHandler := roostv1connect.NewRoostServiceHandler(&roostRPC{s: s})
+	mux.Handle("POST "+rpcPath, rpcHandler)
 
 	fmt.Printf("roost: watching %s\n", *dir)
 	handler := http.Handler(mux)
@@ -228,6 +237,8 @@ type server struct {
 	digests map[string]*digestRec  // reply-hash -> the membrane's compression of it
 	sent    map[string]string      // sent-text-hash -> the rough words behind it
 	queues  map[string][]queuedSay // agent root -> direct messages typed ahead
+
+	hub *hub // "something changed" — feeds the watch streams
 }
 
 // digestRec is one reply's compression, cached by the reply's hash so
@@ -592,6 +603,7 @@ func (s *server) digestFor(root, prompt, reply string) *digestRec {
 	go func() {
 		headline, bullets, err := s.rootLLM(root).Digest(context.Background(), prompt, reply)
 		s.mu.Lock()
+		defer s.hub.notify()
 		defer s.mu.Unlock()
 		if err != nil {
 			rec.State = "failed"
@@ -695,6 +707,7 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 	job := &sayJob{Text: req.Text, Status: status, Direct: req.Direct, Perm: req.Perm, Images: req.Images, At: now, cancel: cancel}
 	s.says[root] = job
 	s.mu.Unlock()
+	s.hub.notify()
 
 	headID, cwd, headPath := head.ID, head.Cwd, head.Path
 	go func() {
@@ -727,12 +740,14 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 			// text belongs to those rough words.
 			s.sent[textHash(sent)] = req.Text
 			s.mu.Unlock()
+			s.hub.notify()
 		}
 		turner := &drive.Headless{Bin: s.claudeBin, Dir: cwd,
 			AllowedTools: permTools, PermissionMode: permMode}
 		turn, err := turner.RunTurn(turnCtx, headID, withImages(sent, req.Images))
 		s.addSpend(root, turn.CostUSD, 0)
 		s.mu.Lock()
+		defer s.hub.notify() // after the unlock below — defers run LIFO
 		defer s.mu.Unlock()
 		job.CostUSD = turn.CostUSD
 		if err != nil {
@@ -777,6 +792,7 @@ func (s *server) drainQueue(root string) {
 	job := &sayJob{Text: next.Text, Status: "thinking", Direct: true, Perm: next.Perm, Images: next.Images, At: now, cancel: cancel}
 	s.says[root] = job
 	s.mu.Unlock()
+	s.hub.notify()
 
 	_, head := s.resolveAgent(root, now)
 	permTools, permMode, _ := permPolicy(next.Perm)
@@ -794,6 +810,7 @@ func (s *server) drainQueue(root string) {
 		turn, err := turner.RunTurn(turnCtx, head.ID, withImages(next.Text, next.Images))
 		s.addSpend(root, turn.CostUSD, 0)
 		s.mu.Lock()
+		defer s.hub.notify()
 		defer s.mu.Unlock()
 		job.CostUSD = turn.CostUSD
 		if err != nil {
@@ -830,6 +847,7 @@ func (s *server) handleInterrupt(w http.ResponseWriter, r *http.Request) {
 	j.interrupted = true
 	j.cancel()
 	s.mu.Unlock()
+	s.hub.notify()
 	writeJSON(w, map[string]string{"status": "interrupting"})
 }
 
