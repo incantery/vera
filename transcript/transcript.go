@@ -137,6 +137,11 @@ type Scanner struct {
 	Idle   time.Duration // quiet longer than this = idle
 	Quiet  time.Duration // a pending tool call quiet longer than this = blocked?
 	Max    int
+	// Skip drops a session from every scan — applied before the Max
+	// cap, so what's skipped can never crowd out what's real. roost
+	// uses it to hide the usage collector's probes (untitled sessions
+	// living in the home directory).
+	Skip func(*Session) bool
 }
 
 // PaneActivity is one pane's row from rook's `panes.activity` answer:
@@ -285,6 +290,9 @@ func (sc *Scanner) Scan(now time.Time) []Session {
 			path := filepath.Join(sc.Dir, p.Name(), f.Name())
 			s := parseTail(path, info.ModTime(), now, sc.Idle, sc.Quiet)
 			s.ID = strings.TrimSuffix(f.Name(), ".jsonl")
+			if sc.Skip != nil && sc.Skip(&s) {
+				continue
+			}
 			if s.Title == "" {
 				s.Title = fallbackTitle(s.Cwd, p.Name(), s.ID)
 			}

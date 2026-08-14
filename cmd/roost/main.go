@@ -85,6 +85,7 @@ func main() {
 			Idle:   10 * time.Minute,
 			Quiet:  60 * time.Second,
 			Max:    50,
+			Skip:   skipProbes(home),
 		},
 		claudeBin:  *claudeBin,
 		turns:      *turns,
@@ -180,6 +181,17 @@ func main() {
 	}
 }
 
+// skipProbes hides the usage collector's droppings from every scan:
+// `claude /usage` probes pile up as untitled sessions in the home
+// directory — hundreds of them, none a conversation. A titled home
+// session is a real one and stays. Filtered in the Scanner (not at the
+// rail) so probes never crowd real sessions out of the Max cap.
+func skipProbes(home string) func(*transcript.Session) bool {
+	return func(t *transcript.Session) bool {
+		return !t.Titled && home != "" && t.Cwd == home
+	}
+}
+
 func printableAddr(addr string) string {
 	if strings.HasPrefix(addr, ":") {
 		return "localhost" + addr
@@ -258,7 +270,11 @@ func (s *server) rootLLM(root string) *drive.LLM {
 }
 
 // agentSpend is one agent's bill for this process's lifetime: what
-// claude metered for its turns, and what the judge's endpoint cost.
+// claude metered for its turns (API rates — subscription auth has
+// already paid for these), and what roost's OWN calls cost — judge,
+// digest, phrasing, all real money on the LLM endpoint. The field is
+// named for the judge it started as; the wire and journal keep the
+// name so old lines still replay.
 type agentSpend struct {
 	ClaudeUSD float64 `json:"claudeUsd,omitempty"`
 	JudgeUSD  float64 `json:"judgeUsd,omitempty"`

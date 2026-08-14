@@ -301,7 +301,7 @@
 			{#if spendTotal}
 				<span
 					class="text-xs text-zinc-500"
-					title="spent on this agent by roost: claude ${(data.spend.claudeUsd ?? 0).toFixed(4)} + judge ${(data.spend.judgeUsd ?? 0).toFixed(4)}"
+					title="this agent's bill: claude turns ${(data.spend.claudeUsd ?? 0).toFixed(4)} (at API rates — a subscription already covers them) + rook's own calls ${(data.spend.judgeUsd ?? 0).toFixed(4)}"
 				>
 					${spendTotal.toFixed(spendTotal < 0.1 ? 3 : 2)}
 				</span>
@@ -343,8 +343,8 @@
 				<span class="text-zinc-600">context unknown — no usage in the tail yet</span>
 			{/if}
 			<span class="grow"></span>
-			<span title="what roost has spent on this agent this process: claude-metered turns + the rook agent's own calls">
-				claude <b class="font-medium text-zinc-300">${(data.spend?.claudeUsd ?? 0).toFixed(2)}</b>
+			<span title="claude turns are metered at API rates — a subscription already covers them; rook's own calls are real spend on the LLM endpoint">
+				claude <b class="font-medium text-zinc-300">${(data.spend?.claudeUsd ?? 0).toFixed(2)}</b><span class="text-zinc-600">&nbsp;api-rate</span>
 				· rook <b class="font-medium text-zinc-300">${(data.spend?.judgeUsd ?? 0).toFixed(2)}</b>
 			</span>
 			<button

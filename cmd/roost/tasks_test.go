@@ -169,6 +169,75 @@ func TestBoardDoesNotAdoptUntitledProbes(t *testing.T) {
 	}
 }
 
+func TestAdoptedCardClosesWhenTheSessionGoesQuietAndNeverReturns(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now)
+	s := testServer(t, dir)
+
+	tasks, _ := boardOf(t, s)
+	if len(tasks) != 1 || tasks[0].Col != "progress" || !tasks[0].Adopted {
+		t.Fatalf("adopted card: %+v", tasks)
+	}
+	id := tasks[0].ID
+
+	// The session goes quiet past the idle threshold: the mirror closes.
+	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now.Add(-20*time.Minute))
+	tasks, _ = boardOf(t, s)
+	if len(tasks) != 1 || tasks[0].ID != id || tasks[0].Col != "done" {
+		t.Fatalf("the quiet session's card must close: %+v", tasks)
+	}
+	onDisk, err := s.tasks.get(id)
+	if err != nil || onDisk.Col != "done" {
+		t.Fatalf("the close must persist: %+v err=%v", onDisk, err)
+	}
+
+	// The session works again: the rail shows it, the board does not
+	// grow a phantom duplicate — one agent, one card, ever.
+	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", time.Now())
+	tasks, _ = boardOf(t, s)
+	if len(tasks) != 1 || tasks[0].ID != id || tasks[0].Col != "done" {
+		t.Fatalf("a closed card must never respawn: %+v", tasks)
+	}
+}
+
+func TestAdoptedCardStaysOpenWhileTheSessionNeedsAHuman(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now)
+	s := testServer(t, dir)
+	tasks, _ := boardOf(t, s)
+	if len(tasks) != 1 {
+		t.Fatalf("adopted card: %+v", tasks)
+	}
+
+	// Two minutes of silence on a pending tool call reads blocked? —
+	// waiting on a human is not finished, so the card stays open.
+	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now.Add(-2*time.Minute))
+	tasks, _ = boardOf(t, s)
+	if len(tasks) != 1 || tasks[0].Col != "progress" {
+		t.Fatalf("blocked? must keep the card open: %+v", tasks)
+	}
+}
+
+func TestQuietCapturedCardsAreNeverAutoClosed(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now.Add(-20*time.Minute))
+	s := testServer(t, dir)
+	a, _ := s.tasks.capture("the human's card", now)
+	s.tasks.mutate(a.ID, func(x *task) error {
+		x.Agent = "live-1"
+		x.Col = "progress"
+		return nil
+	})
+
+	tasks, _ := boardOf(t, s)
+	if len(tasks) != 1 || tasks[0].Col != "progress" {
+		t.Fatalf("a captured card's workflow belongs to the human: %+v", tasks)
+	}
+}
+
 func TestBoardBacklogStaysUnassignedBesideTheLiveTask(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()

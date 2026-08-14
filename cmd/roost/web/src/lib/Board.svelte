@@ -187,6 +187,7 @@
 			style="display: flex; align-items: center; gap: 18px; font-size: 12px; color: var(--color-neutral-500);"
 		>
 			<span
+				title="everything roost has spent this process: claude turns at API rates (a subscription already covers those) + rook's own calls"
 				>spend
 				<span style="color: var(--color-neutral-200); font-variant-numeric: tabular-nums;"
 					>{cost(board?.spend)}</span

@@ -444,7 +444,7 @@
 			onclick={() => (inspector = !inspector)}
 			style="flex: 0 0 auto; white-space: nowrap; font: inherit; font-family: {MONO}; font-size: 11px; padding: 4px 8px; cursor: pointer; border-radius: var(--radius-sm); border: 1px solid {inspector ? 'var(--color-neutral-800)' : 'transparent'}; background: transparent; color: var(--color-neutral-500);"
 			class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-200)]!"
-			title="context, permissions, working tree, spend"
+			title="context, permissions, working tree, spend (claude turns at API rates + rook's own calls)"
 		>
 			{data?.agent?.ctxPct ? `ctx ${data.agent.ctxPct}%` : 'ctx —'}{spendTotal ? ` · $${spendTotal.toFixed(2)}` : ''} · ⌘I
 		</button>
@@ -849,11 +849,11 @@
 
 			<div style="padding: 14px 14px 24px; display: flex; flex-direction: column; gap: 6px;">
 				<div style="font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; color: var(--color-neutral-600);">SPEND</div>
-				<div style="display: flex; justify-content: space-between; font-size: 11.5px;">
-					<span style="color: var(--color-neutral-500);">claude turns</span>
+				<div style="display: flex; justify-content: space-between; font-size: 11.5px;" title="what these turns would bill at API prices — a subscription has already paid for them">
+					<span style="color: var(--color-neutral-500);">claude turns <span style="color: var(--color-neutral-600);">· api rate</span></span>
 					<span style="color: var(--color-neutral-300); font-variant-numeric: tabular-nums;">${(data?.spend?.claudeUsd ?? 0).toFixed(2)}</span>
 				</div>
-				<div style="display: flex; justify-content: space-between; font-size: 11.5px;">
+				<div style="display: flex; justify-content: space-between; font-size: 11.5px;" title="judge, digests, phrasing — real spend on the LLM endpoint">
 					<span style="color: var(--color-neutral-500);">rook's own calls</span>
 					<span style="color: var(--color-neutral-300); font-variant-numeric: tabular-nums;">${(data?.spend?.judgeUsd ?? 0).toFixed(2)}</span>
 				</div>

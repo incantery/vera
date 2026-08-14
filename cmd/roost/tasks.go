@@ -78,6 +78,11 @@ type task struct {
 
 	Pinned bool `json:"pinned,omitempty"`
 
+	// Adopted: the board created this card itself from a live working
+	// session (not a human capture). Adopted cards close themselves
+	// when their session goes quiet — the transcript is the record.
+	Adopted bool `json:"adopted,omitempty"`
+
 	// Rook proposes, the human disposes.
 	Proposal     string `json:"proposal,omitempty"`
 	ProposalWhy  string `json:"proposalWhy,omitempty"`
@@ -225,6 +230,11 @@ func (st *taskStore) get(id string) (task, error) {
 	}
 	t.Live = nil // derived, never trusted from disk
 	t.ScratchName = ""
+	// Cards adopted before the flag existed still carry adopt's own
+	// words; the flag is backfilled on read so they close like the rest.
+	if !t.Adopted && strings.HasPrefix(t.Intent, "Adopted from the live session") {
+		t.Adopted = true
+	}
 	return t, nil
 }
 
@@ -298,8 +308,9 @@ func (st *taskStore) adopt(root, title, dir string, now time.Time) (task, error)
 		Title: title,
 		Intent: "Adopted from the live session in " + dir +
 			" — the work this agent is already doing.",
-		Agent: root,
-		Col:   "progress", State: "in progress · live session",
+		Agent:   root,
+		Adopted: true,
+		Col:     "progress", State: "in progress · live session",
 		Face:      "The agent is working; the transcript is the record.",
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -345,13 +356,15 @@ func (s *server) boardSessions(now time.Time) map[string]*transcript.Session {
 }
 
 // syncBoard adopts live work the board does not know yet: every
-// WORKING agent with no open assigned task becomes one in-progress
-// card. One agent, one task — an agent already carrying an open task
-// adopts nothing.
+// WORKING agent with no assigned task — open OR closed — becomes one
+// in-progress card. One agent, one card, ever: a session that works
+// again after its card closed shows in the rail, not as a phantom
+// duplicate on the board. Adopted cards close themselves when their
+// session goes quiet.
 func (s *server) syncBoard(tasks []task, fleet map[string]*transcript.Session, now time.Time) []task {
 	assigned := map[string]bool{}
 	for i := range tasks {
-		if tasks[i].open() && tasks[i].Agent != "" {
+		if tasks[i].Agent != "" {
 			assigned[tasks[i].Agent] = true
 		}
 	}
@@ -365,6 +378,35 @@ func (s *server) syncBoard(tasks []task, fleet map[string]*transcript.Session, n
 		}
 		if t, err := s.tasks.adopt(root, live.Title, filepath.Base(live.Cwd), now); err == nil {
 			tasks = append([]task{t}, tasks...)
+		}
+	}
+	// An adopted card mirrors a live session; when that session goes
+	// quiet (idle ten minutes, or gone from the window entirely) the
+	// mirror closes. needs-you and blocked? stay open — that work is
+	// waiting on a human, not finished. Only cards still in progress
+	// close themselves: a human who moved the card anywhere else took
+	// over its workflow, and captured cards were never rook's to close.
+	for i := range tasks {
+		t := tasks[i]
+		if !t.Adopted || t.Col != "progress" || t.Agent == "" {
+			continue
+		}
+		if live := fleet[t.Agent]; live != nil && live.State != transcript.StateIdle {
+			continue
+		}
+		nt, err := s.tasks.mutate(t.ID, func(x *task) error {
+			if x.Col != "progress" {
+				return errors.New("already moved")
+			}
+			x.Col = "done"
+			x.State = "done · session went quiet"
+			x.Face = "The session went quiet; the transcript is the record."
+			x.clearProposal()
+			x.event("rook", "the session went quiet — adopted card closed", now)
+			return nil
+		})
+		if err == nil {
+			tasks[i] = nt
 		}
 	}
 	return tasks

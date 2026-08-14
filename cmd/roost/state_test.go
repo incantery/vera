@@ -148,6 +148,59 @@ func TestCommandsAreNeverExpanded(t *testing.T) {
 	}
 }
 
+// writeHomeTranscript drops a session living in the home directory —
+// titled (a real conversation) or not (a usage probe).
+func writeHomeTranscript(t *testing.T, dir, home, id, title string, mtime time.Time) {
+	t.Helper()
+	p := filepath.Join(dir, "-Users-someone")
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ts := mtime.UTC().Format(time.RFC3339)
+	lines := ""
+	if title != "" {
+		lines += fmt.Sprintf(`{"type":"user","timestamp":%q,"cwd":%q,"aiTitle":%q,"message":{"role":"user","content":"go"}}`+"\n", ts, home, title)
+	}
+	lines += fmt.Sprintf(
+		`{"type":"assistant","timestamp":%q,"cwd":%q,"message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{}}]}}`+"\n",
+		ts, home)
+	path := filepath.Join(p, id+".jsonl")
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, mtime, mtime); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStateHidesUsageProbesButKeepsRealHomeSessions(t *testing.T) {
+	dir := t.TempDir()
+	home := "/Users/someone"
+	now := time.Now()
+	// The probe is the freshest thing on the machine — exactly how the
+	// collector's cadence pollutes the rail and steals "current".
+	writeHomeTranscript(t, dir, home, "probe-1", "", now)
+	writeHomeTranscript(t, dir, home, "home-chat", "a real conversation at home", now.Add(-5*time.Minute))
+	writeTranscript(t, dir, "-repo-alpha", "repo-1", now.Add(-time.Hour))
+	s := testServer(t, dir)
+	s.sc.Skip = skipProbes(home)
+
+	got := stateOf(t, s)
+	ids := map[string]bool{}
+	for _, ws := range got.Sessions {
+		ids[ws.ID] = true
+	}
+	if ids["probe-1"] {
+		t.Fatalf("a usage probe must never be listed: %+v", got.Sessions)
+	}
+	if !ids["home-chat"] || !ids["repo-1"] {
+		t.Fatalf("real sessions missing: %+v", ids)
+	}
+	if got.Current != "home-chat" {
+		t.Fatalf("current must never be a probe: %q", got.Current)
+	}
+}
+
 func TestStateMarksAgentsOnOpenTasks(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
