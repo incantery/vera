@@ -145,3 +145,28 @@ func TestCommandsAreNeverExpanded(t *testing.T) {
 		}
 	}
 }
+
+func TestStateMarksAgentsOnOpenTasks(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeTranscript(t, dir, "-repo-alpha", "agent-1", now.Add(-time.Minute))
+	writeTranscript(t, dir, "-repo-beta", "bystander", now.Add(-2*time.Minute))
+	s := testServer(t, dir)
+	a, _ := s.tasks.capture("the work", now)
+	s.tasks.mutate(a.ID, func(x *task) error {
+		x.Agent = "agent-1"
+		x.Col = "progress"
+		return nil
+	})
+	got := stateOf(t, s)
+	byID := map[string]wireSession{}
+	for _, ws := range got.Sessions {
+		byID[ws.ID] = ws
+	}
+	if byID["agent-1"].Task != a.ID {
+		t.Fatalf("the assigned agent must wear its task: %+v", byID["agent-1"])
+	}
+	if byID["bystander"].Task != "" {
+		t.Fatalf("a bystander wears nothing: %+v", byID["bystander"])
+	}
+}

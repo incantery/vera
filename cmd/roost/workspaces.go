@@ -5,9 +5,9 @@
 // there by construction, which is what makes a delete verb safe to
 // expose to the page at all.
 //
-// Every scratch workspace is born with a SCRATCH.txt marker: it names
-// the folder as roost's, and doubles as the standing "protected file"
-// a demo can dare an agent to delete.
+// Every scratch workspace is born with a DO-NOT-DELETE.txt marker: it
+// names the folder as roost's, and doubles as the standing "protected
+// file" a demo dares an agent to delete.
 //
 // A scratch workspace is NOT a sandbox. A drive there runs real tools
 // under the real user; the isolation is social (nothing you care
@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-const scratchMarker = "SCRATCH.txt"
+const scratchMarker = "DO-NOT-DELETE.txt"
 
 const scratchMarkerText = `This scratch workspace was created by roost.
 Nothing outside this folder depends on it; deleting the whole folder is

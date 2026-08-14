@@ -312,6 +312,11 @@ type wireSession struct {
 	// it (live while working, "last did" while quiet).
 	Tool       string `json:"tool,omitempty"`
 	ToolDetail string `json:"toolDetail,omitempty"`
+	// The rail's ranking facts: the open board task this agent is
+	// assigned to (its id), and whether the agent lives in a
+	// roost-made scratch workspace.
+	Task    string `json:"task,omitempty"`
+	Scratch bool   `json:"scratch,omitempty"`
 }
 
 // handleState is the index's poll: one agent per LINEAGE. Forks are
@@ -324,6 +329,13 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 	byID := map[string]*transcript.Session{}
 	for i := range scanned {
 		byID[scanned[i].ID] = &scanned[i]
+	}
+	// Which agents carry open board work — the rail ranks by this.
+	onTask := map[string]string{}
+	for _, t := range s.tasks.list() {
+		if t.open() && t.Agent != "" {
+			onTask[t.Agent] = t.ID
+		}
 	}
 	var sessions []wireSession
 	// current is the agent whose lineage saw the freshest transcript
@@ -352,6 +364,8 @@ func (s *server) handleState(w http.ResponseWriter, r *http.Request) {
 			Driving:    s.driving(t.ID),
 			Tool:       live.ToolName,
 			ToolDetail: live.ToolDetail,
+			Task:       onTask[t.ID],
+			Scratch:    s.scratch.has(live.Cwd),
 		}
 		if pct := transcript.CtxPct(live.CtxTokens, live.Model); pct >= 0 {
 			ws.CtxPct = pct
