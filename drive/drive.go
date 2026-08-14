@@ -48,14 +48,17 @@ type Judge interface {
 }
 
 type Verdict struct {
-	Done   bool
-	Prompt string // when not done: the exact next message to send
-	Reason string // one line for the record
+	Done     bool
+	Escalate bool   // the question belongs to the owner, not to more turns
+	Prompt   string // when continuing: the exact next message to send
+	Reason   string // DONE's how, or ESCALATE's question for the owner
 }
 
 // Result is what a drive has to show for itself.
 type Result struct {
 	Done      bool
+	Escalated bool   // stopped on purpose: the Ask belongs to a human
+	Ask       string // what the owner is being asked, when escalated
 	Reason    string
 	Turns     []Exchange
 	Root      string  // the session the drive began as — the agent's identity
@@ -75,7 +78,18 @@ type Loop struct {
 	Turner   Turner
 	Judge    Judge
 	MaxTurns int               // prompts sent before giving up (default 4)
+	MaxUSD   float64           // metered claude spend before stopping (default 5)
 	Progress func(line string) // optional: one live line for a UI row
+	// OnTurn sees every automatic decision as it is made — the audit
+	// trail's feed. Called after each judged exchange.
+	OnTurn func(turn int, ex Exchange, v Verdict)
+}
+
+func (l *Loop) maxUSD() float64 {
+	if l.MaxUSD > 0 {
+		return l.MaxUSD
+	}
+	return 5
 }
 
 func (l *Loop) maxTurns() int {
@@ -107,6 +121,7 @@ func (l *Loop) run(ctx context.Context, sessionID, goal, prompt string, seed []E
 	res := Result{Root: sessionID, SessionID: sessionID, Turns: seed}
 	off := len(seed)
 	total := l.maxTurns() + off
+	var prevReply string
 	for turn := 1 + off; turn <= total; turn++ {
 		l.progress("turn %d/%d: asking claude", turn, total)
 		t, err := l.Turner.RunTurn(ctx, res.SessionID, prompt)
@@ -117,27 +132,66 @@ func (l *Loop) run(ctx context.Context, sessionID, goal, prompt string, seed []E
 		if t.SessionID != "" {
 			res.SessionID = t.SessionID
 		}
-		res.Turns = append(res.Turns, Exchange{Prompt: prompt, Reply: t.Reply})
+		ex := Exchange{Prompt: prompt, Reply: t.Reply}
+		res.Turns = append(res.Turns, ex)
 		l.progress("turn %d/%d: judging the reply", turn, total)
 		v, err := l.Judge.Judge(ctx, goal, res.Turns)
 		if err != nil {
 			return res, errors.New("the judge failed: " + err.Error())
 		}
-		if v.Done {
+		if l.OnTurn != nil {
+			l.OnTurn(turn, ex, v)
+		}
+		switch {
+		case v.Done:
 			res.Done = true
 			res.Reason = v.Reason
 			if res.Reason == "" {
 				res.Reason = "the goal is met"
 			}
 			return res, nil
+		case v.Escalate:
+			res.Escalated = true
+			res.Ask = v.Reason
+			res.Reason = "escalated to the owner"
+			return res, nil
 		}
 		if strings.TrimSpace(v.Prompt) == "" {
 			return res, errors.New("the judge wanted to continue but had nothing to say")
 		}
+		// The circling guard: the judge re-issuing the prompt it just
+		// used, or the worker giving the same reply twice running, is a
+		// conversation going nowhere — stop and hand the wheel to a
+		// human rather than bill laps.
+		if fold(v.Prompt) == fold(prompt) || (prevReply != "" && fold(t.Reply) == fold(prevReply)) {
+			res.Escalated = true
+			res.Ask = "The conversation is circling — the last exchange repeated itself. What should change?"
+			res.Reason = "escalated: circling"
+			return res, nil
+		}
+		// The spend cap: metered money is a budget, not a suggestion.
+		if res.CostUSD >= l.maxUSD() {
+			res.Escalated = true
+			res.Ask = fmt.Sprintf("The run has spent $%.2f (cap $%.2f) without meeting the goal. Keep going, change course, or drop?", res.CostUSD, l.maxUSD())
+			res.Reason = "escalated: spend cap"
+			return res, nil
+		}
+		prevReply = t.Reply
 		prompt = v.Prompt
 	}
 	res.Reason = fmt.Sprintf("the turn budget (%d) is spent and the goal is not met", total)
 	return res, nil
+}
+
+// fold collapses whitespace for the circling comparison — repetition
+// is about words, not formatting.
+func fold(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// Continue picks up a drive whose owner just answered: the reply is
+// the next prompt, the recorded exchanges are the seed, and the judge
+// keeps judging against the original goal.
+func (l *Loop) Continue(ctx context.Context, sessionID, goal, reply string, seed []Exchange) (Result, error) {
+	return l.run(ctx, sessionID, goal, reply, seed)
 }
 
 // RunFresh drives a session that does not exist yet: the Turner (which
@@ -160,17 +214,27 @@ func (l *Loop) RunFresh(ctx context.Context, goal string) (Result, error) {
 		return res, errors.New("the first turn came back without a session id")
 	}
 	res.Root, res.SessionID = t.SessionID, t.SessionID
-	res.Turns = append(res.Turns, Exchange{Prompt: goal, Reply: t.Reply})
+	ex := Exchange{Prompt: goal, Reply: t.Reply}
+	res.Turns = append(res.Turns, ex)
 	l.progress("turn 1/%d: judging the reply", l.maxTurns())
 	v, err := l.Judge.Judge(ctx, goal, res.Turns)
 	if err != nil {
 		return res, errors.New("the judge failed: " + err.Error())
 	}
-	if v.Done {
+	if l.OnTurn != nil {
+		l.OnTurn(1, ex, v)
+	}
+	switch {
+	case v.Done:
 		res.Done, res.Reason = true, v.Reason
 		if res.Reason == "" {
 			res.Reason = "the goal is met"
 		}
+		return res, nil
+	case v.Escalate:
+		res.Escalated = true
+		res.Ask = v.Reason
+		res.Reason = "escalated to the owner"
 		return res, nil
 	}
 	if strings.TrimSpace(v.Prompt) == "" {

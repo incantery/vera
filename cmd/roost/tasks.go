@@ -86,6 +86,17 @@ type task struct {
 	Runs    []taskRun `json:"runs,omitempty"`
 	CostUSD float64   `json:"costUsd,omitempty"`
 
+	// Mode is the task's tool policy: "read" (default — print mode's
+	// refusals stand) or "work" (edits and scoped build/test commands,
+	// through claude's own permission system). Code-side sets, never
+	// LLM-chosen.
+	Mode string `json:"mode,omitempty"`
+	// Exchanges is the drive's own conversation, persisted so an
+	// owner's reply can seed a continuation after any restart. Capped:
+	// the transcript holds the full story, the task holds the working
+	// set.
+	Exchanges []drive.Exchange `json:"exchanges,omitempty"`
+
 	CreatedAt time.Time   `json:"createdAt"`
 	UpdatedAt time.Time   `json:"updatedAt"`
 	Log       []taskEvent `json:"log"`
@@ -114,6 +125,26 @@ func (t *task) clearProposal() {
 
 func (t *task) open() bool {
 	return t.Col == "inbox" || t.Col == "progress" || t.Col == "waiting"
+}
+
+// maxExchanges bounds what a task file carries; the transcript is the
+// full record.
+const maxExchanges = 12
+
+// workTools is the "work" mode's tool policy: edits plus the build-
+// and-test commands a repo task needs. Deliberately no git mutation,
+// no network, no package installs — those escalate.
+var workTools = []string{
+	"Edit", "Write", "MultiEdit",
+	"Bash(go build:*)", "Bash(go test:*)", "Bash(go vet:*)", "Bash(gofmt:*)",
+	"Bash(npm test:*)", "Bash(npm run build:*)", "Bash(make:*)",
+}
+
+func toolsFor(mode string) []string {
+	if mode == "work" {
+		return workTools
+	}
+	return nil
 }
 
 type taskStore struct {
@@ -447,6 +478,7 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		AgentID string `json:"agentId"`
 		NewIn   string `json:"newIn"` // birth a fresh agent in this repo
+		Mode    string `json:"mode"`  // "" or "read" | "work"
 	}
 	// The body is optional; absence means "rook picks".
 	json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14)).Decode(&req)
@@ -461,8 +493,12 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 409, "already in progress")
 		return
 	}
+	mode := req.Mode
+	if mode != "work" {
+		mode = "read"
+	}
 	if req.NewIn != "" {
-		s.startTaskFresh(w, r, t, req.NewIn, now)
+		s.startTaskFresh(w, r, t, req.NewIn, mode, now)
 		return
 	}
 	agentID := t.Agent
@@ -496,11 +532,12 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 	dir := filepath.Base(head.Cwd)
 	t, err = s.tasks.mutate(t.ID, func(t *task) error {
 		t.Agent = root
+		t.Mode = mode
 		t.Goal, t.GoalActor = goal, "rook"
 		t.Col, t.State = "progress", "in progress · turn in flight"
 		t.Face = "Started. The first turn is in flight."
 		t.clearProposal()
-		t.event("rook", "assigned to "+dir+" ("+shortID(root)+")", now)
+		t.event("rook", "assigned to "+dir+" ("+shortID(root)+") · mode "+mode, now)
 		t.event("rook", "compiled intent → drive goal, started against "+shortID(head.ID), now)
 		return nil
 	})
@@ -508,7 +545,74 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 500, err.Error())
 		return
 	}
-	s.startTaskDrive(root, head, t.ID, goal)
+	s.startTaskDrive(root, head, t.ID, goal, mode, "", nil)
+	writeJSON(w, t)
+}
+
+// handleTaskReply is the escalation's return path: the owner answers a
+// waiting card and the SAME drive continues — reply as the next
+// prompt, the recorded exchanges as the seed, the judge still judging
+// against the original goal.
+func (s *server) handleTaskReply(w http.ResponseWriter, r *http.Request) {
+	if s.llm == nil {
+		httpErr(w, 409, s.notice)
+		return
+	}
+	var req struct {
+		Text string `json:"text"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req) != nil {
+		httpErr(w, 400, "the request did not parse")
+		return
+	}
+	req.Text = strings.TrimSpace(req.Text)
+	if req.Text == "" {
+		httpErr(w, 400, "say something")
+		return
+	}
+	now := time.Now()
+	t, err := s.tasks.get(r.PathValue("tid"))
+	if err != nil {
+		httpErr(w, 404, err.Error())
+		return
+	}
+	if t.Col != "waiting" {
+		httpErr(w, 409, "only a waiting task takes a reply")
+		return
+	}
+	if t.Agent == "" {
+		httpErr(w, 409, "this task has no agent yet — start it instead")
+		return
+	}
+	root, head := s.resolveAgent(t.Agent, now)
+	if head == nil {
+		httpErr(w, 404, "the task's agent is gone from the window")
+		return
+	}
+	s.mu.Lock()
+	busy := s.drivingLocked(root)
+	s.mu.Unlock()
+	if busy {
+		httpErr(w, 409, "that agent already has a run in flight")
+		return
+	}
+	goal := t.Goal
+	if goal == "" {
+		goal = t.Intent
+	}
+	t, err = s.tasks.mutate(t.ID, func(t *task) error {
+		t.Col, t.State = "progress", "in progress · continuing on your answer"
+		t.Ask = ""
+		t.Face = "Continuing: " + transcript.Snip(req.Text, 100)
+		t.clearProposal()
+		t.event("human", "replied — "+transcript.Snip(req.Text, 100), now)
+		return nil
+	})
+	if err != nil {
+		httpErr(w, 500, err.Error())
+		return
+	}
+	s.startTaskDrive(root, head, t.ID, goal, t.Mode, req.Text, t.Exchanges)
 	writeJSON(w, t)
 }
 
@@ -523,7 +627,7 @@ func shortID(id string) string {
 // claude in the chosen repo, the goal as its first breath. The repo
 // must be one the fleet already showed — the wire can only name what
 // the machine offered.
-func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, newIn string, now time.Time) {
+func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, newIn, mode string, now time.Time) {
 	fleet := s.boardSessions(now)
 	if repoOffered(fleet, newIn) == "" {
 		httpErr(w, 400, "that directory is not one the fleet has shown")
@@ -543,6 +647,7 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 	}
 	dir := filepath.Base(newIn)
 	t, err = s.tasks.mutate(t.ID, func(t *task) error {
+		t.Mode = mode
 		t.Goal, t.GoalActor = goal, "rook"
 		t.Col, t.State = "progress", "in progress · a fresh agent is being born"
 		t.Face = "Starting a fresh agent in " + dir + "."
@@ -575,10 +680,11 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 		s.update(rn.ID, func(r *run) { r.JudgeUSD += c })
 	}
 	loop := &drive.Loop{
-		Turner:   &drive.Headless{Bin: s.claudeBin, Dir: newIn},
+		Turner:   &drive.Headless{Bin: s.claudeBin, Dir: newIn, AllowedTools: toolsFor(mode)},
 		Judge:    &drive.LLMJudge{LLM: &jl},
 		MaxTurns: s.turns,
 		Progress: func(line string) { s.update(rn.ID, func(r *run) { r.Status = line; r.At = time.Now() }) },
+		OnTurn:   s.auditTurn(t.ID),
 	}
 	taskID := t.ID
 	go func() {
@@ -614,7 +720,7 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 				return nil
 			})
 		}
-		s.taskRunLanded(taskID, res, err)
+		s.taskRunLanded(taskID, res, err, 0)
 	}()
 	writeJSON(w, t)
 }
@@ -641,9 +747,33 @@ func (s *server) currentAgent(now time.Time) string {
 	return best
 }
 
+// auditTurn is the observability feed: every automatic decision the
+// judge makes lands on the task's log as it is made, not just at the
+// end — the board must be auditable while the machine is still moving.
+func (s *server) auditTurn(taskID string) func(int, drive.Exchange, drive.Verdict) {
+	return func(turn int, ex drive.Exchange, v drive.Verdict) {
+		text := ""
+		switch {
+		case v.Done:
+			text = fmt.Sprintf("turn %d — judged the goal met", turn)
+		case v.Escalate:
+			text = fmt.Sprintf("turn %d — escalating: %s", turn, transcript.Snip(v.Reason, 70))
+		default:
+			text = fmt.Sprintf("turn %d — answered the worker: %s", turn, transcript.Snip(v.Prompt, 70))
+		}
+		now := time.Now()
+		s.tasks.mutate(taskID, func(t *task) error {
+			t.event("rook", text, now)
+			return nil
+		})
+	}
+}
+
 // startTaskDrive is the drive path the board rides: same loop, same
-// judge, plus the task bookkeeping when it lands.
-func (s *server) startTaskDrive(root string, head *transcript.Session, taskID, goal string) {
+// judge, plus the task bookkeeping when it lands. A non-empty reply
+// continues an escalated drive (seeded with the task's exchanges)
+// instead of opening with the goal.
+func (s *server) startTaskDrive(root string, head *transcript.Session, taskID, goal, mode, reply string, seed []drive.Exchange) {
 	ctx, cancel := context.WithCancel(context.Background())
 	idb := make([]byte, 4)
 	rand.Read(idb)
@@ -662,15 +792,22 @@ func (s *server) startTaskDrive(root string, head *transcript.Session, taskID, g
 		s.addSpend(root, 0, c)
 	}
 	loop := &drive.Loop{
-		Turner:   &drive.Headless{Bin: s.claudeBin, Dir: head.Cwd},
+		Turner:   &drive.Headless{Bin: s.claudeBin, Dir: head.Cwd, AllowedTools: toolsFor(mode)},
 		Judge:    &drive.LLMJudge{LLM: &ll},
 		MaxTurns: s.turns,
 		Progress: func(line string) { s.update(rn.ID, func(r *run) { r.Status = line; r.At = time.Now() }) },
+		OnTurn:   s.auditTurn(taskID),
 	}
 	headID := head.ID
 	go func() {
 		defer cancel()
-		res, err := loop.Run(ctx, headID, goal)
+		var res drive.Result
+		var err error
+		if reply != "" {
+			res, err = loop.Continue(ctx, headID, goal, reply, seed)
+		} else {
+			res, err = loop.Run(ctx, headID, goal)
+		}
 		s.ln.advance(root, res.SessionID)
 		s.addSpend(root, res.CostUSD, 0)
 		s.update(rn.ID, func(r *run) {
@@ -686,18 +823,28 @@ func (s *server) startTaskDrive(root string, head *transcript.Session, taskID, g
 			r.Done = res.Done
 			r.Reason = res.Reason
 		})
-		s.taskRunLanded(taskID, res, err)
+		s.taskRunLanded(taskID, res, err, len(seed))
 	}()
 }
 
 // taskRunLanded folds a finished run back onto its task: done becomes
 // a proposal (irreversible transitions are the human's), anything else
-// becomes waiting with the reason as the ask.
-func (s *server) taskRunLanded(taskID string, res drive.Result, runErr error) {
+// becomes waiting with the reason as the ask. seedLen names how many
+// of res.Turns were already on the task's record before this run.
+func (s *server) taskRunLanded(taskID string, res drive.Result, runErr error, seedLen int) {
 	now := time.Now()
 	cost := res.CostUSD
+	newTurns := res.Turns
+	if seedLen <= len(newTurns) {
+		newTurns = newTurns[seedLen:]
+	}
 	s.tasks.mutate(taskID, func(t *task) error {
-		outcome := fmt.Sprintf("%d turns", len(res.Turns))
+		// The working set the next reply seeds from.
+		t.Exchanges = append(t.Exchanges, newTurns...)
+		if len(t.Exchanges) > maxExchanges {
+			t.Exchanges = t.Exchanges[len(t.Exchanges)-maxExchanges:]
+		}
+		outcome := fmt.Sprintf("%d turns", len(newTurns))
 		switch {
 		case runErr != nil:
 			outcome += ", stopped: " + transcript.Snip(runErr.Error(), 60)
@@ -705,6 +852,12 @@ func (s *server) taskRunLanded(taskID string, res drive.Result, runErr error) {
 			t.Ask = "The run stopped: " + runErr.Error() + " — start again, or drop?"
 			t.Face = "The run stopped before the goal was met."
 			t.event("rook", "run stopped: "+transcript.Snip(runErr.Error(), 80), now)
+		case res.Escalated:
+			outcome += ", escalated"
+			t.Col, t.State = "waiting", "waiting · escalated to you"
+			t.Ask = res.Ask
+			t.Face = "Rook escalated: " + transcript.Snip(res.Ask, 120)
+			t.event("rook", "escalated — "+transcript.Snip(res.Ask, 100), now)
 		case res.Done:
 			outcome += ", judge said DONE"
 			t.Col, t.State = "waiting", "waiting for acceptance"

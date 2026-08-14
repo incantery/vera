@@ -113,6 +113,12 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /", webHandler())
+	// The login screen's probe: carries no data, exists to be guarded.
+	// requireKey answers 401 without a key; reaching the handler at all
+	// means the door opened (or the bind is loopback and has no door).
+	mux.HandleFunc("GET /api/auth", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]bool{"ok": true})
+	})
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/agent/{id}", s.handleAgent)
 	mux.HandleFunc("POST /api/agent/{id}/say", s.handleSay)
@@ -125,6 +131,7 @@ func main() {
 	mux.HandleFunc("POST /api/tasks", s.handleTaskCapture)
 	mux.HandleFunc("POST /api/tasks/{tid}/start", s.handleTaskStart)
 	mux.HandleFunc("POST /api/tasks/{tid}/act", s.handleTaskAct)
+	mux.HandleFunc("POST /api/tasks/{tid}/reply", s.handleTaskReply)
 	mux.HandleFunc("POST /api/drive", s.handleDrive)
 	mux.HandleFunc("POST /api/drive/stop", s.handleStop)
 
@@ -146,6 +153,7 @@ func main() {
 		for _, u := range lanURLs(port) {
 			fmt.Printf("roost:   %s/?key=%s\n", u, key)
 		}
+		fmt.Println("roost: (or open any of them bare and type the key at the login screen)")
 	}
 	if s.notice != "" {
 		fmt.Println("roost: " + s.notice)

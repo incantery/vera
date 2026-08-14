@@ -6,8 +6,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/incantery/rook-host/engine/drive"
 )
 
 func TestTaskCaptureIsGlobalUnassignedBacklog(t *testing.T) {
@@ -240,5 +243,107 @@ func TestRepoListOffersFleetDirsButNeverHome(t *testing.T) {
 	}
 	if repoOffered(s.boardSessions(now), "/repo/-repo-alpha") == "" {
 		t.Fatal("the offered directory must be accepted")
+	}
+}
+
+func TestEscalationLandsAsWaitingWithTheAsk(t *testing.T) {
+	s := testServer(t, t.TempDir())
+	a, _ := s.tasks.capture("migrate the database", time.Now())
+	res := drive.Result{
+		Escalated: true,
+		Ask:       "The worker wants to drop the old tables — allowed?",
+		Turns:     []drive.Exchange{{Prompt: "goal", Reply: "may I drop tables?"}},
+	}
+	s.taskRunLanded(a.ID, res, nil, 0)
+	got, _ := s.tasks.get(a.ID)
+	if got.Col != "waiting" || !strings.Contains(got.Ask, "drop the old tables") {
+		t.Fatalf("got: %+v", got)
+	}
+	if len(got.Exchanges) != 1 {
+		t.Fatalf("exchanges must persist for the reply to seed: %+v", got.Exchanges)
+	}
+	found := false
+	for _, e := range got.Log {
+		if e.Actor == "rook" && strings.Contains(e.Text, "escalated") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the escalation must be on the record: %+v", got.Log)
+	}
+}
+
+func TestContinuationDoesNotDoubleCountTheSeed(t *testing.T) {
+	s := testServer(t, t.TempDir())
+	a, _ := s.tasks.capture("goal", time.Now())
+	first := drive.Result{Escalated: true, Ask: "which?", Turns: []drive.Exchange{{Prompt: "p1", Reply: "r1"}}}
+	s.taskRunLanded(a.ID, first, nil, 0)
+	// The continuation's Result carries seed + the new turn; only the
+	// new turn may append.
+	second := drive.Result{Done: true, Reason: "met", Turns: []drive.Exchange{
+		{Prompt: "p1", Reply: "r1"}, {Prompt: "the answer", Reply: "done then"},
+	}}
+	s.taskRunLanded(a.ID, second, nil, 1)
+	got, _ := s.tasks.get(a.ID)
+	if len(got.Exchanges) != 2 {
+		t.Fatalf("seed double-counted: %+v", got.Exchanges)
+	}
+	if got.Exchanges[1].Prompt != "the answer" {
+		t.Fatalf("order: %+v", got.Exchanges)
+	}
+}
+
+func TestExchangesAreCapped(t *testing.T) {
+	s := testServer(t, t.TempDir())
+	a, _ := s.tasks.capture("goal", time.Now())
+	var turns []drive.Exchange
+	for i := 0; i < maxExchanges+5; i++ {
+		turns = append(turns, drive.Exchange{Prompt: fmt.Sprintf("p%d", i), Reply: "r"})
+	}
+	s.taskRunLanded(a.ID, drive.Result{Done: true, Turns: turns}, nil, 0)
+	got, _ := s.tasks.get(a.ID)
+	if len(got.Exchanges) != maxExchanges || got.Exchanges[0].Prompt != "p5" {
+		t.Fatalf("cap: %d, first %q", len(got.Exchanges), got.Exchanges[0].Prompt)
+	}
+}
+
+func TestReplyGuards(t *testing.T) {
+	s := testServer(t, t.TempDir())
+	s.llm = &drive.LLM{} // armed, so the guards themselves answer
+	post := func(tid, body string) int {
+		req := httptest.NewRequest("POST", "/api/tasks/"+tid+"/reply", strings.NewReader(body))
+		req.SetPathValue("tid", tid)
+		rec := httptest.NewRecorder()
+		s.handleTaskReply(rec, req)
+		return rec.Code
+	}
+	// A task that is not waiting refuses.
+	a, _ := s.tasks.capture("goal", time.Now())
+	if code := post(a.ID, `{"text":"hi"}`); code != 409 {
+		t.Fatalf("inbox reply: %d", code)
+	}
+	// A waiting task without an agent refuses toward start.
+	s.tasks.mutate(a.ID, func(t *task) error { t.Col = "waiting"; return nil })
+	if code := post(a.ID, `{"text":"hi"}`); code != 409 {
+		t.Fatalf("agentless reply: %d", code)
+	}
+	// Empty says nothing.
+	if code := post(a.ID, `{"text":"  "}`); code != 400 {
+		t.Fatalf("empty reply: %d", code)
+	}
+}
+
+func TestToolsForModes(t *testing.T) {
+	if toolsFor("read") != nil || toolsFor("") != nil {
+		t.Fatal("read mode must carry no grants")
+	}
+	work := strings.Join(toolsFor("work"), ",")
+	for _, banned := range []string{"git push", "rm ", "curl", "Bash(git"} {
+		if strings.Contains(work, banned) {
+			t.Fatalf("work mode must not grant %q", banned)
+		}
+	}
+	if !strings.Contains(work, "Edit") || !strings.Contains(work, "Bash(go test:*)") {
+		t.Fatalf("work mode grants: %s", work)
 	}
 }

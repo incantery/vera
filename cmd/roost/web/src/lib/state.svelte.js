@@ -21,10 +21,41 @@ if (typeof localStorage !== 'undefined') {
 	}
 }
 
+// setKey: the login screen's way in — same stash the ?key= URL uses.
+export function setKey(k) {
+	apiKey = k;
+	try {
+		localStorage.setItem('roost-key', k);
+	} catch {
+		/* storage refused — the key still lives for this page's lifetime */
+	}
+}
+
+// checkAuth probes /api/auth with the current key and names the
+// outcome: 'ok' (door open), 'denied' (wrong or missing key), 'down'
+// (roost not answering). Plain fetch, not api() — a login attempt
+// that fails must report, not redirect.
+export async function checkAuth() {
+	try {
+		const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+		const r = await fetch('/api/auth', { headers });
+		return r.ok ? 'ok' : r.status === 401 ? 'denied' : 'down';
+	} catch {
+		return 'down';
+	}
+}
+
 export function api(path, opts = {}) {
 	const headers = { ...(opts.headers ?? {}) };
 	if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-	return fetch(path, { ...opts, headers });
+	return fetch(path, { ...opts, headers }).then((r) => {
+		// A 401 mid-session means the key changed under us — every
+		// road leads back to the login screen, which returns you here.
+		if (r.status === 401 && location.pathname !== '/login') {
+			location.assign(`/login?next=${encodeURIComponent(location.pathname)}`);
+		}
+		return r;
+	});
 }
 
 export const app = $state({

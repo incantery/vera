@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -23,6 +24,10 @@ type Headless struct {
 	Bin     string        // the claude binary; "" means "claude" from PATH
 	Dir     string        // the session's cwd — resume looks the session up by project
 	Timeout time.Duration // per turn; default 10m
+	// AllowedTools is the turn's tool policy, passed straight to
+	// claude's own permission system (--allowedTools). Empty means
+	// print mode's default: permission-gated tools are refused.
+	AllowedTools []string
 }
 
 func (h *Headless) bin() string {
@@ -69,6 +74,13 @@ func (h *Headless) StartTurn(ctx context.Context, prompt string) (Turn, error) {
 }
 
 func (h *Headless) exec(ctx context.Context, args []string) (Turn, error) {
+	if len(h.AllowedTools) > 0 {
+		// The tool policy rides before the trailing prompt, into
+		// claude's own permission system.
+		prompt := args[len(args)-1]
+		args = append(append(args[:len(args)-1:len(args)-1],
+			"--allowedTools", strings.Join(h.AllowedTools, ",")), prompt)
+	}
 	ctx, cancel := context.WithTimeout(ctx, h.timeout())
 	defer cancel()
 	cmd := exec.CommandContext(ctx, h.bin(), args...)

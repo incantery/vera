@@ -100,18 +100,30 @@
 	}
 	async function accept(t) {
 		if (t.proposalKind === 'start') {
-			await start(t.id, startIn ? { newIn: startIn } : undefined);
+			await start(t.id, { mode: startMode, ...(startIn ? { newIn: startIn } : {}) });
 			startIn = '';
 		} else await act(t.id, 'accept');
 	}
 
 	// Where an unassigned task starts: '' = the current agent; a cwd =
-	// a fresh agent born there. Reset when the selection moves.
+	// a fresh agent born there. Mode is the tool policy. A waiting
+	// card's reply continues its drive. All reset when selection moves.
 	let startIn = $state('');
+	let startMode = $state('read');
+	let replyText = $state('');
 	$effect(() => {
 		selId;
 		startIn = '';
+		startMode = 'read';
+		replyText = '';
 	});
+
+	async function sendReply() {
+		const text = replyText.trim();
+		if (!text || busy) return;
+		await post(`/api/tasks/${sel.id}/reply`, { text });
+		replyText = '';
+	}
 </script>
 
 <div
@@ -396,18 +408,31 @@
 									{sel.proposalWhy}
 								</div>
 							{/if}
-							{#if sel.proposalKind === 'start' && !sel.agent && board?.repos?.length}
-								<!-- who works it: the current agent, or a fresh one
-								     born in a repo the fleet has shown -->
-								<select
-									bind:value={startIn}
-									style="font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 5px 8px;"
-								>
-									<option value="">on the current agent</option>
-									{#each board.repos as r (r.cwd)}
-										<option value={r.cwd}>fresh agent in {r.dir}</option>
-									{/each}
-								</select>
+							{#if sel.proposalKind === 'start'}
+								<div style="display: flex; gap: 6px; flex-wrap: wrap;">
+									{#if !sel.agent && board?.repos?.length}
+										<!-- who works it: the current agent, or a fresh
+										     one born in a repo the fleet has shown -->
+										<select
+											bind:value={startIn}
+											style="flex: 1; font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 5px 8px;"
+										>
+											<option value="">on the current agent</option>
+											{#each board.repos as r (r.cwd)}
+												<option value={r.cwd}>fresh agent in {r.dir}</option>
+											{/each}
+										</select>
+									{/if}
+									<!-- the tool policy: code-side sets, never LLM-chosen -->
+									<select
+										bind:value={startMode}
+										title="read: analysis only, permission-gated tools stay refused. work: edits plus scoped build/test commands."
+										style="font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 5px 8px;"
+									>
+										<option value="read">read-only</option>
+										<option value="work">can edit & test</option>
+									</select>
+								</div>
 							{/if}
 							<div style="display: flex; gap: 8px; margin-top: 2px;">
 								<button
@@ -421,6 +446,42 @@
 									class="btn btn-ghost"
 									style="font-size: 12px; color: var(--color-neutral-400);"
 									onclick={() => act(sel.id, 'decline')}>Not yet</button
+								>
+							</div>
+						</div>
+					{/if}
+
+					{#if sel.col === 'waiting'}
+						<!-- the escalation's return path: answer here and the
+						     SAME drive continues, seeded with its history -->
+						<div
+							style="border: 1px solid var(--color-divider); border-radius: var(--radius-md); padding: 12px 13px; display: flex; flex-direction: column; gap: 9px;"
+						>
+							{#if sel.ask}
+								<div
+									style="font-size: 12.5px; line-height: 1.5; color: var(--color-accent-200); text-wrap: pretty;"
+								>
+									{sel.ask}
+								</div>
+							{/if}
+							<textarea
+								bind:value={replyText}
+								rows="2"
+								placeholder="answer the worker — the drive continues from here"
+								onkeydown={(e) => {
+									if (e.key === 'Enter' && !e.shiftKey) {
+										e.preventDefault();
+										sendReply();
+									}
+								}}
+								style="font: inherit; font-size: 12.5px; resize: none; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 7px 9px;"
+							></textarea>
+							<div style="display: flex;">
+								<button
+									class="btn btn-primary"
+									style="font-size: 12px;"
+									disabled={busy || !replyText.trim()}
+									onclick={sendReply}>Reply & continue</button
 								>
 							</div>
 						</div>

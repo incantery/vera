@@ -226,3 +226,112 @@ echo '{"type":"result","result":"hello","session_id":"born-9","total_cost_usd":0
 		t.Fatalf("turn=%+v err=%v", turn, err)
 	}
 }
+
+func TestParseVerdictEscalate(t *testing.T) {
+	v, err := ParseVerdict("ESCALATE\nThe worker wants to force-push; the goal grants no such thing.")
+	if err != nil || !v.Escalate || !strings.Contains(v.Reason, "force-push") {
+		t.Fatalf("v=%+v err=%v", v, err)
+	}
+	if _, err = ParseVerdict("ESCALATE"); err == nil {
+		t.Fatal("an escalation without a question must refuse")
+	}
+}
+
+func TestLoopEscalatesOnVerdictWithTheAskOnRecord(t *testing.T) {
+	tr := &scriptTurner{replies: []string{"May I delete the old migrations?"}}
+	j := &scriptJudge{verdicts: []Verdict{{Escalate: true, Reason: "The worker wants to delete migrations — allowed?"}}}
+	res, err := (&Loop{Turner: tr, Judge: j}).Run(context.Background(), "s", "clean up")
+	if err != nil || res.Done || !res.Escalated {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if !strings.Contains(res.Ask, "delete migrations") || len(res.Turns) != 1 {
+		t.Fatalf("res=%+v", res)
+	}
+}
+
+func TestLoopCirclingGuardEscalates(t *testing.T) {
+	// The judge keeps issuing the identical prompt: laps, not progress.
+	tr := &scriptTurner{}
+	j := &scriptJudge{verdicts: []Verdict{
+		{Prompt: "try again exactly"}, {Prompt: "try again exactly"}, {Prompt: "try again exactly"},
+	}}
+	res, err := (&Loop{Turner: tr, Judge: j, MaxTurns: 6}).Run(context.Background(), "s", "goal")
+	if err != nil || !res.Escalated || !strings.Contains(res.Reason, "circling") {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if len(res.Turns) > 2 {
+		t.Fatalf("the guard must fire before the lap bills: %d turns", len(res.Turns))
+	}
+}
+
+func TestLoopSpendCapEscalates(t *testing.T) {
+	tr := &scriptTurner{} // $0.01 per turn
+	j := &scriptJudge{verdicts: []Verdict{{Prompt: "a"}, {Prompt: "b"}, {Prompt: "c"}, {Prompt: "d"}}}
+	res, err := (&Loop{Turner: tr, Judge: j, MaxTurns: 10, MaxUSD: 0.02}).Run(context.Background(), "s", "goal")
+	if err != nil || !res.Escalated || !strings.Contains(res.Reason, "spend cap") {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if len(res.Turns) != 2 {
+		t.Fatalf("the cap must stop at the money line: %d turns", len(res.Turns))
+	}
+}
+
+func TestLoopOnTurnSeesEveryDecision(t *testing.T) {
+	tr := &scriptTurner{}
+	j := &scriptJudge{verdicts: []Verdict{{Prompt: "next"}, {Done: true, Reason: "met"}}}
+	var seen []Verdict
+	l := &Loop{Turner: tr, Judge: j, OnTurn: func(_ int, _ Exchange, v Verdict) { seen = append(seen, v) }}
+	if _, err := l.Run(context.Background(), "s", "goal"); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || seen[0].Prompt != "next" || !seen[1].Done {
+		t.Fatalf("audit feed: %+v", seen)
+	}
+}
+
+func TestContinueSeedsTheJudgeWithHistory(t *testing.T) {
+	tr := &scriptTurner{}
+	j := &scriptJudge{verdicts: []Verdict{{Done: true, Reason: "resolved by the owner's answer"}}}
+	seed := []Exchange{{Prompt: "the goal", Reply: "which db?"}}
+	res, err := (&Loop{Turner: tr, Judge: j}).Continue(context.Background(), "s", "the goal", "use postgres", seed)
+	if err != nil || !res.Done || len(res.Turns) != 2 {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if tr.sent[0] != "use postgres" {
+		t.Fatalf("the owner's reply must be the next prompt: %v", tr.sent)
+	}
+	if len(j.seen[0]) != 2 {
+		t.Fatalf("the judge must see seed + new turn: %d", len(j.seen[0]))
+	}
+}
+
+func TestHeadlessCarriesTheToolPolicy(t *testing.T) {
+	bin := stubClaude(t, `case "$*" in *"--allowedTools Edit,Bash(go test:*)"*) ;; *) echo "policy missing: $*" >&2; exit 1;; esac
+echo '{"type":"result","result":"ok","session_id":"s1"}'`)
+	h := &Headless{Bin: bin, Dir: t.TempDir(), AllowedTools: []string{"Edit", "Bash(go test:*)"}}
+	if _, err := h.RunTurn(context.Background(), "abc", "go"); err != nil {
+		t.Fatalf("resume with policy: %v", err)
+	}
+	if _, err := h.StartTurn(context.Background(), "go"); err != nil {
+		t.Fatalf("start with policy: %v", err)
+	}
+	// And absent by default.
+	bin2 := stubClaude(t, `case "$*" in *--allowedTools*) echo "policy leaked" >&2; exit 1;; esac
+echo '{"type":"result","result":"ok","session_id":"s1"}'`)
+	h2 := &Headless{Bin: bin2, Dir: t.TempDir()}
+	if _, err := h2.RunTurn(context.Background(), "abc", "go"); err != nil {
+		t.Fatalf("default must carry no policy: %v", err)
+	}
+}
+
+func TestRunFreshEscalatesOnTheFirstTurn(t *testing.T) {
+	tr := &scriptStarter{}
+	j := &scriptJudge{verdicts: []Verdict{{Escalate: true, Reason: "The newborn wants to delete README.md — allowed?"}}}
+	res, err := (&Loop{Turner: tr, Judge: j}).RunFresh(context.Background(), "the goal")
+	if err != nil || !res.Escalated || !strings.Contains(res.Ask, "README.md") {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if res.Root != "born-1" {
+		t.Fatalf("the newborn must still be on the record: %q", res.Root)
+	}
+}
