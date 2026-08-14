@@ -100,7 +100,6 @@ func main() {
 		digestPath: defaultDigestPath(),
 	}
 	s.loadJournals()
-	s.syncGuide()
 	go s.uc.Loop()
 	// A missing key is a standing notice only where the default API
 	// lives; a custom base is a local server that wants no auth.
@@ -121,7 +120,6 @@ func main() {
 	mux.HandleFunc("GET /api/auth", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]bool{"ok": true})
 	})
-	mux.HandleFunc("GET /api/docs/{id}", s.handleDocGet)
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/agent/{id}", s.handleAgent)
 	mux.HandleFunc("POST /api/agent/{id}/say", s.handleSay)

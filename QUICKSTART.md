@@ -93,10 +93,8 @@ directory you don't mind changing."
 
 ## The five-minute demo
 
-The **guide** link in the board's header (top right) opens the full
-step-by-step walkthrough in the app itself — no repository needed.
-(Source of truth: `engine/GUIDE.md`, mirrored onto the docs shelf at startup.) It covers the whole flow, click by
-click:
+**GUIDE.md** (beside this file) walks the whole flow through the web
+app, click by click:
 a roost-made scratch workspace, a fresh agent in work mode building
 and testing real Go code, the rook agent approving the routine asks,
 you personally denying a file deletion from the card, verification in

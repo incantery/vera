@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -169,41 +168,5 @@ func TestStateMarksAgentsOnOpenTasks(t *testing.T) {
 	}
 	if byID["bystander"].Task != "" {
 		t.Fatalf("a bystander wears nothing: %+v", byID["bystander"])
-	}
-}
-
-func TestGuideMirrorsTheCanonicalFileOntoTheDocsShelf(t *testing.T) {
-	want, err := os.ReadFile(guideSourcePath())
-	if err != nil {
-		t.Fatalf("the canonical engine/GUIDE.md must exist: %v", err)
-	}
-	s := testServer(t, t.TempDir())
-	s.shelf = &artifactStore{dir: t.TempDir()}
-	s.syncGuide()
-	got, err := s.shelf.get(docsRoot, guideDocID)
-	if err != nil {
-		t.Fatalf("the guide must land on the docs shelf: %v", err)
-	}
-	if got.Content != string(want) {
-		t.Fatal("the shelf copy must preserve the canonical content exactly")
-	}
-	if got.Title != guideTitle {
-		t.Fatalf("label: %q", got.Title)
-	}
-	// A second sync is a no-op, and the docs namespace stays separate
-	// from any agent's shelf.
-	before := got.UpdatedAt
-	s.syncGuide()
-	again, _ := s.shelf.get(docsRoot, guideDocID)
-	if !again.UpdatedAt.Equal(before) {
-		t.Fatal("an unchanged source must not rewrite the shelf")
-	}
-	if list := s.shelf.list("some-agent"); len(list) != 0 {
-		t.Fatalf("agent shelves must not see docs: %+v", list)
-	}
-	for _, mark := range []string{"scratch workspace ≠ sandbox", "DO-NOT-DELETE.txt", "Accept as done"} {
-		if !strings.Contains(got.Content, mark) {
-			t.Fatalf("the guide lost its %q", mark)
-		}
 	}
 }
