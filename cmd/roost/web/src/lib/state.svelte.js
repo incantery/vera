@@ -361,3 +361,26 @@ export async function deleteArtifact(agentId, id) {
 		'the delete was refused'
 	);
 }
+
+// ---- the review surface ----
+// The human's verdict on an agent's uncommitted work: read the whole
+// diff, then approve (commit) or discard. "Request changes" is just
+// words — the say rail already carries those.
+
+export async function agentDiff(id) {
+	return must(await api(`/api/agent/${id}/diff`), 'the diff did not answer');
+}
+
+export async function commitTree(id, message) {
+	return must(
+		await api(`/api/agent/${id}/commit`, { method: 'POST', body: JSON.stringify({ message }) }),
+		'the commit was refused'
+	);
+}
+
+export async function discardChange(id, path, all = false) {
+	return must(
+		await api(`/api/agent/${id}/discard`, { method: 'POST', body: JSON.stringify({ path, all }) }),
+		'the discard was refused'
+	);
+}

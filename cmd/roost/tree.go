@@ -1,6 +1,7 @@
 // The working-tree readout: what the agent's directory has changed
-// and not committed, read straight from git. Read-only — roost never
-// mutates a repo — and honestly absent when the directory is not one.
+// and not committed, read straight from git. Read-only — mutation is
+// the review surface's job (review.go, always human-verdict-gated) —
+// and honestly absent when the directory is not one.
 package main
 
 import (

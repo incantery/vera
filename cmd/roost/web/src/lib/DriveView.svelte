@@ -22,7 +22,7 @@
 		compacting
 	} = $props();
 
-	import { uploadImage, uploadUrl, imageParts } from './state.svelte.js';
+	import { uploadImage, uploadUrl, imageParts, agentDiff, commitTree, discardChange } from './state.svelte.js';
 	import Markdown from './Markdown.svelte';
 
 	const EASE = 'cubic-bezier(0.2, 0.8, 0.25, 1)';
@@ -33,6 +33,95 @@
 	let rail = $state(true);
 	let inspector = $state(false);
 	let keysOpen = $state(false);
+
+	// ── the review overlay ─────────────────────────────────────────
+	// The verdict surface: the working tree's whole diff, then approve
+	// (commit as you) or discard (put it back). Request-changes is the
+	// composer's job — the button just takes you there.
+	let reviewOpen = $state(false);
+	let review = $state(null); // {dir, branch, files} or null while loading
+	let reviewErr = $state('');
+	let reviewSel = $state(0);
+	let reviewBusy = $state(false);
+	let reviewNote = $state(''); // "committed abc123" — the receipt
+	let commitMsg = $state('');
+	let confirmPath = $state(null); // path awaiting a second click; '*' = all
+
+	async function loadReview() {
+		try {
+			const d = await agentDiff(agentId);
+			review = d;
+			reviewErr = '';
+			if (reviewSel >= (d.files?.length ?? 0)) reviewSel = 0;
+		} catch (e) {
+			review = null;
+			reviewErr = e.message;
+		}
+	}
+	function openReview(path) {
+		reviewOpen = true;
+		reviewNote = '';
+		confirmPath = null;
+		review = null;
+		loadReview().then(() => {
+			if (path && review?.files) {
+				const i = review.files.findIndex((f) => f.path === path);
+				if (i >= 0) reviewSel = i;
+			}
+		});
+	}
+	async function approve() {
+		reviewBusy = true;
+		try {
+			const r = await commitTree(agentId, commitMsg);
+			reviewNote = `committed ${r.commit}`;
+			commitMsg = '';
+			await loadReview();
+		} catch (e) {
+			reviewErr = e.message;
+		}
+		reviewBusy = false;
+	}
+	async function discard(path, all = false) {
+		const key = all ? '*' : path;
+		if (confirmPath !== key) {
+			confirmPath = key;
+			return;
+		}
+		confirmPath = null;
+		reviewBusy = true;
+		try {
+			await discardChange(agentId, all ? '' : path, all);
+			await loadReview();
+		} catch (e) {
+			reviewErr = e.message;
+		}
+		reviewBusy = false;
+	}
+	function requestChanges() {
+		reviewOpen = false;
+		inputEl?.focus();
+	}
+
+	// ?review=1 deep-links straight into the verdict surface. Read from
+	// location, not page.url — the ?key= stash rewrites history before
+	// the router sees it.
+	$effect(() => {
+		if (agentId && new URLSearchParams(location.search).has('review')) openReview();
+	});
+
+	// reviewLines strips the per-file git header (the pane already names
+	// the file) and types each line for color.
+	function reviewLines(text) {
+		if (!text) return [];
+		const lines = text.split('\n');
+		const first = lines.findIndex((l) => l.startsWith('@@'));
+		return (first >= 0 ? lines.slice(first) : lines).map((l, i) => ({
+			id: i,
+			t: l.startsWith('@@') ? 'hunk' : l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : 'ctx',
+			s: l
+		}));
+	}
 	let sel = $state(-1);
 	let open = $state({});
 	let chatEl = $state(null);
@@ -364,10 +453,19 @@
 				keysOpen = false;
 				return;
 			}
+			if (reviewOpen) {
+				reviewOpen = false;
+				return;
+			}
 			if (busy) oninterrupt();
 			return;
 		}
 		if (typing) return;
+		if (e.key === 'r') {
+			e.preventDefault();
+			openReview();
+			return;
+		}
 		if (e.key === 'i') {
 			e.preventDefault();
 			inputEl?.focus();
@@ -401,6 +499,7 @@
 		{ k: '⇧J / ⇧K', d: 'jump between your prompts' },
 		{ k: 'o', d: 'expand or collapse the selected event' },
 		{ k: 'i', d: 'focus the composer' },
+		{ k: 'r', d: 'review the working tree — approve or discard' },
 		{ k: 'esc', d: 'interrupt the current turn' },
 		{ k: '⏎', d: 'send (or queue while working)' },
 		{ k: '\\', d: 'collapse the turns rail' },
@@ -448,6 +547,14 @@
 		<a href="/" style="flex: 0 0 auto; white-space: nowrap; font-family: {MONO}; font-size: 11.5px; padding: 4px 7px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--color-neutral-400);" class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-100)]!">board</a>
 		<button onclick={onshelf} style="flex: 0 0 auto; white-space: nowrap; font: inherit; font-family: {MONO}; font-size: 11.5px; padding: 4px 7px; cursor: pointer; border: 1px solid {shelfOpen ? 'var(--color-neutral-800)' : 'transparent'}; border-radius: var(--radius-sm); background: transparent; color: var(--color-neutral-400);" class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-100)]!">
 			artifacts{#if data?.artifacts}&nbsp;<span style="color: var(--color-accent-300);">({data.artifacts})</span>{/if}
+		</button>
+		<button
+			onclick={() => openReview()}
+			style="flex: 0 0 auto; white-space: nowrap; font: inherit; font-family: {MONO}; font-size: 11.5px; padding: 4px 7px; cursor: pointer; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: {data?.tree?.length ? 'var(--color-accent-300)' : 'var(--color-neutral-400)'};"
+			class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-100)]!"
+			title="review the working tree — the whole diff, then approve (commit as you) or discard"
+		>
+			review{#if data?.tree?.length}&nbsp;<span style="color: var(--color-accent-300);">({data.tree.length})</span>{/if}
 		</button>
 		<button
 			onclick={() => (inspector = !inspector)}
@@ -840,18 +947,31 @@
 
 			{#if data?.tree?.length}
 				<div style="padding: 14px; border-bottom: 1px solid var(--color-divider); display: flex; flex-direction: column; gap: 7px;">
-					<div style="font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; color: var(--color-neutral-600);">WORKING TREE</div>
+					<div style="display: flex; align-items: baseline;">
+						<span style="font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; color: var(--color-neutral-600);">WORKING TREE</span>
+						<div style="flex: 1;"></div>
+						<button
+							onclick={() => openReview()}
+							style="font: inherit; font-family: {MONO}; font-size: 10.5px; padding: 0; cursor: pointer; border: none; background: transparent; color: var(--color-accent-300);"
+							class="hover:text-[var(--color-accent-100)]!"
+							title="the whole diff, then approve or discard"
+						>review →</button>
+					</div>
 					{#each data.tree as f (f.path)}
-						<div style="display: flex; align-items: center; gap: 9px;">
-							<span style="font-family: {MONO}; font-size: 11.5px; color: var(--color-neutral-300); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl;">{f.path}</span>
-							<div style="flex: 1;"></div>
-							{#if f.new}
-								<span style="font-family: {MONO}; font-size: 10.5px; color: var(--color-accent-300);">new</span>
-							{:else}
-								<span style="font-family: {MONO}; font-size: 10.5px; color: var(--ev-add-mid); font-variant-numeric: tabular-nums;">+{f.add}</span>
-								<span style="font-family: {MONO}; font-size: 10.5px; color: var(--ev-del-mid); font-variant-numeric: tabular-nums;">−{f.del}</span>
-							{/if}
-						</div>
+						<button
+							onclick={() => openReview(f.path)}
+							style="display: flex; align-items: center; gap: 9px; width: 100%; padding: 0; background: none; border: none; font: inherit; cursor: pointer; text-align: left; color: inherit;"
+							title="open this file's diff in review"
+						>
+								<span style="font-family: {MONO}; font-size: 11.5px; color: var(--color-neutral-300); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl;">{f.path}</span>
+								<div style="flex: 1;"></div>
+								{#if f.new}
+									<span style="font-family: {MONO}; font-size: 10.5px; color: var(--color-accent-300);">new</span>
+								{:else}
+									<span style="font-family: {MONO}; font-size: 10.5px; color: var(--ev-add-mid); font-variant-numeric: tabular-nums;">+{f.add}</span>
+									<span style="font-family: {MONO}; font-size: 10.5px; color: var(--ev-del-mid); font-variant-numeric: tabular-nums;">−{f.del}</span>
+								{/if}
+						</button>
 					{/each}
 				</div>
 			{/if}
@@ -873,6 +993,137 @@
 				</div>
 			</div>
 		</aside>
+
+		<!-- review overlay: the verdict surface -->
+		{#if reviewOpen}
+			<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10, 11, 18, 0.6); z-index: 30; animation: rk-enter 140ms ease-out both;">
+				<div style="width: min(1080px, calc(100% - 40px)); height: calc(100% - 56px); display: flex; flex-direction: column; background: var(--color-surface); border: 1px solid var(--color-neutral-800); border-radius: var(--radius-lg); box-shadow: 0 18px 60px rgba(0,0,0,0.55); overflow: hidden;">
+					<!-- overlay header -->
+					<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--color-divider);">
+						<span style="font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.1em; color: var(--color-neutral-500);">REVIEW</span>
+						<span style="font-family: {MONO}; font-size: 11.5px; color: var(--color-neutral-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{review?.dir ?? ''}{review?.branch ? ` · ${review.branch}` : ''}</span>
+						<div style="flex: 1;"></div>
+						{#if reviewNote}
+							<span style="font-family: {MONO}; font-size: 11px; color: var(--ev-add);">{reviewNote}</span>
+						{/if}
+						<button
+							onclick={loadReview}
+							style="font: inherit; font-family: {MONO}; font-size: 11px; padding: 3px 8px; cursor: pointer; border: 1px solid var(--color-neutral-800); border-radius: var(--radius-sm); background: transparent; color: var(--color-neutral-400);"
+							class="hover:text-[var(--color-neutral-100)]!"
+							title="re-read the working tree"
+						>refresh</button>
+						<button
+							onclick={() => (reviewOpen = false)}
+							style="font: inherit; font-size: 14px; line-height: 1; padding: 4px 7px; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-500); border-radius: var(--radius-sm);"
+							class="hover:text-[var(--color-neutral-100)]!"
+							title="close (esc)"
+						>×</button>
+					</div>
+
+					{#if reviewErr}
+						<div style="padding: 10px 16px; font-size: 12px; color: var(--ev-del); border-bottom: 1px solid var(--color-divider);">{reviewErr}</div>
+					{/if}
+
+					{#if review && !review.files?.length}
+						<div style="flex: 1; display: flex; align-items: center; justify-content: center; font-family: {MONO}; font-size: 12px; color: var(--color-neutral-500);">
+							the working tree is clean — nothing to review
+						</div>
+					{:else if review}
+						<div style="flex: 1; min-height: 0; display: flex;">
+							<!-- file list -->
+							<div style="flex: 0 0 250px; border-right: 1px solid var(--color-divider); overflow-y: auto; padding: 8px 0;">
+								{#each review.files as f, i (f.path)}
+									<button
+										onclick={() => (reviewSel = i)}
+										style="display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 12px; background: {i === reviewSel ? 'var(--color-neutral-900)' : 'transparent'}; border: none; border-left: 2px solid {i === reviewSel ? 'var(--color-accent-400)' : 'transparent'}; font: inherit; cursor: pointer; text-align: left; color: inherit;"
+										class="hover:bg-[var(--color-neutral-900)]!"
+									>
+										<span style="font-family: {MONO}; font-size: 11.5px; color: {i === reviewSel ? 'var(--color-neutral-100)' : 'var(--color-neutral-400)'}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl;">{f.path}</span>
+										<div style="flex: 1;"></div>
+										{#if f.binary}
+											<span style="font-family: {MONO}; font-size: 10px; color: var(--color-neutral-600);">bin</span>
+										{:else if f.new}
+											<span style="font-family: {MONO}; font-size: 10px; color: var(--color-accent-300);">+{f.add}</span>
+										{:else}
+											<span style="font-family: {MONO}; font-size: 10px; color: var(--ev-add-mid); font-variant-numeric: tabular-nums;">+{f.add}</span>
+											<span style="font-family: {MONO}; font-size: 10px; color: var(--ev-del-mid); font-variant-numeric: tabular-nums;">−{f.del}</span>
+										{/if}
+									</button>
+								{/each}
+							</div>
+							<!-- the diff -->
+							{#if review.files[reviewSel]}
+								{@const rf = review.files[reviewSel]}
+								<div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+									<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--color-divider);">
+										<span style="font-family: {MONO}; font-size: 11.5px; color: var(--color-neutral-200); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{rf.path}</span>
+										{#if rf.new}<span style="font-family: {MONO}; font-size: 10px; color: var(--color-accent-300);">new file</span>{/if}
+										{#if rf.truncated}<span style="font-family: {MONO}; font-size: 10px; color: var(--ev-sh);">truncated — too big for the pane</span>{/if}
+										<div style="flex: 1;"></div>
+										<button
+											onclick={() => discard(rf.path)}
+											disabled={reviewBusy}
+											style="font: inherit; font-family: {MONO}; font-size: 10.5px; padding: 3px 8px; cursor: pointer; border: 1px solid {confirmPath === rf.path ? 'var(--ev-del-mid)' : 'var(--color-neutral-800)'}; border-radius: var(--radius-sm); background: {confirmPath === rf.path ? 'var(--ev-del-fill)' : 'transparent'}; color: {confirmPath === rf.path ? 'var(--ev-del)' : 'var(--color-neutral-400)'};"
+											title={rf.new ? 'delete this file — HEAD never had it' : "put this file back the way HEAD has it"}
+										>
+											{confirmPath === rf.path ? (rf.new ? 'delete it — sure?' : 'put it back — sure?') : 'discard file'}
+										</button>
+									</div>
+									<div style="flex: 1; min-height: 0; overflow: auto; padding: 10px 0 24px;">
+										{#if rf.binary}
+											<div style="padding: 14px; font-family: {MONO}; font-size: 11.5px; color: var(--color-neutral-500);">binary file — no line diff to show</div>
+										{:else}
+											{#each reviewLines(rf.diff) as l (l.id)}
+												<div style="font-family: {MONO}; font-size: 11.5px; line-height: 1.55; padding: 0 14px; white-space: pre-wrap; word-break: break-all; color: {l.t === 'add' ? 'var(--ev-add)' : l.t === 'del' ? 'var(--ev-del)' : l.t === 'hunk' ? 'var(--color-accent-300)' : 'var(--color-neutral-400)'}; background: {l.t === 'add' ? 'var(--ev-add-fill)' : l.t === 'del' ? 'var(--ev-del-fill)' : 'transparent'};">{l.s || ' '}</div>
+											{/each}
+										{/if}
+									</div>
+								</div>
+							{/if}
+						</div>
+					{:else if !reviewErr}
+						<div style="flex: 1; display: flex; align-items: center; justify-content: center; font-family: {MONO}; font-size: 12px; color: var(--color-neutral-500);">reading the tree…</div>
+					{/if}
+
+					<!-- verdicts -->
+					<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--color-divider);">
+						<button
+							onclick={requestChanges}
+							style="font: inherit; font-family: {MONO}; font-size: 11px; padding: 5px 10px; cursor: pointer; border: 1px solid var(--color-neutral-800); border-radius: var(--radius-sm); background: transparent; color: var(--color-neutral-300);"
+							class="hover:border-[var(--color-accent-600)]! hover:text-[var(--color-accent-100)]!"
+							title="say what should change — closes the review and hands you the composer"
+						>request changes → composer</button>
+						{#if review?.files?.length}
+							<button
+								onclick={() => discard('', true)}
+								disabled={reviewBusy}
+								style="font: inherit; font-family: {MONO}; font-size: 11px; padding: 5px 10px; cursor: pointer; border: 1px solid {confirmPath === '*' ? 'var(--ev-del-mid)' : 'var(--color-neutral-800)'}; border-radius: var(--radius-sm); background: {confirmPath === '*' ? 'var(--ev-del-fill)' : 'transparent'}; color: {confirmPath === '*' ? 'var(--ev-del)' : 'var(--color-neutral-400)'};"
+								title="reset the whole tree to HEAD and delete every untracked file — this destroys the agent's uncommitted work"
+							>
+								{confirmPath === '*' ? 'destroy all uncommitted work — sure?' : 'discard all'}
+							</button>
+						{/if}
+						<div style="flex: 1;"></div>
+						{#if review?.files?.length}
+							<input
+								bind:value={commitMsg}
+								onkeydown={(e) => e.key === 'Enter' && commitMsg.trim() && approve()}
+								placeholder="commit message — the commit is yours, your git identity signs it"
+								style="flex: 0 1 420px; font: inherit; font-family: {MONO}; font-size: 11.5px; padding: 6px 10px; background: var(--color-bg); border: 1px solid var(--color-neutral-800); border-radius: var(--radius-sm); color: var(--color-neutral-100); outline: none;"
+							/>
+							<button
+								onclick={approve}
+								disabled={reviewBusy || !commitMsg.trim()}
+								style="font: inherit; font-family: {MONO}; font-size: 11px; padding: 6px 12px; cursor: pointer; border: 1px solid var(--color-accent-600); border-radius: var(--radius-sm); background: var(--color-accent-800); color: var(--color-accent-100); opacity: {reviewBusy || !commitMsg.trim() ? 0.5 : 1};"
+								title="git add -A + commit — every file in this list, one commit"
+							>
+								{reviewBusy ? 'working…' : `approve · commit ${review.files.length} ${review.files.length === 1 ? 'file' : 'files'}`}
+							</button>
+						{/if}
+					</div>
+				</div>
+			</div>
+		{/if}
 
 		<!-- keyboard dialog -->
 		{#if keysOpen}
