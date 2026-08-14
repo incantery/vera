@@ -18,7 +18,20 @@ type Msg struct {
 	Text  string    `json:"text"`
 	At    time.Time `json:"at,omitzero"`
 	Tools int       `json:"tools,omitempty"` // tool calls folded into this turn
+	Steps []Step    `json:"steps,omitempty"` // the same calls, named and in order
 }
+
+// Step is one tool call as a reader would skim it: the tool and the
+// most human-salient input field. The step list is capped; Tools keeps
+// the true count.
+type Step struct {
+	Tool   string `json:"tool"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// stepCap bounds a turn's step list — a 200-call turn reads as its
+// first stepCap steps plus the count, not as a wall.
+const stepCap = 40
 
 // historyBytes bounds one history read. Deep transcripts lose their
 // oldest turns off the top, which the page says honestly.
@@ -73,6 +86,11 @@ func History(path string) []Msg {
 				cur = &Msg{Role: "assistant", At: ts}
 			}
 			cur.Tools += countToolUse(l.Message.Content)
+			for _, st := range toolSteps(l.Message.Content) {
+				if len(cur.Steps) < stepCap {
+					cur.Steps = append(cur.Steps, st)
+				}
+			}
 			if t := contentText(l.Message.Content); t != "" {
 				if cur.Text != "" {
 					cur.Text += "\n\n"
@@ -95,6 +113,24 @@ func harnessNoise(text string) bool {
 		}
 	}
 	return false
+}
+
+func toolSteps(raw json.RawMessage) []Step {
+	var blocks []struct {
+		Type  string          `json:"type"`
+		Name  string          `json:"name"`
+		Input json.RawMessage `json:"input"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return nil
+	}
+	var out []Step
+	for _, b := range blocks {
+		if b.Type == "tool_use" && b.Name != "" {
+			out = append(out, Step{Tool: b.Name, Detail: toolDetail(b.Input)})
+		}
+	}
+	return out
 }
 
 func countToolUse(raw json.RawMessage) int {

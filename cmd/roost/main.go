@@ -123,6 +123,7 @@ func main() {
 	mux.HandleFunc("GET /api/state", s.handleState)
 	mux.HandleFunc("GET /api/agent/{id}", s.handleAgent)
 	mux.HandleFunc("POST /api/agent/{id}/say", s.handleSay)
+	mux.HandleFunc("POST /api/agent/{id}/interrupt", s.handleInterrupt)
 	mux.HandleFunc("GET /api/agent/{id}/artifacts", s.handleArtifactList)
 	mux.HandleFunc("POST /api/agent/{id}/artifacts", s.handleArtifactCreate)
 	mux.HandleFunc("GET /api/agent/{id}/artifacts/{aid}", s.handleArtifactGet)
@@ -270,8 +271,13 @@ type sayJob struct {
 	Sent    string    `json:"sent,omitempty"` // what the membrane phrased and delivered
 	Status  string    `json:"status"`         // "phrasing" | "thinking" | "failed"
 	Err     string    `json:"error,omitempty"`
+	Direct  bool      `json:"direct,omitempty"` // straight to claude, no membrane
+	Perm    string    `json:"perm,omitempty"`   // the tool policy the turn ran under
 	CostUSD float64   `json:"costUsd,omitempty"`
 	At      time.Time `json:"at"`
+
+	cancel      context.CancelFunc // interrupt: kill the claude subprocess
+	interrupted bool
 }
 
 // run is one drive's row-worth of truth, live or finished.
@@ -442,7 +448,10 @@ func (s *server) handleAgent(w http.ResponseWriter, r *http.Request) {
 			"model": head.Model,
 		}
 	}
-	history := s.membraneHistory(root, transcript.History(head.Path))
+	// ?digests=0 is direct mode reading raw: the rough-words provenance
+	// still attaches, but no digest is computed or billed.
+	history := s.membraneHistory(root, transcript.History(head.Path),
+		r.URL.Query().Get("digests") == "0")
 	s.mu.Lock()
 	pending := s.says[root]
 	var spent *agentSpend
@@ -499,7 +508,7 @@ func digestWorthy(m transcript.Msg) bool {
 // membraneHistory dresses the raw history: rough words attached to the
 // user turns the membrane phrased, digests attached to recent long
 // assistant turns — queued on first sight, filled in by the poll.
-func (s *server) membraneHistory(root string, history []transcript.Msg) []wireMsg {
+func (s *server) membraneHistory(root string, history []transcript.Msg, raw bool) []wireMsg {
 	out := make([]wireMsg, len(history))
 	worthy := 0
 	for i := len(history) - 1; i >= 0; i-- {
@@ -511,7 +520,7 @@ func (s *server) membraneHistory(root string, history []transcript.Msg) []wireMs
 			s.mu.Unlock()
 			continue
 		}
-		if !digestWorthy(m) || worthy >= digestTail {
+		if raw || !digestWorthy(m) || worthy >= digestTail {
 			continue
 		}
 		worthy++
@@ -582,6 +591,8 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Text     string `json:"text"`
 		Verbatim bool   `json:"verbatim"`
+		Direct   bool   `json:"direct"` // direct mode: no membrane, ever
+		Perm     string `json:"perm"`   // "" | "read" | "edit" | "all"
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req) != nil {
 		httpErr(w, 400, "the request did not parse")
@@ -592,13 +603,28 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "say something")
 		return
 	}
+	// The three direct-mode policies, code-side like the board's:
+	// read (print mode's default refusals), edit (the board's workTools
+	// grant), all (claude's own bypassPermissions — no gate at all).
+	var permTools []string
+	permMode := ""
+	switch req.Perm {
+	case "", "read":
+	case "edit":
+		permTools = workTools
+	case "all":
+		permMode = "bypassPermissions"
+	default:
+		httpErr(w, 400, "perm must be read, edit, or all")
+		return
+	}
 	now := time.Now()
 	root, head := s.resolveAgent(r.PathValue("id"), now)
 	if head == nil {
 		httpErr(w, 404, "that agent is gone from the window")
 		return
 	}
-	expand := !req.Verbatim && s.llm != nil && !isCommand(req.Text)
+	expand := !req.Direct && !req.Verbatim && s.llm != nil && !isCommand(req.Text)
 	s.mu.Lock()
 	if j := s.says[root]; j != nil && (j.Status == "thinking" || j.Status == "phrasing") {
 		s.mu.Unlock()
@@ -614,12 +640,14 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 	if expand {
 		status = "phrasing"
 	}
-	job := &sayJob{Text: req.Text, Status: status, At: now}
+	turnCtx, cancel := context.WithCancel(context.Background())
+	job := &sayJob{Text: req.Text, Status: status, Direct: req.Direct, Perm: req.Perm, At: now, cancel: cancel}
 	s.says[root] = job
 	s.mu.Unlock()
 
 	headID, cwd, headPath := head.ID, head.Cwd, head.Path
 	go func() {
+		defer cancel()
 		sent := req.Text
 		if expand {
 			// The last exchange anchors the phrasing so its specifics
@@ -649,8 +677,9 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 			s.sent[textHash(sent)] = req.Text
 			s.mu.Unlock()
 		}
-		turner := &drive.Headless{Bin: s.claudeBin, Dir: cwd}
-		turn, err := turner.RunTurn(context.Background(), headID, sent)
+		turner := &drive.Headless{Bin: s.claudeBin, Dir: cwd,
+			AllowedTools: permTools, PermissionMode: permMode}
+		turn, err := turner.RunTurn(turnCtx, headID, sent)
 		s.addSpend(root, turn.CostUSD, 0)
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -658,6 +687,9 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			job.Status = "failed"
 			job.Err = err.Error()
+			if job.interrupted {
+				job.Err = "interrupted — whatever landed stays in the transcript"
+			}
 			return
 		}
 		s.ln.advance(root, turn.SessionID)
@@ -666,6 +698,29 @@ func (s *server) handleSay(w http.ResponseWriter, r *http.Request) {
 		delete(s.says, root)
 	}()
 	writeJSON(w, map[string]string{"status": status})
+}
+
+// handleInterrupt kills the in-flight say turn — the TUI's Esc, for
+// the web. The subprocess dies; the transcript keeps whatever landed;
+// the session resumes cleanly on the next send.
+func (s *server) handleInterrupt(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	root, head := s.resolveAgent(r.PathValue("id"), now)
+	if head == nil {
+		httpErr(w, 404, "that agent is gone from the window")
+		return
+	}
+	s.mu.Lock()
+	j := s.says[root]
+	if j == nil || (j.Status != "thinking" && j.Status != "phrasing") || j.cancel == nil {
+		s.mu.Unlock()
+		httpErr(w, 409, "nothing in flight to interrupt")
+		return
+	}
+	j.interrupted = true
+	j.cancel()
+	s.mu.Unlock()
+	writeJSON(w, map[string]string{"status": "interrupting"})
 }
 
 func (s *server) driving(root string) bool {

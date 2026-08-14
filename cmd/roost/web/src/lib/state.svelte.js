@@ -93,18 +93,26 @@ export function startPolling(ms = 3000) {
 	return () => clearInterval(t);
 }
 
-export async function fetchAgent(id) {
-	const r = await api(`/api/agent/${id}`);
+export async function fetchAgent(id, { raw = false } = {}) {
+	// raw: direct mode reading the transcript as-is — the server skips
+	// (and never bills) digests for this fetch.
+	const r = await api(`/api/agent/${id}${raw ? '?digests=0' : ''}`);
 	if (!r.ok) throw new Error((await r.json()).error ?? 'the agent did not answer');
 	return r.json();
 }
 
-export async function sayTo(id, text, verbatim = false) {
+export async function sayTo(id, text, opts = {}) {
+	const { verbatim = false, direct = false, perm = '' } = opts === true ? { verbatim: true } : opts;
 	const r = await api(`/api/agent/${id}/say`, {
 		method: 'POST',
-		body: JSON.stringify({ text, verbatim })
+		body: JSON.stringify({ text, verbatim, direct, perm })
 	});
 	if (!r.ok) throw new Error((await r.json()).error ?? 'the message was refused');
+}
+
+export async function interruptAgent(id) {
+	const r = await api(`/api/agent/${id}/interrupt`, { method: 'POST' });
+	if (!r.ok) throw new Error((await r.json()).error ?? 'nothing to interrupt');
 }
 
 export async function startDrive(sessionId, goal) {

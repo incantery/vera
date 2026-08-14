@@ -28,6 +28,11 @@ type Headless struct {
 	// claude's own permission system (--allowedTools). Empty means
 	// print mode's default: permission-gated tools are refused.
 	AllowedTools []string
+	// PermissionMode rides to claude's --permission-mode untouched
+	// ("acceptEdits", "plan", "bypassPermissions"). Empty omits the
+	// flag. "bypassPermissions" means exactly what it says: the turn
+	// runs with no permission gate at all.
+	PermissionMode string
 }
 
 func (h *Headless) bin() string {
@@ -74,13 +79,20 @@ func (h *Headless) StartTurn(ctx context.Context, prompt string) (Turn, error) {
 }
 
 func (h *Headless) exec(ctx context.Context, args []string) (Turn, error) {
-	if len(h.AllowedTools) > 0 {
-		// The tool policy rides before the trailing prompt, into
-		// claude's own permission system. One =-joined token: the flag
-		// is variadic, and a bare form would swallow the prompt.
+	if len(h.AllowedTools) > 0 || h.PermissionMode != "" {
+		// Policy flags ride before the trailing prompt, into claude's
+		// own permission system. --allowedTools is one =-joined token:
+		// the flag is variadic, and a bare form would swallow the
+		// prompt.
 		prompt := args[len(args)-1]
-		args = append(append(args[:len(args)-1:len(args)-1],
-			"--allowedTools="+strings.Join(h.AllowedTools, ",")), prompt)
+		args = args[:len(args)-1:len(args)-1]
+		if len(h.AllowedTools) > 0 {
+			args = append(args, "--allowedTools="+strings.Join(h.AllowedTools, ","))
+		}
+		if h.PermissionMode != "" {
+			args = append(args, "--permission-mode", h.PermissionMode)
+		}
+		args = append(args, prompt)
 	}
 	ctx, cancel := context.WithTimeout(ctx, h.timeout())
 	defer cancel()

@@ -324,6 +324,29 @@ echo '{"type":"result","result":"ok","session_id":"s1"}'`)
 	}
 }
 
+func TestHeadlessCarriesThePermissionMode(t *testing.T) {
+	// The mode rides as its own flag, before the trailing prompt, and
+	// composes with a tool policy.
+	bin := stubClaude(t, `case "$*" in *"--permission-mode bypassPermissions go"*) ;; *) echo "mode missing or misplaced: $*" >&2; exit 1;; esac
+echo '{"type":"result","result":"ok","session_id":"s1"}'`)
+	h := &Headless{Bin: bin, Dir: t.TempDir(), PermissionMode: "bypassPermissions"}
+	if _, err := h.RunTurn(context.Background(), "abc", "go"); err != nil {
+		t.Fatalf("resume with mode: %v", err)
+	}
+	bin2 := stubClaude(t, `case "$*" in *"--allowedTools=Edit"*"--permission-mode acceptEdits go"*) ;; *) echo "composition broke: $*" >&2; exit 1;; esac
+echo '{"type":"result","result":"ok","session_id":"s1"}'`)
+	h2 := &Headless{Bin: bin2, Dir: t.TempDir(), AllowedTools: []string{"Edit"}, PermissionMode: "acceptEdits"}
+	if _, err := h2.RunTurn(context.Background(), "abc", "go"); err != nil {
+		t.Fatalf("mode + tools: %v", err)
+	}
+	// And absent by default.
+	bin3 := stubClaude(t, `case "$*" in *--permission-mode*) echo "mode leaked" >&2; exit 1;; esac
+echo '{"type":"result","result":"ok","session_id":"s1"}'`)
+	if _, err := (&Headless{Bin: bin3, Dir: t.TempDir()}).RunTurn(context.Background(), "abc", "go"); err != nil {
+		t.Fatalf("default must carry no mode: %v", err)
+	}
+}
+
 func TestRunFreshEscalatesOnTheFirstTurn(t *testing.T) {
 	tr := &scriptStarter{}
 	j := &scriptJudge{verdicts: []Verdict{{Escalate: true, Reason: "The newborn wants to delete README.md — allowed?"}}}

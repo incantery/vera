@@ -90,6 +90,29 @@ func TestHistoryHidesTheCompactSummary(t *testing.T) {
 	}
 }
 
+// The step timeline: a turn's tool calls, named and in order, beside
+// the folded count — direct mode renders them the way the TUI would.
+func TestHistoryCarriesToolSteps(t *testing.T) {
+	path := writeHistoryFixture(t,
+		prompt(0, "run the tests"),
+		`{"type":"assistant","timestamp":"`+ts(1)+`","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"go test ./...","description":"Run the suite"}}]}}`,
+		toolResult(2),
+		`{"type":"assistant","timestamp":"`+ts(3)+`","message":{"role":"assistant","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/tmp/x.go"}}]}}`,
+		toolResult(4),
+		assistantEndTurn(5, "done"),
+	)
+	h := History(path)
+	if len(h) != 2 || h[1].Tools != 2 {
+		t.Fatalf("h: %+v", h)
+	}
+	steps := h[1].Steps
+	if len(steps) != 2 ||
+		steps[0].Tool != "Bash" || steps[0].Detail != "Run the suite" ||
+		steps[1].Tool != "Edit" || steps[1].Detail != "/tmp/x.go" {
+		t.Fatalf("steps: %+v", steps)
+	}
+}
+
 func TestHistoryOfAMissingFileIsEmptyNotAnError(t *testing.T) {
 	if h := History(filepath.Join(t.TempDir(), "gone.jsonl")); h != nil {
 		t.Fatalf("h: %+v", h)

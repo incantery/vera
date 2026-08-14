@@ -1,6 +1,6 @@
 <script>
 	import { page } from '$app/state';
-	import { fetchAgent, sayTo, startDrive, stopDrive } from '$lib/state.svelte.js';
+	import { fetchAgent, sayTo, startDrive, stopDrive, interruptAgent } from '$lib/state.svelte.js';
 	import UsageBar from '$lib/UsageBar.svelte';
 	import ArtifactPane from '$lib/ArtifactPane.svelte';
 
@@ -17,9 +17,29 @@
 	let chatEl = $state(null);
 	let nearBottom = true;
 
+	// The two ways to talk: through the membrane (rook phrases, rook
+	// digests) or direct (your words, claude's words, nothing between).
+	// Both are identities, not toggles-per-message — sticky per agent.
+	let mode = $state('membrane');
+	let perm = $state('read'); // direct mode's tool policy: read | edit | all
+	const direct = $derived(mode === 'direct');
+	$effect(() => {
+		mode = localStorage.getItem(`roost-mode:${id}`) ?? 'membrane';
+		perm = localStorage.getItem(`roost-perm:${id}`) ?? 'read';
+	});
+	function setMode(m) {
+		mode = m;
+		localStorage.setItem(`roost-mode:${id}`, m);
+		refresh();
+	}
+	function setPerm(p) {
+		perm = p;
+		localStorage.setItem(`roost-perm:${id}`, p);
+	}
+
 	async function refresh() {
 		try {
-			data = await fetchAgent(id);
+			data = await fetchAgent(id, { raw: mode === 'direct' });
 			lost = '';
 		} catch (e) {
 			lost = e.message;
@@ -32,6 +52,33 @@
 		const t = setInterval(refresh, 3000);
 		return () => clearInterval(t);
 	});
+
+	// A live second-hand for the in-flight turn — the wait is honest
+	// when it's counted.
+	let nowTick = $state(Date.now());
+	$effect(() => {
+		const t = setInterval(() => (nowTick = Date.now()), 1000);
+		return () => clearInterval(t);
+	});
+	const pendingSecs = $derived(
+		data?.pending?.at ? Math.max(0, Math.round((nowTick - new Date(data.pending.at).getTime()) / 1000)) : 0
+	);
+
+	let interrupting = $state(false);
+	async function interrupt() {
+		if (interrupting) return;
+		interrupting = true;
+		try {
+			await interruptAgent(id);
+			await refresh();
+		} catch (err) {
+			error = err.message;
+		} finally {
+			interrupting = false;
+		}
+	}
+
+	const permLabel = { read: 'read-only', edit: 'edit + test', all: 'everything' };
 
 	const spendTotal = $derived((data?.spend?.claudeUsd ?? 0) + (data?.spend?.judgeUsd ?? 0));
 
@@ -51,7 +98,7 @@
 		try {
 			// /compact rides the same say rail as everything else —
 			// verbatim, so the membrane can't phrase a command into prose.
-			await sayTo(id, '/compact', true);
+			await sayTo(id, '/compact', { verbatim: true });
 			await refresh();
 		} catch (err) {
 			error = err.message;
@@ -89,7 +136,8 @@
 		error = '';
 		try {
 			if (driveMode) await startDrive(id, text);
-			else await sayTo(id, text, verbatim);
+			else if (direct) await sayTo(id, text, { direct: true, perm });
+			else await sayTo(id, text, { verbatim });
 			text = '';
 			nearBottom = true;
 			await refresh();
@@ -126,6 +174,23 @@
 				{data.agent.dir}{data.agent.branch ? ` · ${data.agent.branch}` : ''}
 			</span>
 			<span class="grow"></span>
+			<div
+				class="flex overflow-hidden rounded-md border border-zinc-700 text-[11px]"
+				title="membrane: rook phrases and digests · direct: you and claude, nothing between"
+			>
+				<button
+					onclick={() => setMode('membrane')}
+					class="px-2 py-0.5 {direct ? 'text-zinc-500 hover:text-zinc-300' : 'bg-sky-400/20 text-sky-300'}"
+				>
+					membrane
+				</button>
+				<button
+					onclick={() => setMode('direct')}
+					class="px-2 py-0.5 {direct ? 'bg-emerald-400/20 text-emerald-300' : 'text-zinc-500 hover:text-zinc-300'}"
+				>
+					direct
+				</button>
+			</div>
 			<a
 				href="/"
 				class="text-xs text-zinc-500 hover:text-zinc-300"
@@ -235,7 +300,32 @@
 					</div>
 				{:else}
 					<div class="max-w-[95%]">
-						{#if m.tools}
+						{#if m.steps?.length}
+							<!-- the turn's work, step by step — the last turn stays
+							     open while the agent works, so a running turn reads
+							     like a terminal, not a spinner -->
+							<details
+								class="mb-1"
+								open={direct && i === data.history.length - 1 && data.agent.state === 'working'}
+							>
+								<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
+									⛭ {m.tools} tool {m.tools === 1 ? 'call' : 'calls'}
+								</summary>
+								<div class="mt-1 space-y-0.5 border-l-2 border-zinc-800 pl-3">
+									{#each m.steps as st, si (si)}
+										<div class="flex gap-2 text-[11.5px]">
+											<span class="flex-none font-medium text-zinc-500">{st.tool}</span>
+											{#if st.detail}
+												<span class="truncate font-mono text-zinc-600">{st.detail}</span>
+											{/if}
+										</div>
+									{/each}
+									{#if m.tools > m.steps.length}
+										<div class="text-[11px] text-zinc-700">… and {m.tools - m.steps.length} more</div>
+									{/if}
+								</div>
+							</details>
+						{:else if m.tools}
 							<div class="mb-1 text-[11px] text-zinc-600">⛭ {m.tools} tool {m.tools === 1 ? 'call' : 'calls'}</div>
 						{/if}
 						{#if m.digest?.state === 'ready'}
@@ -295,7 +385,32 @@
 			{#if data.pending.status === 'phrasing'}
 				<div class="animate-pulse text-[13px] text-zinc-500">rook is phrasing it…</div>
 			{:else if data.pending.status === 'thinking'}
-				<div class="animate-pulse text-[13px] text-zinc-500">thinking…</div>
+				<div class="flex items-center gap-3 text-[13px] text-zinc-500">
+					<span class="animate-pulse">
+						{data.pending.direct ? 'claude is working' : 'thinking'}… {pendingSecs}s
+					</span>
+					{#if data.pending.direct && data.pending.perm && data.pending.perm !== 'read'}
+						<span
+							class="rounded border border-zinc-800 px-1.5 text-[10.5px] text-zinc-600"
+							title="the tool policy this turn runs under"
+						>
+							{permLabel[data.pending.perm] ?? data.pending.perm}
+						</span>
+					{/if}
+					{#if data.agent.tool && data.agent.state === 'working'}
+						<span class="truncate text-[11.5px] text-zinc-600">
+							⛭ {data.agent.tool}{data.agent.toolDetail ? ` — ${data.agent.toolDetail}` : ''}
+						</span>
+					{/if}
+					<button
+						onclick={interrupt}
+						disabled={interrupting}
+						class="rounded-md border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-400 hover:border-rose-500 hover:text-rose-300 disabled:opacity-40"
+						title="kill this turn — whatever already landed stays in the transcript; the session resumes cleanly"
+					>
+						{interrupting ? 'stopping…' : 'stop'}
+					</button>
+				</div>
 			{:else}
 				<div class="text-[13px] text-rose-400">did not land — {data.pending.error}</div>
 			{/if}
@@ -373,14 +488,41 @@
 				rows="2"
 				placeholder={driveMode
 					? `a goal — the supervisor keeps pushing until it’s met (${data?.turns ?? 4} turns max)`
-					: verbatim
-						? 'your exact words go straight to claude'
-						: 'tell rook what you want — it phrases the message for claude'}
-				class="grow resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-[13px] placeholder:text-zinc-600 focus:border-sky-400 focus:outline-none"
+					: direct
+						? 'straight to claude — “/” runs a command, shift+enter for a new line'
+						: verbatim
+							? 'your exact words go straight to claude'
+							: 'tell rook what you want — it phrases the message for claude'}
+				class="grow resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-[13px] placeholder:text-zinc-600 focus:outline-none {direct
+					? 'focus:border-emerald-400'
+					: 'focus:border-sky-400'}"
 			></textarea>
 			<div class="flex flex-col items-end gap-1.5">
-				<div class="flex gap-1">
-					{#if !driveMode}
+				<div class="flex items-center gap-1">
+					{#if direct && !driveMode}
+						<!-- the turn's tool policy: explicit, visible, chosen
+						     before the turn — not an interruption during it -->
+						<div class="flex overflow-hidden rounded-md border border-zinc-800 text-[10.5px]">
+							{#each ['read', 'edit', 'all'] as p (p)}
+								<button
+									type="button"
+									onclick={() => setPerm(p)}
+									class="px-1.5 py-0.5 {perm === p
+										? p === 'all'
+											? 'bg-rose-400/20 text-rose-300'
+											: 'bg-emerald-400/20 text-emerald-300'
+										: 'text-zinc-600 hover:text-zinc-400'}"
+									title={p === 'read'
+										? 'read-only: tools that would need permission are refused'
+										: p === 'edit'
+											? 'edit + test: file edits plus go/npm/make build-and-test — no git, no network'
+											: 'everything: claude runs with NO permission gate — it can do anything you could'}
+								>
+									{p}
+								</button>
+							{/each}
+						</div>
+					{:else if !driveMode}
 						<button
 							type="button"
 							onclick={() => (verbatim = !verbatim)}
@@ -408,12 +550,19 @@
 					disabled={sending || !text.trim() || !!activeDrive() || data?.pending?.status === 'thinking'}
 					class="rounded-xl px-4 py-2 font-semibold text-zinc-950 disabled:opacity-40 {driveMode
 						? 'bg-amber-400'
-						: 'bg-sky-400'}"
+						: direct
+							? 'bg-emerald-400'
+							: 'bg-sky-400'}"
 				>
 					{driveMode ? 'drive' : 'send'}
 				</button>
 			</div>
 		</form>
+		{#if direct && perm === 'all' && !driveMode}
+			<div class="mt-1.5 text-[11px] text-rose-400/80">
+				everything: this turn runs with no permission gate at all — claude can edit, delete, and run anything you could
+			</div>
+		{/if}
 	</footer>
 </div>
 
