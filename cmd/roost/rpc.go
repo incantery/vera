@@ -83,6 +83,19 @@ func (r *roostRPC) WatchAgent(ctx context.Context, req *connect.Request[roostv1.
 	}
 }
 
+// connectErr translates a core's HTTP-vocabulary refusal into
+// Connect's, keeping the server's own words.
+func connectErr(serr *sayErr) error {
+	code := connect.CodeInvalidArgument
+	switch serr.code {
+	case 404:
+		code = connect.CodeNotFound
+	case 409:
+		code = connect.CodeFailedPrecondition
+	}
+	return connect.NewError(code, errors.New(serr.msg))
+}
+
 // Say is the outbound rail on the typed wire — the same core the REST
 // endpoint calls, refusals translated into Connect's vocabulary.
 func (r *roostRPC) Say(ctx context.Context, req *connect.Request[roostv1.SayRequest]) (*connect.Response[roostv1.SayResponse], error) {
@@ -92,14 +105,7 @@ func (r *roostRPC) Say(ctx context.Context, req *connect.Request[roostv1.SayRequ
 		Perm: m.Perm, Images: m.Images,
 	})
 	if serr != nil {
-		code := connect.CodeInvalidArgument
-		switch serr.code {
-		case 404:
-			code = connect.CodeNotFound
-		case 409:
-			code = connect.CodeFailedPrecondition
-		}
-		return nil, connect.NewError(code, errors.New(serr.msg))
+		return nil, connectErr(serr)
 	}
 	return connect.NewResponse(&roostv1.SayResponse{Status: status}), nil
 }
@@ -107,13 +113,42 @@ func (r *roostRPC) Say(ctx context.Context, req *connect.Request[roostv1.SayRequ
 // Interrupt is the cancel rail on the typed wire.
 func (r *roostRPC) Interrupt(ctx context.Context, req *connect.Request[roostv1.InterruptRequest]) (*connect.Response[roostv1.InterruptResponse], error) {
 	if serr := r.s.interrupt(req.Msg.Id); serr != nil {
-		code := connect.CodeFailedPrecondition
-		if serr.code == 404 {
-			code = connect.CodeNotFound
-		}
-		return nil, connect.NewError(code, errors.New(serr.msg))
+		return nil, connectErr(serr)
 	}
 	return connect.NewResponse(&roostv1.InterruptResponse{}), nil
+}
+
+// Review, Commit, Discard: the verdict surface on the typed wire —
+// the same cores the REST endpoints call.
+func (r *roostRPC) Review(ctx context.Context, req *connect.Request[roostv1.ReviewRequest]) (*connect.Response[roostv1.ReviewResponse], error) {
+	info, serr := r.s.agentReview(req.Msg.Id)
+	if serr != nil {
+		return nil, connectErr(serr)
+	}
+	resp := &roostv1.ReviewResponse{Dir: info.Dir, Branch: info.Branch}
+	for _, f := range info.Files {
+		resp.Files = append(resp.Files, &roostv1.ReviewFile{
+			Path: f.Path, Add: int32(f.Add), Del: int32(f.Del),
+			IsNew: f.New, Binary: f.Binary, Truncated: f.Truncated,
+			Diff: f.Diff,
+		})
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (r *roostRPC) Commit(ctx context.Context, req *connect.Request[roostv1.CommitRequest]) (*connect.Response[roostv1.CommitResponse], error) {
+	hash, serr := r.s.agentCommit(req.Msg.Id, req.Msg.Message)
+	if serr != nil {
+		return nil, connectErr(serr)
+	}
+	return connect.NewResponse(&roostv1.CommitResponse{Commit: hash}), nil
+}
+
+func (r *roostRPC) Discard(ctx context.Context, req *connect.Request[roostv1.DiscardRequest]) (*connect.Response[roostv1.DiscardResponse], error) {
+	if serr := r.s.agentDiscard(req.Msg.Id, req.Msg.Path, req.Msg.All); serr != nil {
+		return nil, connectErr(serr)
+	}
+	return connect.NewResponse(&roostv1.DiscardResponse{}), nil
 }
 
 // WatchBoard streams the home screen's present: whole frames (the

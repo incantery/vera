@@ -365,22 +365,39 @@ export async function deleteArtifact(agentId, id) {
 // ---- the review surface ----
 // The human's verdict on an agent's uncommitted work: read the whole
 // diff, then approve (commit) or discard. "Request changes" is just
-// words — the say rail already carries those.
+// words — the say rail already carries those. All three ride the
+// typed wire (Review/Commit/Discard RPCs); errors keep the server's
+// own words.
 
 export async function agentDiff(id) {
-	return must(await api(`/api/agent/${id}/diff`), 'the diff did not answer');
+	try {
+		const r = await roostClient.review({ id });
+		return {
+			dir: r.dir,
+			branch: r.branch,
+			files: (r.files ?? []).map((f) => ({
+				path: f.path, add: f.add, del: f.del,
+				new: f.isNew || undefined, binary: f.binary || undefined,
+				truncated: f.truncated || undefined, diff: f.diff
+			}))
+		};
+	} catch (err) {
+		throw new Error(err?.rawMessage || 'the diff did not answer');
+	}
 }
 
 export async function commitTree(id, message) {
-	return must(
-		await api(`/api/agent/${id}/commit`, { method: 'POST', body: JSON.stringify({ message }) }),
-		'the commit was refused'
-	);
+	try {
+		return await roostClient.commit({ id, message });
+	} catch (err) {
+		throw new Error(err?.rawMessage || 'the commit was refused');
+	}
 }
 
 export async function discardChange(id, path, all = false) {
-	return must(
-		await api(`/api/agent/${id}/discard`, { method: 'POST', body: JSON.stringify({ path, all }) }),
-		'the discard was refused'
-	);
+	try {
+		return await roostClient.discard({ id, path, all });
+	} catch (err) {
+		throw new Error(err?.rawMessage || 'the discard was refused');
+	}
 }

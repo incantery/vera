@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file roost/v1/roost.proto.
  */
 export const file_roost_v1_roost: GenFile = /*@__PURE__*/
-  fileDesc("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bWUYEiABKAkSDAoEbW9kZRgTIAEoCRIgCgNsb2cYFCADKAsyEy5yb29zdC52MS5UYXNrRXZlbnQSJQoJZXhjaGFuZ2VzGBUgAygLMhIucm9vc3QudjEuRXhjaGFuZ2USFwoPY3JlYXRlZF91bml4X21zGBYgASgDEhcKD3VwZGF0ZWRfdW5peF9tcxgXIAEoAxIgCgRsaXZlGBggASgLMhIucm9vc3QudjEuVGFza0xpdmUiOgoHVGFza1J1bhIMCgRraW5kGAEgASgJEg8KB291dGNvbWUYAiABKAkSEAoIY29zdF91c2QYAyABKAEiPAoJVGFza0V2ZW50EhIKCmF0X3VuaXhfbXMYASABKAMSDQoFYWN0b3IYAiABKAkSDAoEdGV4dBgDIAEoCSIpCghFeGNoYW5nZRIOCgZwcm9tcHQYASABKAkSDQoFcmVwbHkYAiABKAkiMwoIVGFza0xpdmUSCwoDZGlyGAEgASgJEg0KBXN0YXRlGAIgASgJEgsKA25vdxgDIAEoCTKeAgoMUm9vc3RTZXJ2aWNlEkkKCldhdGNoQWdlbnQSGy5yb29zdC52MS5XYXRjaEFnZW50UmVxdWVzdBocLnJvb3N0LnYxLldhdGNoQWdlbnRSZXNwb25zZTABEjIKA1NheRIULnJvb3N0LnYxLlNheVJlcXVlc3QaFS5yb29zdC52MS5TYXlSZXNwb25zZRJECglJbnRlcnJ1cHQSGi5yb29zdC52MS5JbnRlcnJ1cHRSZXF1ZXN0Ghsucm9vc3QudjEuSW50ZXJydXB0UmVzcG9uc2USSQoKV2F0Y2hCb2FyZBIbLnJvb3N0LnYxLldhdGNoQm9hcmRSZXF1ZXN0Ghwucm9vc3QudjEuV2F0Y2hCb2FyZFJlc3BvbnNlMAFCPFo6Z2l0aHViLmNvbS9pbmNhbnRlcnkvcm9vay1ob3N0L2VuZ2luZS9nZW4vcm9vc3QvdjE7cm9vc3R2MWIGcHJvdG8z");
+  fileDesc("ChRyb29zdC92MS9yb29zdC5wcm90bxIIcm9vc3QudjEiLAoRV2F0Y2hBZ2VudFJlcXVlc3QSCgoCaWQYASABKAkSCwoDcmF3GAIgASgIIrcCChJXYXRjaEFnZW50UmVzcG9uc2USHgoFYWdlbnQYASABKAsyDy5yb29zdC52MS5BZ2VudBINCgVyZXNldBgCIAEoCBIMCgRmcm9tGAMgASgFEh4KB2hpc3RvcnkYBCADKAsyDS5yb29zdC52MS5Nc2cSGgoDY3R4GAUgASgLMg0ucm9vc3QudjEuQ3R4Eh4KBXNwZW5kGAYgASgLMg8ucm9vc3QudjEuU3BlbmQSIgoHcGVuZGluZxgHIAEoCzIRLnJvb3N0LnYxLlBlbmRpbmcSHwoFcXVldWUYCCADKAsyEC5yb29zdC52MS5RdWV1ZWQSIAoEdHJlZRgJIAMoCzISLnJvb3N0LnYxLlRyZWVGaWxlEg4KBnJlc3VtZRgKIAEoCRIRCglhcnRpZmFjdHMYCyABKAUijwEKBUFnZW50EgoKAmlkGAEgASgJEg0KBXRpdGxlGAIgASgJEg0KBXN0YXRlGAMgASgJEgsKA2RpchgEIAEoCRIOCgZicmFuY2gYBSABKAkSDAoEdG9vbBgGIAEoCRITCgt0b29sX2RldGFpbBgHIAEoCRIPCgdjdHhfcGN0GAggASgFEgsKA2FnZRgJIAEoCSKqAQoDTXNnEgwKBHJvbGUYASABKAkSDAoEdGV4dBgCIAEoCRINCgV0b29scxgDIAEoBRIdCgVzdGVwcxgEIAMoCzIOLnJvb3N0LnYxLlN0ZXASDQoFdGhpbmsYBSADKAkSCwoDY3R4GAYgASgDEg0KBXJvdWdoGAcgASgJEiAKBmRpZ2VzdBgIIAEoCzIQLnJvb3N0LnYxLkRpZ2VzdBIMCgRzZWNzGAkgASgFImsKBFN0ZXASDAoEdG9vbBgBIAEoCRIOCgZkZXRhaWwYAiABKAkSHAoEZGlmZhgDIAEoCzIOLnJvb3N0LnYxLkRpZmYSCwoDb3V0GAQgASgJEg0KBWxpbmVzGAUgASgFEgsKA2VychgGIAEoCCJDCgREaWZmEgwKBGZpbGUYASABKAkSCwoDb2xkGAIgASgJEgsKA25ldxgDIAEoCRITCgtyZXBsYWNlX2FsbBgEIAEoCCI6CgZEaWdlc3QSDQoFc3RhdGUYASABKAkSEAoIaGVhZGxpbmUYAiABKAkSDwoHYnVsbGV0cxgDIAMoCSJ8CgNDdHgSDgoGdG9rZW5zGAEgASgDEhAKCGZyZXNoX2luGAIgASgDEhIKCmNhY2hlX3JlYWQYAyABKAMSEwoLY2FjaGVfd3JpdGUYBCABKAMSCwoDb3V0GAUgASgDEg4KBndpbmRvdxgGIAEoAxINCgVtb2RlbBgHIAEoCSIuCgVTcGVuZBISCgpjbGF1ZGVfdXNkGAEgASgBEhEKCWp1ZGdlX3VzZBgCIAEoASKGAQoHUGVuZGluZxIMCgR0ZXh0GAEgASgJEgwKBHNlbnQYAiABKAkSDgoGc3RhdHVzGAMgASgJEg0KBWVycm9yGAQgASgJEg4KBmRpcmVjdBgFIAEoCBIMCgRwZXJtGAYgASgJEg4KBmltYWdlcxgHIAMoCRISCgphdF91bml4X21zGAggASgDIiQKBlF1ZXVlZBIMCgR0ZXh0GAEgASgJEgwKBHBlcm0YAiABKAkiQgoIVHJlZUZpbGUSDAoEcGF0aBgBIAEoCRILCgNhZGQYAiABKAUSCwoDZGVsGAMgASgFEg4KBmlzX25ldxgEIAEoCCJmCgpTYXlSZXF1ZXN0EgoKAmlkGAEgASgJEgwKBHRleHQYAiABKAkSEAoIdmVyYmF0aW0YAyABKAgSDgoGZGlyZWN0GAQgASgIEgwKBHBlcm0YBSABKAkSDgoGaW1hZ2VzGAYgAygJIh0KC1NheVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSIeChBJbnRlcnJ1cHRSZXF1ZXN0EgoKAmlkGAEgASgJIhMKEUludGVycnVwdFJlc3BvbnNlIhMKEVdhdGNoQm9hcmRSZXF1ZXN0Iv4BChJXYXRjaEJvYXJkUmVzcG9uc2USIgoFdGFza3MYASADKAsyEy5yb29zdC52MS5Cb2FyZFRhc2sSEAoIaW5mbGlnaHQYAiABKAUSDQoFc3BlbmQYAyABKAESHgoFZmxlZXQYBCABKAsyDy5yb29zdC52MS5GbGVldBIdCgVyZXBvcxgFIAMoCzIOLnJvb3N0LnYxLlJlcG8SDgoGbm90aWNlGAYgASgJEiMKCHNlc3Npb25zGAcgAygLMhEucm9vc3QudjEuU2Vzc2lvbhIPCgdjdXJyZW50GAggASgJEh4KBXVzYWdlGAkgASgLMg8ucm9vc3QudjEuVXNhZ2UiKAoFRmxlZXQSDgoGYWdlbnRzGAEgASgFEg8KB3dvcmtpbmcYAiABKAUiMQoEUmVwbxILCgNkaXIYASABKAkSCwoDY3dkGAIgASgJEg8KB3NjcmF0Y2gYAyABKAgigAIKB1Nlc3Npb24SCgoCaWQYASABKAkSDQoFdGl0bGUYAiABKAkSDQoFc3RhdGUYAyABKAkSCwoDZGlyGAQgASgJEgsKA2N3ZBgFIAEoCRIOCgZicmFuY2gYBiABKAkSDgoGcHJvbXB0GAcgASgJEhEKCWxhc3RfdGV4dBgIIAEoCRIPCgdjdHhfcGN0GAkgASgFEg0KBW1vZGVsGAogASgJEgsKA2FnZRgLIAEoCRIPCgdkcml2aW5nGAwgASgIEgwKBHRvb2wYDSABKAkSEwoLdG9vbF9kZXRhaWwYDiABKAkSDAoEdGFzaxgPIAEoCRIPCgdzY3JhdGNoGBAgASgIIr0BCgVVc2FnZRIMCgRtb2RlGAEgASgJEhMKC3Nlc3Npb25fcGN0GAIgASgFEhYKDnNlc3Npb25fcmVzZXRzGAMgASgJEhQKDHdlZWtfYWxsX3BjdBgEIAEoBRIXCg93ZWVrX2FsbF9yZXNldHMYBSABKAkSFwoPd2Vla19tb2RlbF9uYW1lGAYgASgJEhYKDndlZWtfbW9kZWxfcGN0GAcgASgFEhkKEXdlZWtfbW9kZWxfcmVzZXRzGAggASgJIvQDCglCb2FyZFRhc2sSCgoCaWQYASABKAkSDQoFdGl0bGUYAiABKAkSDgoGaW50ZW50GAMgASgJEg0KBWFnZW50GAQgASgJEgwKBGdvYWwYBSABKAkSEgoKZ29hbF9hY3RvchgGIAEoCRILCgNjb2wYByABKAkSDQoFc3RhdGUYCCABKAkSCwoDYXNrGAkgASgJEgwKBGZhY2UYCiABKAkSDgoGcGlubmVkGAsgASgIEhAKCHByb3Bvc2FsGAwgASgJEhQKDHByb3Bvc2FsX3doeRgNIAEoCRIVCg1wcm9wb3NhbF9raW5kGA4gASgJEhAKCGNvc3RfdXNkGA8gASgBEh8KBHJ1bnMYECADKAsyES5yb29zdC52MS5UYXNrUnVuEhEKCXdvcmtzcGFjZRgRIAEoCRIUCgxzY3JhdGNoX25hbWUYEiABKAkSDAoEbW9kZRgTIAEoCRIgCgNsb2cYFCADKAsyEy5yb29zdC52MS5UYXNrRXZlbnQSJQoJZXhjaGFuZ2VzGBUgAygLMhIucm9vc3QudjEuRXhjaGFuZ2USFwoPY3JlYXRlZF91bml4X21zGBYgASgDEhcKD3VwZGF0ZWRfdW5peF9tcxgXIAEoAxIgCgRsaXZlGBggASgLMhIucm9vc3QudjEuVGFza0xpdmUiOgoHVGFza1J1bhIMCgRraW5kGAEgASgJEg8KB291dGNvbWUYAiABKAkSEAoIY29zdF91c2QYAyABKAEiPAoJVGFza0V2ZW50EhIKCmF0X3VuaXhfbXMYASABKAMSDQoFYWN0b3IYAiABKAkSDAoEdGV4dBgDIAEoCSIpCghFeGNoYW5nZRIOCgZwcm9tcHQYASABKAkSDQoFcmVwbHkYAiABKAkiMwoIVGFza0xpdmUSCwoDZGlyGAEgASgJEg0KBXN0YXRlGAIgASgJEgsKA25vdxgDIAEoCSIbCg1SZXZpZXdSZXF1ZXN0EgoKAmlkGAEgASgJInUKClJldmlld0ZpbGUSDAoEcGF0aBgBIAEoCRILCgNhZGQYAiABKAUSCwoDZGVsGAMgASgFEg4KBmlzX25ldxgEIAEoCBIOCgZiaW5hcnkYBSABKAgSEQoJdHJ1bmNhdGVkGAYgASgIEgwKBGRpZmYYByABKAkiUgoOUmV2aWV3UmVzcG9uc2USCwoDZGlyGAEgASgJEg4KBmJyYW5jaBgCIAEoCRIjCgVmaWxlcxgDIAMoCzIULnJvb3N0LnYxLlJldmlld0ZpbGUiLAoNQ29tbWl0UmVxdWVzdBIKCgJpZBgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIiAKDkNvbW1pdFJlc3BvbnNlEg4KBmNvbW1pdBgBIAEoCSI3Cg5EaXNjYXJkUmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRwYXRoGAIgASgJEgsKA2FsbBgDIAEoCCIRCg9EaXNjYXJkUmVzcG9uc2Uy2AMKDFJvb3N0U2VydmljZRJJCgpXYXRjaEFnZW50Ehsucm9vc3QudjEuV2F0Y2hBZ2VudFJlcXVlc3QaHC5yb29zdC52MS5XYXRjaEFnZW50UmVzcG9uc2UwARIyCgNTYXkSFC5yb29zdC52MS5TYXlSZXF1ZXN0GhUucm9vc3QudjEuU2F5UmVzcG9uc2USRAoJSW50ZXJydXB0Ehoucm9vc3QudjEuSW50ZXJydXB0UmVxdWVzdBobLnJvb3N0LnYxLkludGVycnVwdFJlc3BvbnNlEkkKCldhdGNoQm9hcmQSGy5yb29zdC52MS5XYXRjaEJvYXJkUmVxdWVzdBocLnJvb3N0LnYxLldhdGNoQm9hcmRSZXNwb25zZTABEjsKBlJldmlldxIXLnJvb3N0LnYxLlJldmlld1JlcXVlc3QaGC5yb29zdC52MS5SZXZpZXdSZXNwb25zZRI7CgZDb21taXQSFy5yb29zdC52MS5Db21taXRSZXF1ZXN0Ghgucm9vc3QudjEuQ29tbWl0UmVzcG9uc2USPgoHRGlzY2FyZBIYLnJvb3N0LnYxLkRpc2NhcmRSZXF1ZXN0Ghkucm9vc3QudjEuRGlzY2FyZFJlc3BvbnNlQjxaOmdpdGh1Yi5jb20vaW5jYW50ZXJ5L3Jvb2staG9zdC9lbmdpbmUvZ2VuL3Jvb3N0L3YxO3Jvb3N0djFiBnByb3RvMw");
 
 /**
  * WatchAgent streams one agent's whole present: a full snapshot
@@ -1193,6 +1193,202 @@ export const TaskLiveSchema: GenMessage<TaskLive> = /*@__PURE__*/
   messageDesc(file_roost_v1_roost, 26);
 
 /**
+ * The review surface: the whole repo's uncommitted diff, then a
+ * verdict. Approve commits under the human's own git identity;
+ * discard puts files back the way HEAD has them.
+ *
+ * @generated from message roost.v1.ReviewRequest
+ */
+export type ReviewRequest = Message<"roost.v1.ReviewRequest"> & {
+  /**
+   * the agent whose repo is under review
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message roost.v1.ReviewRequest.
+ * Use `create(ReviewRequestSchema)` to create a new message.
+ */
+export const ReviewRequestSchema: GenMessage<ReviewRequest> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 27);
+
+/**
+ * @generated from message roost.v1.ReviewFile
+ */
+export type ReviewFile = Message<"roost.v1.ReviewFile"> & {
+  /**
+   * repo-root-relative
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * @generated from field: int32 add = 2;
+   */
+  add: number;
+
+  /**
+   * @generated from field: int32 del = 3;
+   */
+  del: number;
+
+  /**
+   * untracked — HEAD never had it
+   *
+   * @generated from field: bool is_new = 4;
+   */
+  isNew: boolean;
+
+  /**
+   * no line diff to show
+   *
+   * @generated from field: bool binary = 5;
+   */
+  binary: boolean;
+
+  /**
+   * the diff was bigger than the wire allows
+   *
+   * @generated from field: bool truncated = 6;
+   */
+  truncated: boolean;
+
+  /**
+   * unified diff text
+   *
+   * @generated from field: string diff = 7;
+   */
+  diff: string;
+};
+
+/**
+ * Describes the message roost.v1.ReviewFile.
+ * Use `create(ReviewFileSchema)` to create a new message.
+ */
+export const ReviewFileSchema: GenMessage<ReviewFile> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 28);
+
+/**
+ * @generated from message roost.v1.ReviewResponse
+ */
+export type ReviewResponse = Message<"roost.v1.ReviewResponse"> & {
+  /**
+   * the repo root — what approve would commit
+   *
+   * @generated from field: string dir = 1;
+   */
+  dir: string;
+
+  /**
+   * @generated from field: string branch = 2;
+   */
+  branch: string;
+
+  /**
+   * @generated from field: repeated roost.v1.ReviewFile files = 3;
+   */
+  files: ReviewFile[];
+};
+
+/**
+ * Describes the message roost.v1.ReviewResponse.
+ * Use `create(ReviewResponseSchema)` to create a new message.
+ */
+export const ReviewResponseSchema: GenMessage<ReviewResponse> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 29);
+
+/**
+ * @generated from message roost.v1.CommitRequest
+ */
+export type CommitRequest = Message<"roost.v1.CommitRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * the human's words; their git identity signs
+   *
+   * @generated from field: string message = 2;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message roost.v1.CommitRequest.
+ * Use `create(CommitRequestSchema)` to create a new message.
+ */
+export const CommitRequestSchema: GenMessage<CommitRequest> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 30);
+
+/**
+ * @generated from message roost.v1.CommitResponse
+ */
+export type CommitResponse = Message<"roost.v1.CommitResponse"> & {
+  /**
+   * short hash of the new commit
+   *
+   * @generated from field: string commit = 1;
+   */
+  commit: string;
+};
+
+/**
+ * Describes the message roost.v1.CommitResponse.
+ * Use `create(CommitResponseSchema)` to create a new message.
+ */
+export const CommitResponseSchema: GenMessage<CommitResponse> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 31);
+
+/**
+ * @generated from message roost.v1.DiscardRequest
+ */
+export type DiscardRequest = Message<"roost.v1.DiscardRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * one file, repo-root-relative …
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * … or the whole tree back to HEAD
+   *
+   * @generated from field: bool all = 3;
+   */
+  all: boolean;
+};
+
+/**
+ * Describes the message roost.v1.DiscardRequest.
+ * Use `create(DiscardRequestSchema)` to create a new message.
+ */
+export const DiscardRequestSchema: GenMessage<DiscardRequest> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 32);
+
+/**
+ * @generated from message roost.v1.DiscardResponse
+ */
+export type DiscardResponse = Message<"roost.v1.DiscardResponse"> & {
+};
+
+/**
+ * Describes the message roost.v1.DiscardResponse.
+ * Use `create(DiscardResponseSchema)` to create a new message.
+ */
+export const DiscardResponseSchema: GenMessage<DiscardResponse> = /*@__PURE__*/
+  messageDesc(file_roost_v1_roost, 33);
+
+/**
  * @generated from service roost.v1.RoostService
  */
 export const RoostService: GenService<{
@@ -1227,6 +1423,30 @@ export const RoostService: GenService<{
     methodKind: "server_streaming";
     input: typeof WatchBoardRequestSchema;
     output: typeof WatchBoardResponseSchema;
+  },
+  /**
+   * @generated from rpc roost.v1.RoostService.Review
+   */
+  review: {
+    methodKind: "unary";
+    input: typeof ReviewRequestSchema;
+    output: typeof ReviewResponseSchema;
+  },
+  /**
+   * @generated from rpc roost.v1.RoostService.Commit
+   */
+  commit: {
+    methodKind: "unary";
+    input: typeof CommitRequestSchema;
+    output: typeof CommitResponseSchema;
+  },
+  /**
+   * @generated from rpc roost.v1.RoostService.Discard
+   */
+  discard: {
+    methodKind: "unary";
+    input: typeof DiscardRequestSchema;
+    output: typeof DiscardResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_roost_v1_roost, 0);

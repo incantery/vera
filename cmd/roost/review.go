@@ -188,32 +188,70 @@ func reviewDiscard(dir, path string, all bool) error {
 	return errors.New("that file has no uncommitted changes")
 }
 
-func (s *server) handleDiff(w http.ResponseWriter, r *http.Request) {
-	_, head := s.resolveAgent(r.PathValue("id"), time.Now())
+// The transport-neutral cores: REST below and the Connect RPCs both
+// call these; refusals use HTTP's vocabulary and each rail translates.
+
+// reviewInfo is one whole review: the repo root the verdict would
+// cover, its branch, and every changed file.
+type reviewInfo struct {
+	Dir    string       `json:"dir"`
+	Branch string       `json:"branch"`
+	Files  []reviewFile `json:"files"`
+}
+
+func (s *server) agentReview(id string) (*reviewInfo, *sayErr) {
+	_, head := s.resolveAgent(id, time.Now())
 	if head == nil {
-		httpErr(w, 404, "that agent is gone from the window")
-		return
+		return nil, &sayErr{404, "that agent is gone from the window"}
 	}
 	files, err := reviewChanges(head.Cwd)
 	if err != nil {
-		httpErr(w, 409, "not reviewable: "+err.Error())
-		return
+		return nil, &sayErr{409, "not reviewable: " + err.Error()}
 	}
 	// The repo root, not the agent's cwd: approve commits the whole
 	// repo, so the header names what the verdict covers.
 	top, _ := repoTop(head.Cwd)
-	writeJSON(w, map[string]any{
-		"dir": top, "branch": head.Branch, "files": files,
-	})
+	return &reviewInfo{Dir: top, Branch: head.Branch, Files: files}, nil
+}
+
+func (s *server) agentCommit(id, message string) (string, *sayErr) {
+	defer s.hub.notify()
+	_, head := s.resolveAgent(id, time.Now())
+	if head == nil {
+		return "", &sayErr{404, "that agent is gone from the window"}
+	}
+	hash, err := reviewCommit(head.Cwd, message)
+	if err != nil {
+		return "", &sayErr{409, err.Error()}
+	}
+	return hash, nil
+}
+
+func (s *server) agentDiscard(id, path string, all bool) *sayErr {
+	defer s.hub.notify()
+	_, head := s.resolveAgent(id, time.Now())
+	if head == nil {
+		return &sayErr{404, "that agent is gone from the window"}
+	}
+	if path == "" && !all {
+		return &sayErr{400, "say which file — or all"}
+	}
+	if err := reviewDiscard(head.Cwd, path, all); err != nil {
+		return &sayErr{409, err.Error()}
+	}
+	return nil
+}
+
+func (s *server) handleDiff(w http.ResponseWriter, r *http.Request) {
+	info, serr := s.agentReview(r.PathValue("id"))
+	if serr != nil {
+		httpErr(w, serr.code, serr.msg)
+		return
+	}
+	writeJSON(w, info)
 }
 
 func (s *server) handleCommit(w http.ResponseWriter, r *http.Request) {
-	defer s.hub.notify()
-	_, head := s.resolveAgent(r.PathValue("id"), time.Now())
-	if head == nil {
-		httpErr(w, 404, "that agent is gone from the window")
-		return
-	}
 	var req struct {
 		Message string `json:"message"`
 	}
@@ -221,21 +259,15 @@ func (s *server) handleCommit(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "the request did not parse")
 		return
 	}
-	hash, err := reviewCommit(head.Cwd, req.Message)
-	if err != nil {
-		httpErr(w, 409, err.Error())
+	hash, serr := s.agentCommit(r.PathValue("id"), req.Message)
+	if serr != nil {
+		httpErr(w, serr.code, serr.msg)
 		return
 	}
 	writeJSON(w, map[string]string{"commit": hash})
 }
 
 func (s *server) handleDiscard(w http.ResponseWriter, r *http.Request) {
-	defer s.hub.notify()
-	_, head := s.resolveAgent(r.PathValue("id"), time.Now())
-	if head == nil {
-		httpErr(w, 404, "that agent is gone from the window")
-		return
-	}
 	var req struct {
 		Path string `json:"path"`
 		All  bool   `json:"all"`
@@ -244,12 +276,8 @@ func (s *server) handleDiscard(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "the request did not parse")
 		return
 	}
-	if req.Path == "" && !req.All {
-		httpErr(w, 400, "say which file — or all")
-		return
-	}
-	if err := reviewDiscard(head.Cwd, req.Path, req.All); err != nil {
-		httpErr(w, 409, err.Error())
+	if serr := s.agentDiscard(r.PathValue("id"), req.Path, req.All); serr != nil {
+		httpErr(w, serr.code, serr.msg)
 		return
 	}
 	writeJSON(w, map[string]string{"status": "discarded"})

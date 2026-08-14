@@ -405,6 +405,13 @@
 							>
 								direct →
 							</a>
+							<a
+								href="/agent/{sel.agent}?mode=direct&review=1"
+								style="font-size: 11px; color: var(--color-neutral-500); text-decoration: none;"
+								title="this agent's uncommitted diff — approve or discard"
+							>
+								review →
+							</a>
 						{:else}
 							<span style="font-size: 11px; color: var(--color-neutral-600);">unassigned</span>
 						{/if}

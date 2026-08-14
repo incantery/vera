@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	roostv1 "github.com/incantery/rook-host/engine/gen/roost/v1"
 )
 
 // reviewRepo builds a repo with one commit, then one tracked edit and
@@ -150,5 +156,61 @@ func TestReviewDiscardAllResetsTheTree(t *testing.T) {
 	}
 	if len(files) != 0 {
 		t.Fatalf("discard-all leaves a clean tree: %+v", files)
+	}
+}
+
+// The typed rail end to end: Review reads the repo, Discard deletes
+// the untracked file, Commit approves the rest, and the next Review
+// honestly reports a clean tree. Refusals arrive in Connect's codes.
+func TestReviewRPCReadsCommitsAndDiscards(t *testing.T) {
+	repo := reviewRepo(t)
+	dir := t.TempDir()
+	proj := filepath.Join(dir, "-repo-rev")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	line := fmt.Sprintf(
+		`{"type":"assistant","timestamp":%q,"cwd":%q,"message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"done"}]}}`,
+		time.Now().Add(-time.Minute).UTC().Format(time.RFC3339), repo)
+	if err := os.WriteFile(filepath.Join(proj, "sess-rev.jsonl"), []byte(line+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := testServer(t, dir)
+	s.hub = newHub()
+	r := &roostRPC{s: s}
+	ctx := context.Background()
+
+	if _, err := r.Review(ctx, connect.NewRequest(&roostv1.ReviewRequest{Id: "stranger"})); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("a gone agent must be NotFound: %v", err)
+	}
+	rev, err := r.Review(ctx, connect.NewRequest(&roostv1.ReviewRequest{Id: "sess-rev"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rev.Msg.Files) != 2 || rev.Msg.Dir == "" {
+		t.Fatalf("both changes with the repo root: %+v", rev.Msg)
+	}
+	if _, err := r.Commit(ctx, connect.NewRequest(&roostv1.CommitRequest{Id: "sess-rev"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("an empty message must be FailedPrecondition: %v", err)
+	}
+	if _, err := r.Discard(ctx, connect.NewRequest(&roostv1.DiscardRequest{Id: "sess-rev", Path: "fresh.txt"})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "fresh.txt")); !os.IsNotExist(err) {
+		t.Fatal("the discard must delete the untracked file")
+	}
+	c, err := r.Commit(ctx, connect.NewRequest(&roostv1.CommitRequest{Id: "sess-rev", Message: "approved over the wire"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Msg.Commit == "" {
+		t.Fatal("the new commit's hash comes back")
+	}
+	rev, err = r.Review(ctx, connect.NewRequest(&roostv1.ReviewRequest{Id: "sess-rev"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rev.Msg.Files) != 0 {
+		t.Fatalf("after approve the tree is clean: %+v", rev.Msg.Files)
 	}
 }

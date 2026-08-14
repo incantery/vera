@@ -47,6 +47,12 @@ const (
 	RoostServiceInterruptProcedure = "/roost.v1.RoostService/Interrupt"
 	// RoostServiceWatchBoardProcedure is the fully-qualified name of the RoostService's WatchBoard RPC.
 	RoostServiceWatchBoardProcedure = "/roost.v1.RoostService/WatchBoard"
+	// RoostServiceReviewProcedure is the fully-qualified name of the RoostService's Review RPC.
+	RoostServiceReviewProcedure = "/roost.v1.RoostService/Review"
+	// RoostServiceCommitProcedure is the fully-qualified name of the RoostService's Commit RPC.
+	RoostServiceCommitProcedure = "/roost.v1.RoostService/Commit"
+	// RoostServiceDiscardProcedure is the fully-qualified name of the RoostService's Discard RPC.
+	RoostServiceDiscardProcedure = "/roost.v1.RoostService/Discard"
 )
 
 // RoostServiceClient is a client for the roost.v1.RoostService service.
@@ -55,6 +61,9 @@ type RoostServiceClient interface {
 	Say(context.Context, *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
 	WatchBoard(context.Context, *connect.Request[v1.WatchBoardRequest]) (*connect.ServerStreamForClient[v1.WatchBoardResponse], error)
+	Review(context.Context, *connect.Request[v1.ReviewRequest]) (*connect.Response[v1.ReviewResponse], error)
+	Commit(context.Context, *connect.Request[v1.CommitRequest]) (*connect.Response[v1.CommitResponse], error)
+	Discard(context.Context, *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error)
 }
 
 // NewRoostServiceClient constructs a client for the roost.v1.RoostService service. By default, it
@@ -92,6 +101,24 @@ func NewRoostServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(roostServiceMethods.ByName("WatchBoard")),
 			connect.WithClientOptions(opts...),
 		),
+		review: connect.NewClient[v1.ReviewRequest, v1.ReviewResponse](
+			httpClient,
+			baseURL+RoostServiceReviewProcedure,
+			connect.WithSchema(roostServiceMethods.ByName("Review")),
+			connect.WithClientOptions(opts...),
+		),
+		commit: connect.NewClient[v1.CommitRequest, v1.CommitResponse](
+			httpClient,
+			baseURL+RoostServiceCommitProcedure,
+			connect.WithSchema(roostServiceMethods.ByName("Commit")),
+			connect.WithClientOptions(opts...),
+		),
+		discard: connect.NewClient[v1.DiscardRequest, v1.DiscardResponse](
+			httpClient,
+			baseURL+RoostServiceDiscardProcedure,
+			connect.WithSchema(roostServiceMethods.ByName("Discard")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -101,6 +128,9 @@ type roostServiceClient struct {
 	say        *connect.Client[v1.SayRequest, v1.SayResponse]
 	interrupt  *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
 	watchBoard *connect.Client[v1.WatchBoardRequest, v1.WatchBoardResponse]
+	review     *connect.Client[v1.ReviewRequest, v1.ReviewResponse]
+	commit     *connect.Client[v1.CommitRequest, v1.CommitResponse]
+	discard    *connect.Client[v1.DiscardRequest, v1.DiscardResponse]
 }
 
 // WatchAgent calls roost.v1.RoostService.WatchAgent.
@@ -123,12 +153,30 @@ func (c *roostServiceClient) WatchBoard(ctx context.Context, req *connect.Reques
 	return c.watchBoard.CallServerStream(ctx, req)
 }
 
+// Review calls roost.v1.RoostService.Review.
+func (c *roostServiceClient) Review(ctx context.Context, req *connect.Request[v1.ReviewRequest]) (*connect.Response[v1.ReviewResponse], error) {
+	return c.review.CallUnary(ctx, req)
+}
+
+// Commit calls roost.v1.RoostService.Commit.
+func (c *roostServiceClient) Commit(ctx context.Context, req *connect.Request[v1.CommitRequest]) (*connect.Response[v1.CommitResponse], error) {
+	return c.commit.CallUnary(ctx, req)
+}
+
+// Discard calls roost.v1.RoostService.Discard.
+func (c *roostServiceClient) Discard(ctx context.Context, req *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error) {
+	return c.discard.CallUnary(ctx, req)
+}
+
 // RoostServiceHandler is an implementation of the roost.v1.RoostService service.
 type RoostServiceHandler interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error
 	Say(context.Context, *connect.Request[v1.SayRequest]) (*connect.Response[v1.SayResponse], error)
 	Interrupt(context.Context, *connect.Request[v1.InterruptRequest]) (*connect.Response[v1.InterruptResponse], error)
 	WatchBoard(context.Context, *connect.Request[v1.WatchBoardRequest], *connect.ServerStream[v1.WatchBoardResponse]) error
+	Review(context.Context, *connect.Request[v1.ReviewRequest]) (*connect.Response[v1.ReviewResponse], error)
+	Commit(context.Context, *connect.Request[v1.CommitRequest]) (*connect.Response[v1.CommitResponse], error)
+	Discard(context.Context, *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error)
 }
 
 // NewRoostServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -162,6 +210,24 @@ func NewRoostServiceHandler(svc RoostServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(roostServiceMethods.ByName("WatchBoard")),
 		connect.WithHandlerOptions(opts...),
 	)
+	roostServiceReviewHandler := connect.NewUnaryHandler(
+		RoostServiceReviewProcedure,
+		svc.Review,
+		connect.WithSchema(roostServiceMethods.ByName("Review")),
+		connect.WithHandlerOptions(opts...),
+	)
+	roostServiceCommitHandler := connect.NewUnaryHandler(
+		RoostServiceCommitProcedure,
+		svc.Commit,
+		connect.WithSchema(roostServiceMethods.ByName("Commit")),
+		connect.WithHandlerOptions(opts...),
+	)
+	roostServiceDiscardHandler := connect.NewUnaryHandler(
+		RoostServiceDiscardProcedure,
+		svc.Discard,
+		connect.WithSchema(roostServiceMethods.ByName("Discard")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/roost.v1.RoostService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case RoostServiceWatchAgentProcedure:
@@ -172,6 +238,12 @@ func NewRoostServiceHandler(svc RoostServiceHandler, opts ...connect.HandlerOpti
 			roostServiceInterruptHandler.ServeHTTP(w, r)
 		case RoostServiceWatchBoardProcedure:
 			roostServiceWatchBoardHandler.ServeHTTP(w, r)
+		case RoostServiceReviewProcedure:
+			roostServiceReviewHandler.ServeHTTP(w, r)
+		case RoostServiceCommitProcedure:
+			roostServiceCommitHandler.ServeHTTP(w, r)
+		case RoostServiceDiscardProcedure:
+			roostServiceDiscardHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -195,4 +267,16 @@ func (UnimplementedRoostServiceHandler) Interrupt(context.Context, *connect.Requ
 
 func (UnimplementedRoostServiceHandler) WatchBoard(context.Context, *connect.Request[v1.WatchBoardRequest], *connect.ServerStream[v1.WatchBoardResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.WatchBoard is not implemented"))
+}
+
+func (UnimplementedRoostServiceHandler) Review(context.Context, *connect.Request[v1.ReviewRequest]) (*connect.Response[v1.ReviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.Review is not implemented"))
+}
+
+func (UnimplementedRoostServiceHandler) Commit(context.Context, *connect.Request[v1.CommitRequest]) (*connect.Response[v1.CommitResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.Commit is not implemented"))
+}
+
+func (UnimplementedRoostServiceHandler) Discard(context.Context, *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("roost.v1.RoostService.Discard is not implemented"))
 }

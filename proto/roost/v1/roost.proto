@@ -262,9 +262,52 @@ message TaskLive {
   string now = 3;  // ⛭ tool — detail
 }
 
+// The review surface: the whole repo's uncommitted diff, then a
+// verdict. Approve commits under the human's own git identity;
+// discard puts files back the way HEAD has them.
+message ReviewRequest {
+  string id = 1;  // the agent whose repo is under review
+}
+
+message ReviewFile {
+  string path = 1;  // repo-root-relative
+  int32 add = 2;
+  int32 del = 3;
+  bool is_new = 4;      // untracked — HEAD never had it
+  bool binary = 5;      // no line diff to show
+  bool truncated = 6;   // the diff was bigger than the wire allows
+  string diff = 7;      // unified diff text
+}
+
+message ReviewResponse {
+  string dir = 1;  // the repo root — what approve would commit
+  string branch = 2;
+  repeated ReviewFile files = 3;
+}
+
+message CommitRequest {
+  string id = 1;
+  string message = 2;  // the human's words; their git identity signs
+}
+
+message CommitResponse {
+  string commit = 1;  // short hash of the new commit
+}
+
+message DiscardRequest {
+  string id = 1;
+  string path = 2;  // one file, repo-root-relative …
+  bool all = 3;     // … or the whole tree back to HEAD
+}
+
+message DiscardResponse {}
+
 service RoostService {
   rpc WatchAgent(WatchAgentRequest) returns (stream WatchAgentResponse);
   rpc Say(SayRequest) returns (SayResponse);
   rpc Interrupt(InterruptRequest) returns (InterruptResponse);
   rpc WatchBoard(WatchBoardRequest) returns (stream WatchBoardResponse);
+  rpc Review(ReviewRequest) returns (ReviewResponse);
+  rpc Commit(CommitRequest) returns (CommitResponse);
+  rpc Discard(DiscardRequest) returns (DiscardResponse);
 }
