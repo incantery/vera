@@ -50,7 +50,10 @@ func History(path string) []Msg {
 		if json.Unmarshal(raw, &l) != nil {
 			continue
 		}
-		if l.IsSidechain || l.Message == nil {
+		// The /compact continuation summary (and anything else the
+		// harness marks transcript-only) is plumbing written through
+		// the user's mouth, not conversation.
+		if l.IsSidechain || l.IsCompactSum || l.TranscriptOnly || l.Message == nil {
 			continue
 		}
 		ts, _ := time.Parse(time.RFC3339, l.Timestamp)

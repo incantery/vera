@@ -486,6 +486,11 @@ type wireMsg struct {
 // choice without billing the whole scrollback on first view.
 const digestTail = 8
 
+// digestGen salts the digest cache key: bump it when the digest
+// prompt changes, so every cached and journaled digest regenerates
+// under the new prompt instead of serving the old one forever.
+const digestGen = "g2|"
+
 // digestWorthy: short replies read faster raw than compressed.
 func digestWorthy(m transcript.Msg) bool {
 	return m.Role == "assistant" && len(strings.Fields(m.Text)) >= 120
@@ -526,7 +531,7 @@ func (s *server) digestFor(root, prompt, reply string) *digestRec {
 	if s.llm == nil {
 		return nil
 	}
-	h := textHash(reply)
+	h := textHash(digestGen + reply)
 	s.mu.Lock()
 	if rec := s.digests[h]; rec != nil {
 		c := *rec

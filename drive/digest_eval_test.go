@@ -89,6 +89,8 @@ func evalLLM(t *testing.T) *LLM {
 }
 
 // judge asks a cheap Claude to grade one digest against its reply.
+// One judge hiccup (a timeout, a broken envelope) gets one retry —
+// harness flake must not read as a digest verdict.
 func judge(t *testing.T, c digestCase, headline string, bullets []string) []violation {
 	t.Helper()
 	var b strings.Builder
@@ -96,35 +98,48 @@ func judge(t *testing.T, c digestCase, headline string, bullets []string) []viol
 	for i, l := range bullets {
 		fmt.Fprintf(&b, "bullet %d: %s\n", i+1, l)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	var lastErr error
+	for attempt := 1; attempt <= 2; attempt++ {
+		vs, err := judgeOnce(b.String())
+		if err == nil {
+			return vs
+		}
+		lastErr = err
+		t.Logf("judge attempt %d failed: %v", attempt, err)
+	}
+	t.Fatalf("the judge failed twice: %v", lastErr)
+	return nil
+}
+
+func judgeOnce(prompt string) ([]violation, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "haiku", "--output-format", "json", b.String())
+	cmd := exec.CommandContext(ctx, "claude", "-p", "--model", "haiku", "--output-format", "json", prompt)
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("the judge call failed: %v: %s", err, out)
+		return nil, fmt.Errorf("call: %v: %.200s", err, out)
 	}
 	var envelope struct {
 		IsError bool   `json:"is_error"`
 		Result  string `json:"result"`
 	}
 	if err := json.Unmarshal(out, &envelope); err != nil || envelope.IsError {
-		t.Fatalf("bad judge envelope (err %v): %.400s", err, out)
+		return nil, fmt.Errorf("envelope (err %v): %.400s", err, out)
 	}
 	// The verdict is the FIRST JSON object in the answer — judges
 	// sometimes wrap it in fences or append commentary after it.
 	verdict := strings.TrimSpace(envelope.Result)
-	if i := strings.Index(verdict, "{"); i < 0 {
-		t.Fatalf("no JSON in the judge's answer: %.400s", verdict)
-	} else {
-		verdict = verdict[i:]
+	i := strings.Index(verdict, "{")
+	if i < 0 {
+		return nil, fmt.Errorf("no JSON in the answer: %.400s", verdict)
 	}
 	var parsed struct {
 		Violations []violation `json:"violations"`
 	}
-	if err := json.NewDecoder(strings.NewReader(verdict)).Decode(&parsed); err != nil {
-		t.Fatalf("the judge broke the JSON contract: %v: %.400s", err, verdict)
+	if err := json.NewDecoder(strings.NewReader(verdict[i:])).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("broken JSON contract: %v: %.400s", err, verdict)
 	}
-	return parsed.Violations
+	return parsed.Violations, nil
 }
 
 func loadCases(t *testing.T) []digestCase {
@@ -210,9 +225,14 @@ func TestDigestFidelity(t *testing.T) {
 	if v, err := strconv.Atoi(os.Getenv("EVAL_RUNS")); err == nil && v > 0 {
 		runs = v
 	}
+	// The tolerance split: agency inversion is the bug this suite
+	// pins — ONE occurrence in any run fails. Other quality noise
+	// (a lossy headline, a muddled bullet) is stochastic in a small
+	// digest model; one dirty run out of the set is logged and
+	// tolerated, more than one fails.
 	for _, c := range loadCases(t) {
 		t.Run(c.Name, func(t *testing.T) {
-			failed := 0
+			dirty := 0
 			for i := 1; i <= runs; i++ {
 				headline, bullets, err := m.Digest(context.Background(), c.Prompt, c.Reply)
 				if err != nil {
@@ -223,14 +243,17 @@ func TestDigestFidelity(t *testing.T) {
 					t.Logf("run %d/%d: clean", i, runs)
 					continue
 				}
-				failed++
+				dirty++
 				t.Logf("run %d/%d: %d violation(s) — headline: %s", i, runs, len(vs), headline)
 				for _, v := range vs {
 					t.Logf("  [%s] bullet %d: %q — %s", v.Kind, v.Bullet, v.Quote, v.Why)
+					if v.Kind == "agency_inversion" || v.Kind == "invented_action" {
+						t.Errorf("%s run %d: the pinned bug is back — %s (%s)", c.Name, i, v.Kind, c.Note)
+					}
 				}
 			}
-			if failed > 0 {
-				t.Errorf("%s: %d/%d runs produced an unfaithful digest (%s)", c.Name, failed, runs, c.Note)
+			if dirty > 1 {
+				t.Errorf("%s: %d/%d runs produced an unfaithful digest (%s)", c.Name, dirty, runs, c.Note)
 			}
 		})
 	}

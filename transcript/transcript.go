@@ -315,6 +315,8 @@ type wireLine struct {
 	Type           string   `json:"type"`
 	Timestamp      string   `json:"timestamp"`
 	IsSidechain    bool     `json:"isSidechain"`
+	IsCompactSum   bool     `json:"isCompactSummary"`
+	TranscriptOnly bool     `json:"isVisibleInTranscriptOnly"`
 	Cwd            string   `json:"cwd"`
 	GitBranch      string   `json:"gitBranch"`
 	AiTitle        string   `json:"aiTitle"`

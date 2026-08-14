@@ -67,6 +67,29 @@ func TestHistoryDropsHarnessNoiseAndSidechains(t *testing.T) {
 	}
 }
 
+// Claude Code writes the /compact continuation summary into the
+// transcript as a user record marked isCompactSummary (and
+// isVisibleInTranscriptOnly) — tens of thousands of characters of
+// harness plumbing the conversation view must never render as
+// something the human typed.
+func TestHistoryHidesTheCompactSummary(t *testing.T) {
+	path := writeHistoryFixture(t,
+		prompt(0, "real question before the compact"),
+		assistantEndTurn(1, "real answer"),
+		`{"type":"user","timestamp":"`+ts(2)+`","isCompactSummary":true,"isVisibleInTranscriptOnly":true,"message":{"role":"user","content":"This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion..."}}`,
+		prompt(3, "real question after the compact"),
+	)
+	h := History(path)
+	for _, m := range h {
+		if strings.HasPrefix(m.Text, "This session is being continued") {
+			t.Fatalf("the compact summary surfaced as a %s turn — harness plumbing rendered as conversation", m.Role)
+		}
+	}
+	if len(h) != 3 {
+		t.Fatalf("want the 3 real turns, got %d: %+v", len(h), h)
+	}
+}
+
 func TestHistoryOfAMissingFileIsEmptyNotAnError(t *testing.T) {
 	if h := History(filepath.Join(t.TempDir(), "gone.jsonl")); h != nil {
 		t.Fatalf("h: %+v", h)
