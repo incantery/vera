@@ -55,6 +55,10 @@ const (
 	VeraServiceDiscardProcedure = "/vera.v1.VeraService/Discard"
 	// VeraServiceSuggestProcedure is the fully-qualified name of the VeraService's Suggest RPC.
 	VeraServiceSuggestProcedure = "/vera.v1.VeraService/Suggest"
+	// VeraServicePlanProcedure is the fully-qualified name of the VeraService's Plan RPC.
+	VeraServicePlanProcedure = "/vera.v1.VeraService/Plan"
+	// VeraServiceExecutePlanProcedure is the fully-qualified name of the VeraService's ExecutePlan RPC.
+	VeraServiceExecutePlanProcedure = "/vera.v1.VeraService/ExecutePlan"
 )
 
 // VeraServiceClient is a client for the vera.v1.VeraService service.
@@ -67,6 +71,8 @@ type VeraServiceClient interface {
 	Commit(context.Context, *connect.Request[v1.CommitRequest]) (*connect.Response[v1.CommitResponse], error)
 	Discard(context.Context, *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error)
 	Suggest(context.Context, *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error)
+	Plan(context.Context, *connect.Request[v1.PlanRequest]) (*connect.Response[v1.PlanResponse], error)
+	ExecutePlan(context.Context, *connect.Request[v1.ExecutePlanRequest]) (*connect.Response[v1.ExecutePlanResponse], error)
 }
 
 // NewVeraServiceClient constructs a client for the vera.v1.VeraService service. By default, it uses
@@ -128,19 +134,33 @@ func NewVeraServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(veraServiceMethods.ByName("Suggest")),
 			connect.WithClientOptions(opts...),
 		),
+		plan: connect.NewClient[v1.PlanRequest, v1.PlanResponse](
+			httpClient,
+			baseURL+VeraServicePlanProcedure,
+			connect.WithSchema(veraServiceMethods.ByName("Plan")),
+			connect.WithClientOptions(opts...),
+		),
+		executePlan: connect.NewClient[v1.ExecutePlanRequest, v1.ExecutePlanResponse](
+			httpClient,
+			baseURL+VeraServiceExecutePlanProcedure,
+			connect.WithSchema(veraServiceMethods.ByName("ExecutePlan")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // veraServiceClient implements VeraServiceClient.
 type veraServiceClient struct {
-	watchAgent *connect.Client[v1.WatchAgentRequest, v1.WatchAgentResponse]
-	say        *connect.Client[v1.SayRequest, v1.SayResponse]
-	interrupt  *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
-	watchBoard *connect.Client[v1.WatchBoardRequest, v1.WatchBoardResponse]
-	review     *connect.Client[v1.ReviewRequest, v1.ReviewResponse]
-	commit     *connect.Client[v1.CommitRequest, v1.CommitResponse]
-	discard    *connect.Client[v1.DiscardRequest, v1.DiscardResponse]
-	suggest    *connect.Client[v1.SuggestRequest, v1.SuggestResponse]
+	watchAgent  *connect.Client[v1.WatchAgentRequest, v1.WatchAgentResponse]
+	say         *connect.Client[v1.SayRequest, v1.SayResponse]
+	interrupt   *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
+	watchBoard  *connect.Client[v1.WatchBoardRequest, v1.WatchBoardResponse]
+	review      *connect.Client[v1.ReviewRequest, v1.ReviewResponse]
+	commit      *connect.Client[v1.CommitRequest, v1.CommitResponse]
+	discard     *connect.Client[v1.DiscardRequest, v1.DiscardResponse]
+	suggest     *connect.Client[v1.SuggestRequest, v1.SuggestResponse]
+	plan        *connect.Client[v1.PlanRequest, v1.PlanResponse]
+	executePlan *connect.Client[v1.ExecutePlanRequest, v1.ExecutePlanResponse]
 }
 
 // WatchAgent calls vera.v1.VeraService.WatchAgent.
@@ -183,6 +203,16 @@ func (c *veraServiceClient) Suggest(ctx context.Context, req *connect.Request[v1
 	return c.suggest.CallUnary(ctx, req)
 }
 
+// Plan calls vera.v1.VeraService.Plan.
+func (c *veraServiceClient) Plan(ctx context.Context, req *connect.Request[v1.PlanRequest]) (*connect.Response[v1.PlanResponse], error) {
+	return c.plan.CallUnary(ctx, req)
+}
+
+// ExecutePlan calls vera.v1.VeraService.ExecutePlan.
+func (c *veraServiceClient) ExecutePlan(ctx context.Context, req *connect.Request[v1.ExecutePlanRequest]) (*connect.Response[v1.ExecutePlanResponse], error) {
+	return c.executePlan.CallUnary(ctx, req)
+}
+
 // VeraServiceHandler is an implementation of the vera.v1.VeraService service.
 type VeraServiceHandler interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error
@@ -193,6 +223,8 @@ type VeraServiceHandler interface {
 	Commit(context.Context, *connect.Request[v1.CommitRequest]) (*connect.Response[v1.CommitResponse], error)
 	Discard(context.Context, *connect.Request[v1.DiscardRequest]) (*connect.Response[v1.DiscardResponse], error)
 	Suggest(context.Context, *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error)
+	Plan(context.Context, *connect.Request[v1.PlanRequest]) (*connect.Response[v1.PlanResponse], error)
+	ExecutePlan(context.Context, *connect.Request[v1.ExecutePlanRequest]) (*connect.Response[v1.ExecutePlanResponse], error)
 }
 
 // NewVeraServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -250,6 +282,18 @@ func NewVeraServiceHandler(svc VeraServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(veraServiceMethods.ByName("Suggest")),
 		connect.WithHandlerOptions(opts...),
 	)
+	veraServicePlanHandler := connect.NewUnaryHandler(
+		VeraServicePlanProcedure,
+		svc.Plan,
+		connect.WithSchema(veraServiceMethods.ByName("Plan")),
+		connect.WithHandlerOptions(opts...),
+	)
+	veraServiceExecutePlanHandler := connect.NewUnaryHandler(
+		VeraServiceExecutePlanProcedure,
+		svc.ExecutePlan,
+		connect.WithSchema(veraServiceMethods.ByName("ExecutePlan")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/vera.v1.VeraService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case VeraServiceWatchAgentProcedure:
@@ -268,6 +312,10 @@ func NewVeraServiceHandler(svc VeraServiceHandler, opts ...connect.HandlerOption
 			veraServiceDiscardHandler.ServeHTTP(w, r)
 		case VeraServiceSuggestProcedure:
 			veraServiceSuggestHandler.ServeHTTP(w, r)
+		case VeraServicePlanProcedure:
+			veraServicePlanHandler.ServeHTTP(w, r)
+		case VeraServiceExecutePlanProcedure:
+			veraServiceExecutePlanHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -307,4 +355,12 @@ func (UnimplementedVeraServiceHandler) Discard(context.Context, *connect.Request
 
 func (UnimplementedVeraServiceHandler) Suggest(context.Context, *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.Suggest is not implemented"))
+}
+
+func (UnimplementedVeraServiceHandler) Plan(context.Context, *connect.Request[v1.PlanRequest]) (*connect.Response[v1.PlanResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.Plan is not implemented"))
+}
+
+func (UnimplementedVeraServiceHandler) ExecutePlan(context.Context, *connect.Request[v1.ExecutePlanRequest]) (*connect.Response[v1.ExecutePlanResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.ExecutePlan is not implemented"))
 }

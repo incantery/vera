@@ -9,9 +9,11 @@ import (
 	"errors"
 	"hash/fnv"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/incantery/vera/drive"
 	verav1 "github.com/incantery/vera/gen/vera/v1"
 	"github.com/incantery/vera/transcript"
 )
@@ -163,6 +165,48 @@ func (r *veraRPC) Suggest(ctx context.Context, req *connect.Request[verav1.Sugge
 	return connect.NewResponse(&verav1.SuggestResponse{
 		Happened: rec.Happened, Now: rec.Now, Replies: rec.Replies,
 	}), nil
+}
+
+// Plan is vera's bid on the shape of one piece of work; ExecutePlan
+// is the owner's nod. Same cores as the REST rails.
+func (r *veraRPC) Plan(ctx context.Context, req *connect.Request[verav1.PlanRequest]) (*connect.Response[verav1.PlanResponse], error) {
+	text := strings.TrimSpace(req.Msg.Text)
+	if text == "" {
+		return nil, connectErr(&sayErr{400, "say what you need"})
+	}
+	rec, serr := r.s.planCore(ctx, text, time.Now())
+	if serr != nil {
+		return nil, connectErr(serr)
+	}
+	return connect.NewResponse(&verav1.PlanResponse{
+		Id: rec.ID, Plan: planShape(rec.Plan),
+	}), nil
+}
+
+func (r *veraRPC) ExecutePlan(ctx context.Context, req *connect.Request[verav1.ExecutePlanRequest]) (*connect.Response[verav1.ExecutePlanResponse], error) {
+	defer r.s.hub.notify() // a board mutation is a frame the watchers are owed
+	sh := req.Msg.Plan
+	if sh == nil {
+		return nil, connectErr(&sayErr{400, "a nod needs the plan it approves"})
+	}
+	p := drive.Plan{
+		Kind: sh.Kind, Where: sh.Where, Home: sh.Home, Name: sh.Name,
+		Cadence: sh.Cadence, Deadline: sh.Deadline, Goal: sh.Goal, Why: sh.Why,
+	}
+	t, serr := r.s.executePlanCore(p, req.Msg.Id, req.Msg.Mode, time.Now())
+	if serr != nil {
+		return nil, connectErr(serr)
+	}
+	return connect.NewResponse(&verav1.ExecutePlanResponse{
+		TaskId: t.ID, Workspace: t.Workspace,
+	}), nil
+}
+
+func planShape(p drive.Plan) *verav1.PlanShape {
+	return &verav1.PlanShape{
+		Kind: p.Kind, Where: p.Where, Home: p.Home, Name: p.Name,
+		Cadence: p.Cadence, Deadline: p.Deadline, Goal: p.Goal, Why: p.Why,
+	}
 }
 
 // WatchBoard streams the home screen's present: whole frames (the

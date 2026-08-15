@@ -104,6 +104,12 @@ type task struct {
 	// through claude's own permission system). Code-side sets, never
 	// LLM-chosen.
 	Mode string `json:"mode,omitempty"`
+	// Cadence and Deadline come from vera's plan when the card was born
+	// of one: "once" | "standing", and YYYY-MM-DD if the ask named a
+	// date. Standing is recorded before it is executable — vera cannot
+	// yet return on its own; each pass starts from the card.
+	Cadence  string `json:"cadence,omitempty"`
+	Deadline string `json:"deadline,omitempty"`
 	// Exchanges is the drive's own conversation, persisted so an
 	// owner's reply can seed a continuation after any restart. Capped:
 	// the transcript holds the full story, the task holds the working
@@ -355,9 +361,17 @@ func (s *server) boardSessions(now time.Time) map[string]*transcript.Session {
 // session goes quiet.
 func (s *server) syncBoard(tasks []task, fleet map[string]*transcript.Session, now time.Time) []task {
 	assigned := map[string]bool{}
+	// claimed marks the ground open cards are already working: a fresh
+	// spawn takes its card's Agent only when the run ends, so mid-run
+	// the newborn is a WORKING unassigned session in the card's own
+	// workspace — that session is spoken for, not adoptable.
+	claimed := map[string]bool{}
 	for i := range tasks {
 		if tasks[i].Agent != "" {
 			assigned[tasks[i].Agent] = true
+		}
+		if tasks[i].open() && tasks[i].Workspace != "" {
+			claimed[tasks[i].Workspace] = true
 		}
 	}
 	for root, live := range fleet {
@@ -365,7 +379,7 @@ func (s *server) syncBoard(tasks []task, fleet map[string]*transcript.Session, n
 		// itself titled — an untitled "working" session is a probe (the
 		// usage collector's `claude /usage -p` leaves those) or a
 		// scratch run, not work the board should claim.
-		if live.State != transcript.StateWorking || !live.Titled || assigned[root] {
+		if live.State != transcript.StateWorking || !live.Titled || assigned[root] || claimed[live.Cwd] {
 			continue
 		}
 		if t, err := s.tasks.adopt(root, live.Title, filepath.Base(live.Cwd), now); err == nil {
@@ -728,6 +742,9 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 		httpErr(w, 502, "vera could not compile the goal: "+err.Error())
 		return
 	}
+	judgeMu.Lock()
+	held := judgeUSD
+	judgeMu.Unlock()
 	dir := filepath.Base(newIn)
 	t, err = s.tasks.mutate(t.ID, func(t *task) error {
 		t.Mode = mode
@@ -743,6 +760,19 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 		httpErr(w, 500, err.Error())
 		return
 	}
+	s.spawnFresh(t, newIn, mode, goal, held)
+	writeJSON(w, t)
+}
+
+// spawnFresh births a worker in newIn and drives it toward goal. The
+// task must already wear its progress state; heldUSD is vera-spend
+// paid on this task's behalf before the newborn had a name (compile,
+// planning) — credited to it when it takes its first breath.
+func (s *server) spawnFresh(t task, newIn, mode, goal string, heldUSD float64) {
+	judgeUSD := heldUSD
+	var judgeMu sync.Mutex
+	ll := *s.llm
+	dir := filepath.Base(newIn)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	idb := make([]byte, 4)
@@ -806,7 +836,6 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 		}
 		s.taskRunLanded(taskID, res, err, 0)
 	}()
-	writeJSON(w, t)
 }
 
 // repoOffered answers with the fleet cwd matching the ask, or "" —

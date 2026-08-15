@@ -316,6 +316,41 @@ message SuggestResponse {
   repeated string replies = 3; // ranked, best first, ready to send
 }
 
+// Plan is vera's bid on the shape of one piece of work: the owner
+// says what they need, vera answers where it should live, its
+// cadence, and the goal a worker would be handed. ExecutePlan is the
+// owner's nod: make the workspace, open the card, birth the worker.
+message PlanRequest {
+  string text = 1;  // the owner's ask, in their own words
+}
+
+message PlanShape {
+  string kind = 1;      // repo | new | none
+  string where = 2;     // kind repo: the offered workspace path
+  string home = 3;      // kind new: code | life
+  string name = 4;      // kind new: the workspace directory name
+  string cadence = 5;   // once | standing
+  string deadline = 6;  // YYYY-MM-DD, only if the ask named one
+  string goal = 7;      // the instruction the worker would be handed
+  string why = 8;       // one line the owner reads to judge the plan
+}
+
+message PlanResponse {
+  string id = 1;  // the bid's id — pass back on execute
+  PlanShape plan = 2;
+}
+
+message ExecutePlanRequest {
+  string id = 1;       // the served bid, if this is one (edits ride the shape)
+  PlanShape plan = 2;  // the shape to execute, as approved or amended
+  string mode = 3;     // "" (work) | read | work
+}
+
+message ExecutePlanResponse {
+  string task_id = 1;
+  string workspace = 2;
+}
+
 service VeraService {
   rpc WatchAgent(WatchAgentRequest) returns (stream WatchAgentResponse);
   rpc Say(SayRequest) returns (SayResponse);
@@ -325,4 +360,6 @@ service VeraService {
   rpc Commit(CommitRequest) returns (CommitResponse);
   rpc Discard(DiscardRequest) returns (DiscardResponse);
   rpc Suggest(SuggestRequest) returns (SuggestResponse);
+  rpc Plan(PlanRequest) returns (PlanResponse);
+  rpc ExecutePlan(ExecutePlanRequest) returns (ExecutePlanResponse);
 }

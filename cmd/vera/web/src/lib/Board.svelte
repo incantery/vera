@@ -100,6 +100,48 @@
 		selId = out.task.id;
 		triage = out.near ? { id: out.task.id, near: out.near } : null;
 	}
+	// Talk to vera: Enter asks for a plan, the nod executes it. If
+	// planning is off (no key) the ask falls back to a plain capture —
+	// the composer never dead-ends.
+	let plan = $state(null); // {id, plan} — vera's bid, awaiting the nod
+	async function submitPlan() {
+		const text = capture.trim();
+		if (!text || busy) return;
+		busy = true;
+		err = '';
+		try {
+			const r = await api('/api/plan', { method: 'POST', body: JSON.stringify({ text }) });
+			const out = await r.json();
+			if (r.status === 409) {
+				busy = false;
+				return submitCapture();
+			}
+			if (!r.ok) throw new Error(out.error ?? 'vera did not answer');
+			plan = out;
+		} catch (e) {
+			err = e.message;
+		} finally {
+			busy = false;
+		}
+	}
+	async function approvePlan() {
+		const out = await post('/api/plan/execute', { id: plan.id, plan: plan.plan });
+		if (!out) return;
+		plan = null;
+		capture = '';
+		selId = out.id;
+	}
+	async function captureInstead() {
+		plan = null;
+		await submitCapture();
+	}
+	const planPlace = (p) =>
+		p.kind === 'repo'
+			? `continue in ${p.where}`
+			: p.kind === 'new'
+				? `new ${p.home} workspace · ${p.name}`
+				: 'no workspace fits';
+
 	const act = (tid, action, extra) => post(`/api/tasks/${tid}/act`, { action, ...extra });
 	const start = (tid, extra) => post(`/api/tasks/${tid}/start`, extra);
 	async function mergeTriage() {
@@ -230,12 +272,49 @@
 				<input
 					class="input"
 					bind:value={capture}
-					onkeydown={(e) => e.key === 'Enter' && submitCapture()}
-					placeholder="Tell vera what needs doing…"
+					onkeydown={(e) => e.key === 'Enter' && submitPlan()}
+					placeholder="Tell vera what you need…"
 					style="flex: 1; background: transparent;"
 				/>
-				<button class="btn btn-primary" onclick={submitCapture} disabled={busy}>Capture</button>
+				<button class="btn btn-primary" onclick={submitPlan} disabled={busy}>Plan</button>
+				<button class="btn" onclick={submitCapture} disabled={busy} title="skip the plan — straight to the inbox">capture</button>
 			</div>
+
+			{#if plan}
+				<div
+					style="margin: -6px 24px 16px 0; padding: 14px 16px; border: 1px solid var(--color-accent-700); border-radius: var(--radius-md); background: var(--color-accent-900); font-size: 12.5px;"
+				>
+					<div
+						style="font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: 0.12em; color: var(--color-accent-300); margin-bottom: 8px;"
+					>
+						VERA'S PLAN · {planPlace(plan.plan)}{plan.plan.cadence === 'standing'
+							? ' · standing'
+							: ''}{plan.plan.deadline ? ` · due ${plan.plan.deadline}` : ''}
+					</div>
+					{#if plan.plan.kind !== 'none'}
+						<div style="color: var(--color-neutral-100); line-height: 1.5; margin-bottom: 6px;">
+							{plan.plan.goal}
+						</div>
+					{/if}
+					{#if plan.plan.why}
+						<div style="color: var(--color-neutral-400); margin-bottom: 10px;">{plan.plan.why}</div>
+					{/if}
+					{#if plan.plan.cadence === 'standing'}
+						<div style="color: var(--color-neutral-500); font-size: 11.5px; margin-bottom: 10px;">
+							standing need — vera can't come back on its own yet; each pass starts from the card
+						</div>
+					{/if}
+					<div style="display: flex; gap: 10px; align-items: center;">
+						{#if plan.plan.kind !== 'none'}
+							<button class="btn btn-primary" onclick={approvePlan} disabled={busy}
+								>make it so</button
+							>
+						{/if}
+						<button class="btn" onclick={captureInstead} disabled={busy}>just capture</button>
+						<button class="btn" onclick={() => (plan = null)}>never mind</button>
+					</div>
+				</div>
+			{/if}
 
 			{#if triage}
 				<div

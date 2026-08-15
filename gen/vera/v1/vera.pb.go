@@ -2708,6 +2708,318 @@ func (x *SuggestResponse) GetReplies() []string {
 	return nil
 }
 
+// Plan is vera's bid on the shape of one piece of work: the owner
+// says what they need, vera answers where it should live, its
+// cadence, and the goal a worker would be handed. ExecutePlan is the
+// owner's nod: make the workspace, open the card, birth the worker.
+type PlanRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"` // the owner's ask, in their own words
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanRequest) Reset() {
+	*x = PlanRequest{}
+	mi := &file_vera_v1_vera_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanRequest) ProtoMessage() {}
+
+func (x *PlanRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanRequest.ProtoReflect.Descriptor instead.
+func (*PlanRequest) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *PlanRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type PlanShape struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`         // repo | new | none
+	Where         string                 `protobuf:"bytes,2,opt,name=where,proto3" json:"where,omitempty"`       // kind repo: the offered workspace path
+	Home          string                 `protobuf:"bytes,3,opt,name=home,proto3" json:"home,omitempty"`         // kind new: code | life
+	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`         // kind new: the workspace directory name
+	Cadence       string                 `protobuf:"bytes,5,opt,name=cadence,proto3" json:"cadence,omitempty"`   // once | standing
+	Deadline      string                 `protobuf:"bytes,6,opt,name=deadline,proto3" json:"deadline,omitempty"` // YYYY-MM-DD, only if the ask named one
+	Goal          string                 `protobuf:"bytes,7,opt,name=goal,proto3" json:"goal,omitempty"`         // the instruction the worker would be handed
+	Why           string                 `protobuf:"bytes,8,opt,name=why,proto3" json:"why,omitempty"`           // one line the owner reads to judge the plan
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanShape) Reset() {
+	*x = PlanShape{}
+	mi := &file_vera_v1_vera_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanShape) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanShape) ProtoMessage() {}
+
+func (x *PlanShape) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanShape.ProtoReflect.Descriptor instead.
+func (*PlanShape) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *PlanShape) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *PlanShape) GetWhere() string {
+	if x != nil {
+		return x.Where
+	}
+	return ""
+}
+
+func (x *PlanShape) GetHome() string {
+	if x != nil {
+		return x.Home
+	}
+	return ""
+}
+
+func (x *PlanShape) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PlanShape) GetCadence() string {
+	if x != nil {
+		return x.Cadence
+	}
+	return ""
+}
+
+func (x *PlanShape) GetDeadline() string {
+	if x != nil {
+		return x.Deadline
+	}
+	return ""
+}
+
+func (x *PlanShape) GetGoal() string {
+	if x != nil {
+		return x.Goal
+	}
+	return ""
+}
+
+func (x *PlanShape) GetWhy() string {
+	if x != nil {
+		return x.Why
+	}
+	return ""
+}
+
+type PlanResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // the bid's id — pass back on execute
+	Plan          *PlanShape             `protobuf:"bytes,2,opt,name=plan,proto3" json:"plan,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanResponse) Reset() {
+	*x = PlanResponse{}
+	mi := &file_vera_v1_vera_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanResponse) ProtoMessage() {}
+
+func (x *PlanResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanResponse.ProtoReflect.Descriptor instead.
+func (*PlanResponse) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *PlanResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PlanResponse) GetPlan() *PlanShape {
+	if x != nil {
+		return x.Plan
+	}
+	return nil
+}
+
+type ExecutePlanRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`     // the served bid, if this is one (edits ride the shape)
+	Plan          *PlanShape             `protobuf:"bytes,2,opt,name=plan,proto3" json:"plan,omitempty"` // the shape to execute, as approved or amended
+	Mode          string                 `protobuf:"bytes,3,opt,name=mode,proto3" json:"mode,omitempty"` // "" (work) | read | work
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecutePlanRequest) Reset() {
+	*x = ExecutePlanRequest{}
+	mi := &file_vera_v1_vera_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecutePlanRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecutePlanRequest) ProtoMessage() {}
+
+func (x *ExecutePlanRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecutePlanRequest.ProtoReflect.Descriptor instead.
+func (*ExecutePlanRequest) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *ExecutePlanRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ExecutePlanRequest) GetPlan() *PlanShape {
+	if x != nil {
+		return x.Plan
+	}
+	return nil
+}
+
+func (x *ExecutePlanRequest) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+type ExecutePlanResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	Workspace     string                 `protobuf:"bytes,2,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecutePlanResponse) Reset() {
+	*x = ExecutePlanResponse{}
+	mi := &file_vera_v1_vera_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecutePlanResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecutePlanResponse) ProtoMessage() {}
+
+func (x *ExecutePlanResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecutePlanResponse.ProtoReflect.Descriptor instead.
+func (*ExecutePlanResponse) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *ExecutePlanResponse) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *ExecutePlanResponse) GetWorkspace() string {
+	if x != nil {
+		return x.Workspace
+	}
+	return ""
+}
+
 var File_vera_v1_vera_proto protoreflect.FileDescriptor
 
 const file_vera_v1_vera_proto_rawDesc = "" +
@@ -2933,7 +3245,28 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x0fSuggestResponse\x12\x1a\n" +
 	"\bhappened\x18\x01 \x01(\tR\bhappened\x12\x10\n" +
 	"\x03now\x18\x02 \x01(\tR\x03now\x12\x18\n" +
-	"\areplies\x18\x03 \x03(\tR\areplies2\x87\x04\n" +
+	"\areplies\x18\x03 \x03(\tR\areplies\"!\n" +
+	"\vPlanRequest\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xb9\x01\n" +
+	"\tPlanShape\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05where\x18\x02 \x01(\tR\x05where\x12\x12\n" +
+	"\x04home\x18\x03 \x01(\tR\x04home\x12\x12\n" +
+	"\x04name\x18\x04 \x01(\tR\x04name\x12\x18\n" +
+	"\acadence\x18\x05 \x01(\tR\acadence\x12\x1a\n" +
+	"\bdeadline\x18\x06 \x01(\tR\bdeadline\x12\x12\n" +
+	"\x04goal\x18\a \x01(\tR\x04goal\x12\x10\n" +
+	"\x03why\x18\b \x01(\tR\x03why\"F\n" +
+	"\fPlanResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
+	"\x04plan\x18\x02 \x01(\v2\x12.vera.v1.PlanShapeR\x04plan\"`\n" +
+	"\x12ExecutePlanRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
+	"\x04plan\x18\x02 \x01(\v2\x12.vera.v1.PlanShapeR\x04plan\x12\x12\n" +
+	"\x04mode\x18\x03 \x01(\tR\x04mode\"L\n" +
+	"\x13ExecutePlanResponse\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1c\n" +
+	"\tworkspace\x18\x02 \x01(\tR\tworkspace2\x86\x05\n" +
 	"\vVeraService\x12G\n" +
 	"\n" +
 	"WatchAgent\x12\x1a.vera.v1.WatchAgentRequest\x1a\x1b.vera.v1.WatchAgentResponse0\x01\x120\n" +
@@ -2944,7 +3277,9 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x06Review\x12\x16.vera.v1.ReviewRequest\x1a\x17.vera.v1.ReviewResponse\x129\n" +
 	"\x06Commit\x12\x16.vera.v1.CommitRequest\x1a\x17.vera.v1.CommitResponse\x12<\n" +
 	"\aDiscard\x12\x17.vera.v1.DiscardRequest\x1a\x18.vera.v1.DiscardResponse\x12<\n" +
-	"\aSuggest\x12\x17.vera.v1.SuggestRequest\x1a\x18.vera.v1.SuggestResponseB.Z,github.com/incantery/vera/gen/vera/v1;verav1b\x06proto3"
+	"\aSuggest\x12\x17.vera.v1.SuggestRequest\x1a\x18.vera.v1.SuggestResponse\x123\n" +
+	"\x04Plan\x12\x14.vera.v1.PlanRequest\x1a\x15.vera.v1.PlanResponse\x12H\n" +
+	"\vExecutePlan\x12\x1b.vera.v1.ExecutePlanRequest\x1a\x1c.vera.v1.ExecutePlanResponseB.Z,github.com/incantery/vera/gen/vera/v1;verav1b\x06proto3"
 
 var (
 	file_vera_v1_vera_proto_rawDescOnce sync.Once
@@ -2958,44 +3293,49 @@ func file_vera_v1_vera_proto_rawDescGZIP() []byte {
 	return file_vera_v1_vera_proto_rawDescData
 }
 
-var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_vera_v1_vera_proto_goTypes = []any{
-	(*WatchAgentRequest)(nil),  // 0: vera.v1.WatchAgentRequest
-	(*WatchAgentResponse)(nil), // 1: vera.v1.WatchAgentResponse
-	(*Agent)(nil),              // 2: vera.v1.Agent
-	(*Msg)(nil),                // 3: vera.v1.Msg
-	(*Step)(nil),               // 4: vera.v1.Step
-	(*Diff)(nil),               // 5: vera.v1.Diff
-	(*Digest)(nil),             // 6: vera.v1.Digest
-	(*Ctx)(nil),                // 7: vera.v1.Ctx
-	(*Spend)(nil),              // 8: vera.v1.Spend
-	(*Pending)(nil),            // 9: vera.v1.Pending
-	(*Queued)(nil),             // 10: vera.v1.Queued
-	(*TreeFile)(nil),           // 11: vera.v1.TreeFile
-	(*SayRequest)(nil),         // 12: vera.v1.SayRequest
-	(*SayResponse)(nil),        // 13: vera.v1.SayResponse
-	(*InterruptRequest)(nil),   // 14: vera.v1.InterruptRequest
-	(*InterruptResponse)(nil),  // 15: vera.v1.InterruptResponse
-	(*WatchBoardRequest)(nil),  // 16: vera.v1.WatchBoardRequest
-	(*WatchBoardResponse)(nil), // 17: vera.v1.WatchBoardResponse
-	(*Fleet)(nil),              // 18: vera.v1.Fleet
-	(*Repo)(nil),               // 19: vera.v1.Repo
-	(*Session)(nil),            // 20: vera.v1.Session
-	(*Usage)(nil),              // 21: vera.v1.Usage
-	(*BoardTask)(nil),          // 22: vera.v1.BoardTask
-	(*TaskRun)(nil),            // 23: vera.v1.TaskRun
-	(*TaskEvent)(nil),          // 24: vera.v1.TaskEvent
-	(*Exchange)(nil),           // 25: vera.v1.Exchange
-	(*TaskLive)(nil),           // 26: vera.v1.TaskLive
-	(*ReviewRequest)(nil),      // 27: vera.v1.ReviewRequest
-	(*ReviewFile)(nil),         // 28: vera.v1.ReviewFile
-	(*ReviewResponse)(nil),     // 29: vera.v1.ReviewResponse
-	(*CommitRequest)(nil),      // 30: vera.v1.CommitRequest
-	(*CommitResponse)(nil),     // 31: vera.v1.CommitResponse
-	(*DiscardRequest)(nil),     // 32: vera.v1.DiscardRequest
-	(*DiscardResponse)(nil),    // 33: vera.v1.DiscardResponse
-	(*SuggestRequest)(nil),     // 34: vera.v1.SuggestRequest
-	(*SuggestResponse)(nil),    // 35: vera.v1.SuggestResponse
+	(*WatchAgentRequest)(nil),   // 0: vera.v1.WatchAgentRequest
+	(*WatchAgentResponse)(nil),  // 1: vera.v1.WatchAgentResponse
+	(*Agent)(nil),               // 2: vera.v1.Agent
+	(*Msg)(nil),                 // 3: vera.v1.Msg
+	(*Step)(nil),                // 4: vera.v1.Step
+	(*Diff)(nil),                // 5: vera.v1.Diff
+	(*Digest)(nil),              // 6: vera.v1.Digest
+	(*Ctx)(nil),                 // 7: vera.v1.Ctx
+	(*Spend)(nil),               // 8: vera.v1.Spend
+	(*Pending)(nil),             // 9: vera.v1.Pending
+	(*Queued)(nil),              // 10: vera.v1.Queued
+	(*TreeFile)(nil),            // 11: vera.v1.TreeFile
+	(*SayRequest)(nil),          // 12: vera.v1.SayRequest
+	(*SayResponse)(nil),         // 13: vera.v1.SayResponse
+	(*InterruptRequest)(nil),    // 14: vera.v1.InterruptRequest
+	(*InterruptResponse)(nil),   // 15: vera.v1.InterruptResponse
+	(*WatchBoardRequest)(nil),   // 16: vera.v1.WatchBoardRequest
+	(*WatchBoardResponse)(nil),  // 17: vera.v1.WatchBoardResponse
+	(*Fleet)(nil),               // 18: vera.v1.Fleet
+	(*Repo)(nil),                // 19: vera.v1.Repo
+	(*Session)(nil),             // 20: vera.v1.Session
+	(*Usage)(nil),               // 21: vera.v1.Usage
+	(*BoardTask)(nil),           // 22: vera.v1.BoardTask
+	(*TaskRun)(nil),             // 23: vera.v1.TaskRun
+	(*TaskEvent)(nil),           // 24: vera.v1.TaskEvent
+	(*Exchange)(nil),            // 25: vera.v1.Exchange
+	(*TaskLive)(nil),            // 26: vera.v1.TaskLive
+	(*ReviewRequest)(nil),       // 27: vera.v1.ReviewRequest
+	(*ReviewFile)(nil),          // 28: vera.v1.ReviewFile
+	(*ReviewResponse)(nil),      // 29: vera.v1.ReviewResponse
+	(*CommitRequest)(nil),       // 30: vera.v1.CommitRequest
+	(*CommitResponse)(nil),      // 31: vera.v1.CommitResponse
+	(*DiscardRequest)(nil),      // 32: vera.v1.DiscardRequest
+	(*DiscardResponse)(nil),     // 33: vera.v1.DiscardResponse
+	(*SuggestRequest)(nil),      // 34: vera.v1.SuggestRequest
+	(*SuggestResponse)(nil),     // 35: vera.v1.SuggestResponse
+	(*PlanRequest)(nil),         // 36: vera.v1.PlanRequest
+	(*PlanShape)(nil),           // 37: vera.v1.PlanShape
+	(*PlanResponse)(nil),        // 38: vera.v1.PlanResponse
+	(*ExecutePlanRequest)(nil),  // 39: vera.v1.ExecutePlanRequest
+	(*ExecutePlanResponse)(nil), // 40: vera.v1.ExecutePlanResponse
 }
 var file_vera_v1_vera_proto_depIdxs = []int32{
 	2,  // 0: vera.v1.WatchAgentResponse.agent:type_name -> vera.v1.Agent
@@ -3018,27 +3358,33 @@ var file_vera_v1_vera_proto_depIdxs = []int32{
 	25, // 17: vera.v1.BoardTask.exchanges:type_name -> vera.v1.Exchange
 	26, // 18: vera.v1.BoardTask.live:type_name -> vera.v1.TaskLive
 	28, // 19: vera.v1.ReviewResponse.files:type_name -> vera.v1.ReviewFile
-	0,  // 20: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
-	12, // 21: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
-	14, // 22: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
-	16, // 23: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
-	27, // 24: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
-	30, // 25: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
-	32, // 26: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
-	34, // 27: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
-	1,  // 28: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
-	13, // 29: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
-	15, // 30: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
-	17, // 31: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
-	29, // 32: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
-	31, // 33: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
-	33, // 34: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
-	35, // 35: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
-	28, // [28:36] is the sub-list for method output_type
-	20, // [20:28] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	37, // 20: vera.v1.PlanResponse.plan:type_name -> vera.v1.PlanShape
+	37, // 21: vera.v1.ExecutePlanRequest.plan:type_name -> vera.v1.PlanShape
+	0,  // 22: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
+	12, // 23: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
+	14, // 24: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
+	16, // 25: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
+	27, // 26: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
+	30, // 27: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
+	32, // 28: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
+	34, // 29: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
+	36, // 30: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
+	39, // 31: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
+	1,  // 32: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
+	13, // 33: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
+	15, // 34: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
+	17, // 35: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
+	29, // 36: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
+	31, // 37: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
+	33, // 38: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
+	35, // 39: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
+	38, // 40: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
+	40, // 41: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
+	32, // [32:42] is the sub-list for method output_type
+	22, // [22:32] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_vera_v1_vera_proto_init() }
@@ -3052,7 +3398,7 @@ func file_vera_v1_vera_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vera_v1_vera_proto_rawDesc), len(file_vera_v1_vera_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   36,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

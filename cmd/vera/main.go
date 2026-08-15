@@ -129,6 +129,7 @@ func main() {
 		spend:       map[string]*agentSpend{},
 		digests:     map[string]*digestRec{},
 		suggests:    map[string]*suggestRec{},
+		plans:       map[string]*planRec{},
 		sent:        map[string]string{},
 		uc:          &usage.Collector{Bin: *claudeBin},
 		shelf:       &artifactStore{dir: *artifactsDir},
@@ -137,6 +138,7 @@ func main() {
 		spendPath:   defaultSpendPath(),
 		digestPath:  defaultDigestPath(),
 		suggestPath: defaultSuggestPath(),
+		planPath:    defaultPlanPath(),
 		uploads:     defaultUploadsDir(),
 		hub:         newHub(),
 	}
@@ -192,6 +194,8 @@ func main() {
 	mux.HandleFunc("POST /api/tasks/{tid}/start", s.handleTaskStart)
 	mux.HandleFunc("POST /api/tasks/{tid}/act", s.handleTaskAct)
 	mux.HandleFunc("POST /api/tasks/{tid}/reply", s.handleTaskReply)
+	mux.HandleFunc("POST /api/plan", s.handlePlan)
+	mux.HandleFunc("POST /api/plan/execute", s.handlePlanExecute)
 	mux.HandleFunc("POST /api/workspaces", s.handleWorkspaceCreate)
 	mux.HandleFunc("DELETE /api/workspaces/{name}", s.handleWorkspaceDelete)
 	mux.HandleFunc("POST /api/drive", s.handleDrive)
@@ -304,6 +308,7 @@ type server struct {
 	spendPath   string // spend journal; "" = remember only while running
 	digestPath  string // digest journal; same deal
 	suggestPath string // suggestion journal; every bid served, for learning later
+	planPath    string // plan journal; every bid and every nod, for learning later
 	uploads     string // pasted-image directory, namespaced per agent
 
 	mu       sync.Mutex
@@ -312,6 +317,7 @@ type server struct {
 	spend    map[string]*agentSpend // agent root -> what has been spent on it, ever
 	digests  map[string]*digestRec  // reply-hash -> the membrane's compression of it
 	suggests map[string]*suggestRec // exchange-hash -> vera's bid on the reply
+	plans    map[string]*planRec    // plan id -> the bid awaiting its nod
 	sent     map[string]string      // sent-text-hash -> the rough words behind it
 	queues   map[string][]queuedSay // agent root -> direct messages typed ahead
 
