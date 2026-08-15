@@ -8,7 +8,7 @@ going — prompt, judge the reply, prompt again — until the goal is met
 or the turn budget runs out.
 
 ```
-go run github.com/incantery/rook-host/engine/cmd/vera@latest
+go run github.com/incantery/vera/cmd/vera@latest
 ```
 
 Open http://localhost:4770. That's it. (First ride: QUICKSTART.md.)

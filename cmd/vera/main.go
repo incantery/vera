@@ -32,10 +32,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/incantery/rook-host/engine/drive"
-	"github.com/incantery/rook-host/engine/gen/vera/v1/verav1connect"
-	"github.com/incantery/rook-host/engine/transcript"
-	"github.com/incantery/rook-host/engine/usage"
+	"github.com/incantery/vera/drive"
+	"github.com/incantery/vera/gen/vera/v1/verav1connect"
+	"github.com/incantery/vera/transcript"
+	"github.com/incantery/vera/usage"
 )
 
 // The UI is a SvelteKit SPA (web/), built by `npm run build` and

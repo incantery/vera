@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/incantery/rook-host/engine/transcript"
+	"github.com/incantery/vera/transcript"
 )
 
 // suggestGen salts the cache key: bump it when the suggest prompt

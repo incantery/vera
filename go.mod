@@ -1,4 +1,4 @@
-module github.com/incantery/rook-host/engine
+module github.com/incantery/vera
 
 go 1.25.4
 

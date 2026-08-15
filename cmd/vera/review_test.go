@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	verav1 "github.com/incantery/rook-host/engine/gen/vera/v1"
+	verav1 "github.com/incantery/vera/gen/vera/v1"
 )
 
 // reviewRepo builds a repo with one commit, then one tracked edit and

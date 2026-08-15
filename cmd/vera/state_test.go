@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/incantery/rook-host/engine/transcript"
-	"github.com/incantery/rook-host/engine/usage"
+	"github.com/incantery/vera/transcript"
+	"github.com/incantery/vera/usage"
 )
 
 // writeTranscript drops one minimal session file: an ended turn, so

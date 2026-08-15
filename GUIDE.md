@@ -40,7 +40,7 @@ about ten minutes and well under a dollar.
 ### 1.2 Start vera
 
 ```
-go run github.com/incantery/rook-host/engine/cmd/vera@latest
+go run github.com/incantery/vera/cmd/vera@latest
 ```
 
 Expect two startup lines: `vera: watching /Users/you/.claude/projects`

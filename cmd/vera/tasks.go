@@ -39,8 +39,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 
-	"github.com/incantery/rook-host/engine/drive"
-	"github.com/incantery/rook-host/engine/transcript"
+	"github.com/incantery/vera/drive"
+	"github.com/incantery/vera/transcript"
 )
 
 // globalBoard is the one namespace tasks live in. (Earlier builds kept

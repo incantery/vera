@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	verav1 "github.com/incantery/rook-host/engine/gen/vera/v1"
-	"github.com/incantery/rook-host/engine/transcript"
+	verav1 "github.com/incantery/vera/gen/vera/v1"
+	"github.com/incantery/vera/transcript"
 )
 
 type veraRPC struct {

@@ -2944,7 +2944,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x06Review\x12\x16.vera.v1.ReviewRequest\x1a\x17.vera.v1.ReviewResponse\x129\n" +
 	"\x06Commit\x12\x16.vera.v1.CommitRequest\x1a\x17.vera.v1.CommitResponse\x12<\n" +
 	"\aDiscard\x12\x17.vera.v1.DiscardRequest\x1a\x18.vera.v1.DiscardResponse\x12<\n" +
-	"\aSuggest\x12\x17.vera.v1.SuggestRequest\x1a\x18.vera.v1.SuggestResponseB:Z8github.com/incantery/rook-host/engine/gen/vera/v1;verav1b\x06proto3"
+	"\aSuggest\x12\x17.vera.v1.SuggestRequest\x1a\x18.vera.v1.SuggestResponseB.Z,github.com/incantery/vera/gen/vera/v1;verav1b\x06proto3"
 
 var (
 	file_vera_v1_vera_proto_rawDescOnce sync.Once

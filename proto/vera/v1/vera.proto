@@ -7,7 +7,7 @@ syntax = "proto3";
 
 package vera.v1;
 
-option go_package = "github.com/incantery/rook-host/engine/gen/vera/v1;verav1";
+option go_package = "github.com/incantery/vera/gen/vera/v1;verav1";
 
 // WatchAgent streams one agent's whole present: a full snapshot
 // first, then tail deltas as turns land, tools fire, and spend moves.

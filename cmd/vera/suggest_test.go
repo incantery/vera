@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/incantery/rook-host/engine/drive"
-	verav1 "github.com/incantery/rook-host/engine/gen/vera/v1"
-	"github.com/incantery/rook-host/engine/transcript"
+	"github.com/incantery/vera/drive"
+	verav1 "github.com/incantery/vera/gen/vera/v1"
+	"github.com/incantery/vera/transcript"
 )
 
 // suggestWire is a fake completions endpoint that counts its calls —

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	verav1 "github.com/incantery/rook-host/engine/gen/vera/v1"
-	"github.com/incantery/rook-host/engine/gen/vera/v1/verav1connect"
+	verav1 "github.com/incantery/vera/gen/vera/v1"
+	"github.com/incantery/vera/gen/vera/v1/verav1connect"
 )
 
 // The Say RPC and the REST endpoint are one rail: refusals arrive in

@@ -18,7 +18,7 @@ escalates the rest to you.
 ## Run it
 
 ```
-go run github.com/incantery/rook-host/engine/cmd/vera@latest
+go run github.com/incantery/vera/cmd/vera@latest
 ```
 
 Open http://localhost:4770. Loopback needs no key.
