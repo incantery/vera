@@ -67,6 +67,7 @@ func testServer(t *testing.T, dir string) *server {
 		sent:     map[string]string{},
 		tasks:    &taskStore{dir: t.TempDir()},
 		scratch:  &scratchStore{parent: t.TempDir()},
+		marks:    &bookmarkStore{path: filepath.Join(t.TempDir(), "vera-workspaces.json")},
 		uploads:  t.TempDir(),
 		shelf:    &artifactStore{dir: t.TempDir()},
 	}

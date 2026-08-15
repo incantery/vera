@@ -136,6 +136,7 @@ func main() {
 		shelf:       &artifactStore{dir: *artifactsDir},
 		tasks:       &taskStore{dir: *tasksDir},
 		scratch:     &scratchStore{parent: defaultScratchParent()},
+		marks:       &bookmarkStore{path: defaultBookmarkPath()},
 		spendPath:   defaultSpendPath(),
 		digestPath:  defaultDigestPath(),
 		suggestPath: defaultSuggestPath(),
@@ -198,6 +199,8 @@ func main() {
 	mux.HandleFunc("POST /api/plan", s.handlePlan)
 	mux.HandleFunc("POST /api/plan/execute", s.handlePlanExecute)
 	mux.HandleFunc("GET /api/dirs", s.handleDirs)
+	mux.HandleFunc("POST /api/bookmarks", s.handleBookmarkAdd)
+	mux.HandleFunc("DELETE /api/bookmarks/{name}", s.handleBookmarkRemove)
 	mux.HandleFunc("POST /api/sessions", s.handleSessionStart)
 	mux.HandleFunc("GET /api/births/{id}", s.handleBirth)
 	mux.HandleFunc("POST /api/workspaces", s.handleWorkspaceCreate)
@@ -308,6 +311,7 @@ type server struct {
 	shelf     *artifactStore
 	tasks     *taskStore
 	scratch   *scratchStore
+	marks     *bookmarkStore // the workspace registry: named, durable ground
 
 	spendPath   string // spend journal; "" = remember only while running
 	digestPath  string // digest journal; same deal

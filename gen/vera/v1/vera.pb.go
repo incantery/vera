@@ -3159,6 +3159,8 @@ type BrowseResponse struct {
 	Parent        string                 `protobuf:"bytes,3,opt,name=parent,proto3" json:"parent,omitempty"` // "" at the root
 	Git           bool                   `protobuf:"varint,4,opt,name=git,proto3" json:"git,omitempty"`
 	Dirs          []*DirEntry            `protobuf:"bytes,5,rep,name=dirs,proto3" json:"dirs,omitempty"`
+	Marked        string                 `protobuf:"bytes,6,opt,name=marked,proto3" json:"marked,omitempty"` // the registry's name for this directory, if any
+	Bookmarks     []*Bookmark            `protobuf:"bytes,7,rep,name=bookmarks,proto3" json:"bookmarks,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3228,6 +3230,171 @@ func (x *BrowseResponse) GetDirs() []*DirEntry {
 	return nil
 }
 
+func (x *BrowseResponse) GetMarked() string {
+	if x != nil {
+		return x.Marked
+	}
+	return ""
+}
+
+func (x *BrowseResponse) GetBookmarks() []*Bookmark {
+	if x != nil {
+		return x.Bookmarks
+	}
+	return nil
+}
+
+// A bookmark names ground durably: the registry entry the planner's
+// offers and the board's pickers trust. Bookmark with remove=true
+// deletes by name.
+type Bookmark struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Cwd           string                 `protobuf:"bytes,2,opt,name=cwd,proto3" json:"cwd,omitempty"`
+	Note          string                 `protobuf:"bytes,3,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Bookmark) Reset() {
+	*x = Bookmark{}
+	mi := &file_vera_v1_vera_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Bookmark) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Bookmark) ProtoMessage() {}
+
+func (x *Bookmark) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Bookmark.ProtoReflect.Descriptor instead.
+func (*Bookmark) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *Bookmark) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Bookmark) GetCwd() string {
+	if x != nil {
+		return x.Cwd
+	}
+	return ""
+}
+
+func (x *Bookmark) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
+type BookmarkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Bookmark      *Bookmark              `protobuf:"bytes,1,opt,name=bookmark,proto3" json:"bookmark,omitempty"`
+	Remove        bool                   `protobuf:"varint,2,opt,name=remove,proto3" json:"remove,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BookmarkRequest) Reset() {
+	*x = BookmarkRequest{}
+	mi := &file_vera_v1_vera_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BookmarkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BookmarkRequest) ProtoMessage() {}
+
+func (x *BookmarkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BookmarkRequest.ProtoReflect.Descriptor instead.
+func (*BookmarkRequest) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *BookmarkRequest) GetBookmark() *Bookmark {
+	if x != nil {
+		return x.Bookmark
+	}
+	return nil
+}
+
+func (x *BookmarkRequest) GetRemove() bool {
+	if x != nil {
+		return x.Remove
+	}
+	return false
+}
+
+type BookmarkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BookmarkResponse) Reset() {
+	*x = BookmarkResponse{}
+	mi := &file_vera_v1_vera_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BookmarkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BookmarkResponse) ProtoMessage() {}
+
+func (x *BookmarkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BookmarkResponse.ProtoReflect.Descriptor instead.
+func (*BookmarkResponse) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{46}
+}
+
 type StartSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Cwd           string                 `protobuf:"bytes,1,opt,name=cwd,proto3" json:"cwd,omitempty"`
@@ -3239,7 +3406,7 @@ type StartSessionRequest struct {
 
 func (x *StartSessionRequest) Reset() {
 	*x = StartSessionRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[44]
+	mi := &file_vera_v1_vera_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3251,7 +3418,7 @@ func (x *StartSessionRequest) String() string {
 func (*StartSessionRequest) ProtoMessage() {}
 
 func (x *StartSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[44]
+	mi := &file_vera_v1_vera_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3264,7 +3431,7 @@ func (x *StartSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSessionRequest.ProtoReflect.Descriptor instead.
 func (*StartSessionRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{44}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *StartSessionRequest) GetCwd() string {
@@ -3297,7 +3464,7 @@ type StartSessionResponse struct {
 
 func (x *StartSessionResponse) Reset() {
 	*x = StartSessionResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[45]
+	mi := &file_vera_v1_vera_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3309,7 +3476,7 @@ func (x *StartSessionResponse) String() string {
 func (*StartSessionResponse) ProtoMessage() {}
 
 func (x *StartSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[45]
+	mi := &file_vera_v1_vera_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3322,7 +3489,7 @@ func (x *StartSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSessionResponse.ProtoReflect.Descriptor instead.
 func (*StartSessionResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{45}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *StartSessionResponse) GetBirthId() string {
@@ -3341,7 +3508,7 @@ type BirthRequest struct {
 
 func (x *BirthRequest) Reset() {
 	*x = BirthRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[46]
+	mi := &file_vera_v1_vera_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3353,7 +3520,7 @@ func (x *BirthRequest) String() string {
 func (*BirthRequest) ProtoMessage() {}
 
 func (x *BirthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[46]
+	mi := &file_vera_v1_vera_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3366,7 +3533,7 @@ func (x *BirthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BirthRequest.ProtoReflect.Descriptor instead.
 func (*BirthRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{46}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *BirthRequest) GetId() string {
@@ -3387,7 +3554,7 @@ type BirthResponse struct {
 
 func (x *BirthResponse) Reset() {
 	*x = BirthResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[47]
+	mi := &file_vera_v1_vera_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3399,7 +3566,7 @@ func (x *BirthResponse) String() string {
 func (*BirthResponse) ProtoMessage() {}
 
 func (x *BirthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[47]
+	mi := &file_vera_v1_vera_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3412,7 +3579,7 @@ func (x *BirthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BirthResponse.ProtoReflect.Descriptor instead.
 func (*BirthResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{47}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *BirthResponse) GetStatus() string {
@@ -3692,13 +3859,23 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
 	"\x03cwd\x18\x02 \x01(\tR\x03cwd\x12\x10\n" +
 	"\x03git\x18\x03 \x01(\bR\x03git\x12\x14\n" +
-	"\x05known\x18\x04 \x01(\bR\x05known\"\x89\x01\n" +
+	"\x05known\x18\x04 \x01(\bR\x05known\"\xd2\x01\n" +
 	"\x0eBrowseResponse\x12\x12\n" +
 	"\x04root\x18\x01 \x01(\tR\x04root\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
 	"\x06parent\x18\x03 \x01(\tR\x06parent\x12\x10\n" +
 	"\x03git\x18\x04 \x01(\bR\x03git\x12%\n" +
-	"\x04dirs\x18\x05 \x03(\v2\x11.vera.v1.DirEntryR\x04dirs\"O\n" +
+	"\x04dirs\x18\x05 \x03(\v2\x11.vera.v1.DirEntryR\x04dirs\x12\x16\n" +
+	"\x06marked\x18\x06 \x01(\tR\x06marked\x12/\n" +
+	"\tbookmarks\x18\a \x03(\v2\x11.vera.v1.BookmarkR\tbookmarks\"D\n" +
+	"\bBookmark\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x10\n" +
+	"\x03cwd\x18\x02 \x01(\tR\x03cwd\x12\x12\n" +
+	"\x04note\x18\x03 \x01(\tR\x04note\"X\n" +
+	"\x0fBookmarkRequest\x12-\n" +
+	"\bbookmark\x18\x01 \x01(\v2\x11.vera.v1.BookmarkR\bbookmark\x12\x16\n" +
+	"\x06remove\x18\x02 \x01(\bR\x06remove\"\x12\n" +
+	"\x10BookmarkResponse\"O\n" +
 	"\x13StartSessionRequest\x12\x10\n" +
 	"\x03cwd\x18\x01 \x01(\tR\x03cwd\x12\x12\n" +
 	"\x04text\x18\x02 \x01(\tR\x04text\x12\x12\n" +
@@ -3710,7 +3887,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\rBirthResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x12\n" +
 	"\x04root\x18\x02 \x01(\tR\x04root\x12\x10\n" +
-	"\x03err\x18\x03 \x01(\tR\x03err2\xc6\x06\n" +
+	"\x03err\x18\x03 \x01(\tR\x03err2\x8a\a\n" +
 	"\vVeraService\x12G\n" +
 	"\n" +
 	"WatchAgent\x12\x1a.vera.v1.WatchAgentRequest\x1a\x1b.vera.v1.WatchAgentResponse0\x01\x120\n" +
@@ -3726,7 +3903,8 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\vExecutePlan\x12\x1b.vera.v1.ExecutePlanRequest\x1a\x1c.vera.v1.ExecutePlanResponse\x129\n" +
 	"\x06Browse\x12\x16.vera.v1.BrowseRequest\x1a\x17.vera.v1.BrowseResponse\x12K\n" +
 	"\fStartSession\x12\x1c.vera.v1.StartSessionRequest\x1a\x1d.vera.v1.StartSessionResponse\x126\n" +
-	"\x05Birth\x12\x15.vera.v1.BirthRequest\x1a\x16.vera.v1.BirthResponseB.Z,github.com/incantery/vera/gen/vera/v1;verav1b\x06proto3"
+	"\x05Birth\x12\x15.vera.v1.BirthRequest\x1a\x16.vera.v1.BirthResponse\x12B\n" +
+	"\vSetBookmark\x12\x18.vera.v1.BookmarkRequest\x1a\x19.vera.v1.BookmarkResponseB.Z,github.com/incantery/vera/gen/vera/v1;verav1b\x06proto3"
 
 var (
 	file_vera_v1_vera_proto_rawDescOnce sync.Once
@@ -3740,7 +3918,7 @@ func file_vera_v1_vera_proto_rawDescGZIP() []byte {
 	return file_vera_v1_vera_proto_rawDescData
 }
 
-var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
 var file_vera_v1_vera_proto_goTypes = []any{
 	(*WatchAgentRequest)(nil),    // 0: vera.v1.WatchAgentRequest
 	(*WatchAgentResponse)(nil),   // 1: vera.v1.WatchAgentResponse
@@ -3786,10 +3964,13 @@ var file_vera_v1_vera_proto_goTypes = []any{
 	(*BrowseRequest)(nil),        // 41: vera.v1.BrowseRequest
 	(*DirEntry)(nil),             // 42: vera.v1.DirEntry
 	(*BrowseResponse)(nil),       // 43: vera.v1.BrowseResponse
-	(*StartSessionRequest)(nil),  // 44: vera.v1.StartSessionRequest
-	(*StartSessionResponse)(nil), // 45: vera.v1.StartSessionResponse
-	(*BirthRequest)(nil),         // 46: vera.v1.BirthRequest
-	(*BirthResponse)(nil),        // 47: vera.v1.BirthResponse
+	(*Bookmark)(nil),             // 44: vera.v1.Bookmark
+	(*BookmarkRequest)(nil),      // 45: vera.v1.BookmarkRequest
+	(*BookmarkResponse)(nil),     // 46: vera.v1.BookmarkResponse
+	(*StartSessionRequest)(nil),  // 47: vera.v1.StartSessionRequest
+	(*StartSessionResponse)(nil), // 48: vera.v1.StartSessionResponse
+	(*BirthRequest)(nil),         // 49: vera.v1.BirthRequest
+	(*BirthResponse)(nil),        // 50: vera.v1.BirthResponse
 }
 var file_vera_v1_vera_proto_depIdxs = []int32{
 	2,  // 0: vera.v1.WatchAgentResponse.agent:type_name -> vera.v1.Agent
@@ -3815,37 +3996,41 @@ var file_vera_v1_vera_proto_depIdxs = []int32{
 	37, // 20: vera.v1.PlanResponse.plan:type_name -> vera.v1.PlanShape
 	37, // 21: vera.v1.ExecutePlanRequest.plan:type_name -> vera.v1.PlanShape
 	42, // 22: vera.v1.BrowseResponse.dirs:type_name -> vera.v1.DirEntry
-	0,  // 23: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
-	12, // 24: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
-	14, // 25: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
-	16, // 26: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
-	27, // 27: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
-	30, // 28: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
-	32, // 29: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
-	34, // 30: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
-	36, // 31: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
-	39, // 32: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
-	41, // 33: vera.v1.VeraService.Browse:input_type -> vera.v1.BrowseRequest
-	44, // 34: vera.v1.VeraService.StartSession:input_type -> vera.v1.StartSessionRequest
-	46, // 35: vera.v1.VeraService.Birth:input_type -> vera.v1.BirthRequest
-	1,  // 36: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
-	13, // 37: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
-	15, // 38: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
-	17, // 39: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
-	29, // 40: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
-	31, // 41: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
-	33, // 42: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
-	35, // 43: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
-	38, // 44: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
-	40, // 45: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
-	43, // 46: vera.v1.VeraService.Browse:output_type -> vera.v1.BrowseResponse
-	45, // 47: vera.v1.VeraService.StartSession:output_type -> vera.v1.StartSessionResponse
-	47, // 48: vera.v1.VeraService.Birth:output_type -> vera.v1.BirthResponse
-	36, // [36:49] is the sub-list for method output_type
-	23, // [23:36] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	44, // 23: vera.v1.BrowseResponse.bookmarks:type_name -> vera.v1.Bookmark
+	44, // 24: vera.v1.BookmarkRequest.bookmark:type_name -> vera.v1.Bookmark
+	0,  // 25: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
+	12, // 26: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
+	14, // 27: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
+	16, // 28: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
+	27, // 29: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
+	30, // 30: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
+	32, // 31: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
+	34, // 32: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
+	36, // 33: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
+	39, // 34: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
+	41, // 35: vera.v1.VeraService.Browse:input_type -> vera.v1.BrowseRequest
+	47, // 36: vera.v1.VeraService.StartSession:input_type -> vera.v1.StartSessionRequest
+	49, // 37: vera.v1.VeraService.Birth:input_type -> vera.v1.BirthRequest
+	45, // 38: vera.v1.VeraService.SetBookmark:input_type -> vera.v1.BookmarkRequest
+	1,  // 39: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
+	13, // 40: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
+	15, // 41: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
+	17, // 42: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
+	29, // 43: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
+	31, // 44: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
+	33, // 45: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
+	35, // 46: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
+	38, // 47: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
+	40, // 48: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
+	43, // 49: vera.v1.VeraService.Browse:output_type -> vera.v1.BrowseResponse
+	48, // 50: vera.v1.VeraService.StartSession:output_type -> vera.v1.StartSessionResponse
+	50, // 51: vera.v1.VeraService.Birth:output_type -> vera.v1.BirthResponse
+	46, // 52: vera.v1.VeraService.SetBookmark:output_type -> vera.v1.BookmarkResponse
+	39, // [39:53] is the sub-list for method output_type
+	25, // [25:39] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_vera_v1_vera_proto_init() }
@@ -3859,7 +4044,7 @@ func file_vera_v1_vera_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vera_v1_vera_proto_rawDesc), len(file_vera_v1_vera_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   48,
+			NumMessages:   51,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

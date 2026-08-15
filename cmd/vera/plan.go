@@ -28,7 +28,7 @@ import (
 
 // planGen salts the plan journal so a prompt change reads as a new
 // generation in later analysis. Bump on any planSysPrompt change.
-const planGen = "p5|"
+const planGen = "p6|"
 
 func defaultPlanPath() string {
 	return statePath("vera-plans.jsonl")
@@ -76,9 +76,19 @@ func (s *server) planCore(ctx context.Context, text string, now time.Time) (*pla
 	if s.llm == nil {
 		return nil, &sayErr{409, s.notice}
 	}
+	// Bookmarked ground carries its name and note into the offer —
+	// identity is what lets the planner match work to a workspace
+	// without asking which repo is which.
 	var repos []string
-	for _, r := range repoList(s.boardSessions(now), homeDir(), s.scratch.list()) {
-		repos = append(repos, r["cwd"])
+	for _, r := range repoList(s.boardSessions(now), homeDir(), s.scratch.list(), s.marks.list()) {
+		line := r["cwd"]
+		if r["bookmark"] == "yes" {
+			line += " # " + r["dir"]
+			if r["note"] != "" {
+				line += ": " + r["note"]
+			}
+		}
+		repos = append(repos, line)
 	}
 	var usd float64
 	ll := *s.llm
@@ -128,6 +138,9 @@ func (s *server) executePlanCore(p drive.Plan, planID, mode string, now time.Tim
 		}
 		return task{}, &sayErr{409, "vera judged this needs no workspace: " + why}
 	case "repo":
+		// The offer may have carried a " # name: note" annotation; the
+		// path is everything before it, whatever the model copied.
+		p.Where = strings.TrimSpace(strings.SplitN(p.Where, " #", 2)[0])
 		if s.repoOffered(s.boardSessions(now), p.Where) == "" {
 			return task{}, &sayErr{400, "that workspace is not one the fleet has shown"}
 		}
@@ -147,6 +160,9 @@ func (s *server) executePlanCore(p drive.Plan, planID, mode string, now time.Tim
 		if out, err := exec.Command("git", "init", "-q", dir).CombinedOutput(); err != nil {
 			return task{}, &sayErr{500, "git init refused: " + strings.TrimSpace(string(out))}
 		}
+		// Ground vera makes, vera remembers: the plan's why becomes
+		// the workspace's standing description in the registry.
+		s.marks.add(p.Name, dir, p.Why)
 	default:
 		return task{}, &sayErr{400, "a plan needs a kind: repo, new, or none"}
 	}

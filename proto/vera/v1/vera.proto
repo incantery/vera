@@ -374,7 +374,25 @@ message BrowseResponse {
   string parent = 3;  // "" at the root
   bool git = 4;
   repeated DirEntry dirs = 5;
+  string marked = 6;  // the registry's name for this directory, if any
+  repeated Bookmark bookmarks = 7;
 }
+
+// A bookmark names ground durably: the registry entry the planner's
+// offers and the board's pickers trust. Bookmark with remove=true
+// deletes by name.
+message Bookmark {
+  string name = 1;
+  string cwd = 2;
+  string note = 3;
+}
+
+message BookmarkRequest {
+  Bookmark bookmark = 1;
+  bool remove = 2;
+}
+
+message BookmarkResponse {}
 
 message StartSessionRequest {
   string cwd = 1;
@@ -410,4 +428,5 @@ service VeraService {
   rpc Browse(BrowseRequest) returns (BrowseResponse);
   rpc StartSession(StartSessionRequest) returns (StartSessionResponse);
   rpc Birth(BirthRequest) returns (BirthResponse);
+  rpc SetBookmark(BookmarkRequest) returns (BookmarkResponse);
 }

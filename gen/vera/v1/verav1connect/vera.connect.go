@@ -66,6 +66,8 @@ const (
 	VeraServiceStartSessionProcedure = "/vera.v1.VeraService/StartSession"
 	// VeraServiceBirthProcedure is the fully-qualified name of the VeraService's Birth RPC.
 	VeraServiceBirthProcedure = "/vera.v1.VeraService/Birth"
+	// VeraServiceSetBookmarkProcedure is the fully-qualified name of the VeraService's SetBookmark RPC.
+	VeraServiceSetBookmarkProcedure = "/vera.v1.VeraService/SetBookmark"
 )
 
 // VeraServiceClient is a client for the vera.v1.VeraService service.
@@ -83,6 +85,7 @@ type VeraServiceClient interface {
 	Browse(context.Context, *connect.Request[v1.BrowseRequest]) (*connect.Response[v1.BrowseResponse], error)
 	StartSession(context.Context, *connect.Request[v1.StartSessionRequest]) (*connect.Response[v1.StartSessionResponse], error)
 	Birth(context.Context, *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error)
+	SetBookmark(context.Context, *connect.Request[v1.BookmarkRequest]) (*connect.Response[v1.BookmarkResponse], error)
 }
 
 // NewVeraServiceClient constructs a client for the vera.v1.VeraService service. By default, it uses
@@ -174,6 +177,12 @@ func NewVeraServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(veraServiceMethods.ByName("Birth")),
 			connect.WithClientOptions(opts...),
 		),
+		setBookmark: connect.NewClient[v1.BookmarkRequest, v1.BookmarkResponse](
+			httpClient,
+			baseURL+VeraServiceSetBookmarkProcedure,
+			connect.WithSchema(veraServiceMethods.ByName("SetBookmark")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -192,6 +201,7 @@ type veraServiceClient struct {
 	browse       *connect.Client[v1.BrowseRequest, v1.BrowseResponse]
 	startSession *connect.Client[v1.StartSessionRequest, v1.StartSessionResponse]
 	birth        *connect.Client[v1.BirthRequest, v1.BirthResponse]
+	setBookmark  *connect.Client[v1.BookmarkRequest, v1.BookmarkResponse]
 }
 
 // WatchAgent calls vera.v1.VeraService.WatchAgent.
@@ -259,6 +269,11 @@ func (c *veraServiceClient) Birth(ctx context.Context, req *connect.Request[v1.B
 	return c.birth.CallUnary(ctx, req)
 }
 
+// SetBookmark calls vera.v1.VeraService.SetBookmark.
+func (c *veraServiceClient) SetBookmark(ctx context.Context, req *connect.Request[v1.BookmarkRequest]) (*connect.Response[v1.BookmarkResponse], error) {
+	return c.setBookmark.CallUnary(ctx, req)
+}
+
 // VeraServiceHandler is an implementation of the vera.v1.VeraService service.
 type VeraServiceHandler interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error
@@ -274,6 +289,7 @@ type VeraServiceHandler interface {
 	Browse(context.Context, *connect.Request[v1.BrowseRequest]) (*connect.Response[v1.BrowseResponse], error)
 	StartSession(context.Context, *connect.Request[v1.StartSessionRequest]) (*connect.Response[v1.StartSessionResponse], error)
 	Birth(context.Context, *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error)
+	SetBookmark(context.Context, *connect.Request[v1.BookmarkRequest]) (*connect.Response[v1.BookmarkResponse], error)
 }
 
 // NewVeraServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -361,6 +377,12 @@ func NewVeraServiceHandler(svc VeraServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(veraServiceMethods.ByName("Birth")),
 		connect.WithHandlerOptions(opts...),
 	)
+	veraServiceSetBookmarkHandler := connect.NewUnaryHandler(
+		VeraServiceSetBookmarkProcedure,
+		svc.SetBookmark,
+		connect.WithSchema(veraServiceMethods.ByName("SetBookmark")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/vera.v1.VeraService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case VeraServiceWatchAgentProcedure:
@@ -389,6 +411,8 @@ func NewVeraServiceHandler(svc VeraServiceHandler, opts ...connect.HandlerOption
 			veraServiceStartSessionHandler.ServeHTTP(w, r)
 		case VeraServiceBirthProcedure:
 			veraServiceBirthHandler.ServeHTTP(w, r)
+		case VeraServiceSetBookmarkProcedure:
+			veraServiceSetBookmarkHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -448,4 +472,8 @@ func (UnimplementedVeraServiceHandler) StartSession(context.Context, *connect.Re
 
 func (UnimplementedVeraServiceHandler) Birth(context.Context, *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.Birth is not implemented"))
+}
+
+func (UnimplementedVeraServiceHandler) SetBookmark(context.Context, *connect.Request[v1.BookmarkRequest]) (*connect.Response[v1.BookmarkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.SetBookmark is not implemented"))
 }

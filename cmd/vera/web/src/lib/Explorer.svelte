@@ -75,6 +75,31 @@
 	function onKey(e) {
 		if (e.key === 'Escape' && !busy) onclose();
 	}
+
+	// Bookmarking: name this ground once and the planner's offers and
+	// the board's pickers carry it forever after.
+	let marking = $state(false);
+	let markName = $state('');
+	let markNote = $state('');
+	async function saveMark() {
+		const name = markName.trim();
+		if (!name || !view) return;
+		err = '';
+		try {
+			const r = await api('/api/bookmarks', {
+				method: 'POST',
+				body: JSON.stringify({ name, cwd: view.path, note: markNote.trim() })
+			});
+			const out = await r.json();
+			if (!r.ok) throw new Error(out.error ?? 'refused');
+			marking = false;
+			markName = '';
+			markNote = '';
+			await load(view.path);
+		} catch (e) {
+			err = e.message;
+		}
+	}
 	const crumb = (v) => (v.path === v.root ? '~' : '~' + v.path.slice(v.root.length));
 </script>
 
@@ -105,8 +130,52 @@
 				{/if}
 			{/if}
 			<div style="flex: 1;"></div>
+			{#if view?.marked}
+				<span style="font-size: 10.5px; color: var(--color-accent-400);" title="bookmarked — the planner knows this ground">★ {view.marked}</span>
+			{:else if view}
+				<button
+					style="font-size: 10.5px; color: var(--color-neutral-500);"
+					onclick={() => { marking = !marking; markName = view.path === view.root ? '' : view.path.split('/').pop(); }}
+					title="bookmark this directory — named ground the planner can trust">☆ bookmark</button
+				>
+			{/if}
 			<span style="font-size: 10.5px; color: var(--color-neutral-600);">esc closes</span>
 		</header>
+
+		{#if marking}
+			<div
+				style="display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--color-divider); align-items: center;"
+			>
+				<input
+					class="input"
+					bind:value={markName}
+					placeholder="name"
+					style="width: 140px; background: transparent;"
+				/>
+				<input
+					class="input"
+					bind:value={markNote}
+					onkeydown={(e) => e.key === 'Enter' && saveMark()}
+					placeholder="one line the planner will read — what is this workspace?"
+					style="flex: 1; background: transparent;"
+				/>
+				<button class="btn btn-primary" onclick={saveMark} disabled={!markName.trim()}>save</button>
+			</div>
+		{/if}
+
+		{#if view?.bookmarks?.length}
+			<div
+				style="display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--color-divider);"
+			>
+				{#each view.bookmarks as bm (bm.name)}
+					<button
+						style="font-size: 11px; padding: 3px 9px; border: 1px solid var(--color-neutral-800); border-radius: 99px; color: var(--color-neutral-300);"
+						onclick={() => load(bm.cwd)}
+						title={bm.note || bm.cwd}>★ {bm.name}</button
+					>
+				{/each}
+			</div>
+		{/if}
 
 		{#if err}
 			<div

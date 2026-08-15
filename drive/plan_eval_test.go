@@ -163,6 +163,21 @@ var planCorpus = []planCase{
 		where:    "/w/go/src/github.com/incantery/vera",
 		cadences: []string{"standing", "once"}, goalMust: []string{"summary"},
 	},
+	// ---- named ground: the registry's notes disambiguate ----
+	{
+		// The live failure that built the registry: three plausible
+		// vera-ish repos, and the planner had to ask which was which.
+		// With notes on the offers, the ask disappears.
+		name: "todos-for-vera-resolved-by-note",
+		ask:  "make some todos for vera — a checklist of rough edges in the explorer UI",
+		repos: []string{
+			"/w/go/src/github.com/incantery/rook # rook: the native macOS terminal app",
+			"/w/go/src/github.com/incantery/rook-cloud # rook-cloud: the cloud rail and phone backend",
+			"/w/go/src/github.com/incantery/vera # vera: the vera product itself (board, planner, explorer UI, drive engine)",
+		},
+		kinds: []string{"repo"}, where: "/w/go/src/github.com/incantery/vera",
+		cadences: []string{"once"}, goalMust: []string{"explorer"},
+	},
 	// ---- the plan cannot be shaped without one answer ----
 	{
 		// The blog in the fleet is a defensible read of "my personal
@@ -253,8 +268,12 @@ func checkPlanRow(m *LLM, c planCase, today string) (Plan, []string, error) {
 	if !slices.Contains(c.kinds, p.Kind) {
 		miss("kind %q, accepted %v", p.Kind, c.kinds)
 	}
-	if p.Kind == "repo" && c.where != "" && p.Where != c.where {
-		miss("where %q, wanted %q", p.Where, c.where)
+	if p.Kind == "repo" && c.where != "" {
+		// The model may copy the annotated offer line; the path is
+		// what must match — the same trim the executor applies.
+		if got := strings.TrimSpace(strings.SplitN(p.Where, " #", 2)[0]); got != c.where {
+			miss("where %q, wanted %q", got, c.where)
+		}
 	}
 	if p.Kind == "new" {
 		if len(c.homes) > 0 && !slices.Contains(c.homes, p.Home) {

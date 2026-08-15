@@ -301,7 +301,7 @@ func TestRepoListOffersFleetDirsButNeverHome(t *testing.T) {
 	// titled-ness gates adoption, not geography.
 	writeUntitledWorkingTranscript(t, dir, "-repo-beta", "quiet-1", now)
 	s := testServer(t, dir)
-	repos := repoList(s.boardSessions(now), "/repo/-repo-beta", nil)
+	repos := repoList(s.boardSessions(now), "/repo/-repo-beta", nil, nil)
 	// beta played the role of $HOME here and must be excluded.
 	if len(repos) != 1 || repos[0]["cwd"] != "/repo/-repo-alpha" {
 		t.Fatalf("repos: %+v", repos)
@@ -449,7 +449,7 @@ func TestRepoListOffersScratchWorkspaces(t *testing.T) {
 	dir := t.TempDir()
 	s := testServer(t, dir)
 	path, _ := s.scratch.create("demo")
-	repos := repoList(s.boardSessions(time.Now()), "/nowhere", s.scratch.list())
+	repos := repoList(s.boardSessions(time.Now()), "/nowhere", s.scratch.list(), nil)
 	if len(repos) != 1 || repos[0]["cwd"] != path || repos[0]["scratch"] != "yes" {
 		t.Fatalf("repos: %+v", repos)
 	}

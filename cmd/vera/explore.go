@@ -70,6 +70,11 @@ type browseView struct {
 	Parent string     `json:"parent,omitempty"`
 	Git    bool       `json:"git,omitempty"`
 	Dirs   []dirEntry `json:"dirs"`
+	// Marked: the registry's name for THIS directory, when it has one.
+	Marked string `json:"marked,omitempty"`
+	// Bookmarks ride every view — the registry is the explorer's
+	// fast travel.
+	Bookmarks []bookmark `json:"bookmarks,omitempty"`
 }
 
 // listDirs walks one level. Directories only, dotfiles skipped — the
@@ -88,9 +93,12 @@ func (s *server) listDirs(path string, now time.Time) (*browseView, *sayErr) {
 	for _, live := range s.boardSessions(now) {
 		known[live.Cwd] = true
 	}
-	v := &browseView{Root: root, Path: p, Dirs: []dirEntry{}}
+	v := &browseView{Root: root, Path: p, Dirs: []dirEntry{}, Bookmarks: s.marks.list()}
 	if _, err := os.Stat(filepath.Join(p, ".git")); err == nil {
 		v.Git = true
+	}
+	if bm, ok := s.marks.noteFor(p); ok {
+		v.Marked = bm.Name
 	}
 	if p != root {
 		v.Parent = filepath.Dir(p)

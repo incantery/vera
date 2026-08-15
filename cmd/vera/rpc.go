@@ -211,11 +211,38 @@ func (r *veraRPC) Browse(ctx context.Context, req *connect.Request[verav1.Browse
 	if serr != nil {
 		return nil, connectErr(serr)
 	}
-	resp := &verav1.BrowseResponse{Root: v.Root, Path: v.Path, Parent: v.Parent, Git: v.Git}
+	resp := &verav1.BrowseResponse{Root: v.Root, Path: v.Path, Parent: v.Parent, Git: v.Git, Marked: v.Marked}
 	for _, d := range v.Dirs {
 		resp.Dirs = append(resp.Dirs, &verav1.DirEntry{Name: d.Name, Cwd: d.Cwd, Git: d.Git, Known: d.Known})
 	}
+	for _, bm := range v.Bookmarks {
+		resp.Bookmarks = append(resp.Bookmarks, &verav1.Bookmark{Name: bm.Name, Cwd: bm.Cwd, Note: bm.Note})
+	}
 	return connect.NewResponse(resp), nil
+}
+
+// SetBookmark writes (or removes) one registry entry — the durable,
+// described ground the planner's offers trust.
+func (r *veraRPC) SetBookmark(ctx context.Context, req *connect.Request[verav1.BookmarkRequest]) (*connect.Response[verav1.BookmarkResponse], error) {
+	defer r.s.hub.notify()
+	bm := req.Msg.Bookmark
+	if bm == nil {
+		return nil, connectErr(&sayErr{400, "name the bookmark"})
+	}
+	if req.Msg.Remove {
+		if err := r.s.marks.remove(bm.Name); err != nil {
+			return nil, connectErr(&sayErr{404, err.Error()})
+		}
+		return connect.NewResponse(&verav1.BookmarkResponse{}), nil
+	}
+	p, ok := underRoot(exploreRoot(), bm.Cwd)
+	if !ok {
+		return nil, connectErr(&sayErr{400, "bookmarks stay under " + exploreRoot()})
+	}
+	if err := r.s.marks.add(bm.Name, p, bm.Note); err != nil {
+		return nil, connectErr(&sayErr{400, err.Error()})
+	}
+	return connect.NewResponse(&verav1.BookmarkResponse{}), nil
 }
 
 func (r *veraRPC) StartSession(ctx context.Context, req *connect.Request[verav1.StartSessionRequest]) (*connect.Response[verav1.StartSessionResponse], error) {

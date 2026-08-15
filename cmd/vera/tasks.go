@@ -500,7 +500,7 @@ func (s *server) boardData(now time.Time) boardPayload {
 	return boardPayload{
 		tasks: tasks, inflight: inflight, spend: spent,
 		agents: len(fleet), working: working,
-		repos: repoList(fleet, homeDir(), s.scratch.list()),
+		repos: repoList(fleet, homeDir(), s.scratch.list(), s.marks.list()),
 	}
 }
 
@@ -508,9 +508,18 @@ func (s *server) boardData(now time.Time) boardPayload {
 // places the fleet has already shown, so the wire can never name a
 // directory the machine did not first offer. The home directory is
 // excluded: sessions there are usage probes and scratch, not repos.
-func repoList(fleet map[string]*transcript.Session, home string, scratch []string) []map[string]string {
+func repoList(fleet map[string]*transcript.Session, home string, scratch []string, marks []bookmark) []map[string]string {
 	seen := map[string]bool{}
 	var out []map[string]string
+	// Bookmarks first: the registry is the durable offer — named
+	// ground that never ages out of the scan window.
+	for _, bm := range marks {
+		if bm.Cwd == "" || seen[bm.Cwd] {
+			continue
+		}
+		seen[bm.Cwd] = true
+		out = append(out, map[string]string{"dir": bm.Name, "cwd": bm.Cwd, "note": bm.Note, "bookmark": "yes"})
+	}
 	for _, live := range fleet {
 		if live.Cwd == "" || live.Cwd == home || seen[live.Cwd] {
 			continue
@@ -845,7 +854,7 @@ func (s *server) spawnFresh(t task, newIn, mode, goal string, heldUSD float64) {
 // repoOffered answers with the fleet cwd matching the ask, or "" —
 // the same offer repoList makes, checked on the way back in.
 func (s *server) repoOffered(fleet map[string]*transcript.Session, cwd string) string {
-	for _, r := range repoList(fleet, homeDir(), s.scratch.list()) {
+	for _, r := range repoList(fleet, homeDir(), s.scratch.list(), s.marks.list()) {
 		if r["cwd"] == cwd {
 			return cwd
 		}
