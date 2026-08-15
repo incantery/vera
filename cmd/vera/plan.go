@@ -27,7 +27,7 @@ import (
 
 // planGen salts the plan journal so a prompt change reads as a new
 // generation in later analysis. Bump on any planSysPrompt change.
-const planGen = "p1|"
+const planGen = "p2|"
 
 func defaultPlanPath() string {
 	return statePath("vera-plans.jsonl")
