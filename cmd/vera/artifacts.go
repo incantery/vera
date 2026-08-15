@@ -46,15 +46,7 @@ type artifactStore struct {
 }
 
 func defaultArtifactsDir() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, _ := os.UserHomeDir()
-		if home == "" {
-			return ""
-		}
-		state = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(state, "rook", "vera-artifacts")
+	return statePath("vera-artifacts")
 }
 
 // fileID: ids reach the filesystem, so anything beyond [A-Za-z0-9._-]

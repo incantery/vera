@@ -53,7 +53,19 @@ server — ollama and friends need no key.
 --model gpt-5.6-luna    judge model
 --api-base              judge endpoint (default OpenAI)
 --claude                the claude binary (default: from PATH)
+--world <dir>           sandbox world (see below)
 ```
+
+## Worlds
+
+`vera --world /tmp/w1` stands up a disposable sandbox: the board,
+task journals, spend meters, key, and scratch workspaces all live
+under `/tmp/w1`, and the board shows only sessions working inside it.
+The real machine's vera is untouched — run both at once on different
+ports. Workers are real (real claude, real tools, real spend); the
+*world* is what's fake and resettable: `rm -rf /tmp/w1` and it never
+happened. A seeded world is a test scenario; an empty one is a fresh
+user.
 
 ## Hacking on the UI
 

@@ -33,6 +33,9 @@ protected — deleting it requires explicit authorization from you.
 `
 
 func defaultScratchParent() string {
+	if worldRoot != "" {
+		return filepath.Join(worldRoot, "scratch")
+	}
 	home, _ := os.UserHomeDir()
 	if home == "" {
 		return ""

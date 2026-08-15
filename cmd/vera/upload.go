@@ -22,12 +22,7 @@ var uploadExt = map[string]string{
 }
 
 func defaultUploadsDir() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, _ := os.UserHomeDir()
-		state = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(state, "rook", "vera-uploads")
+	return statePath("vera-uploads")
 }
 
 // uploadDir is one agent's attachment directory, namespaced by root

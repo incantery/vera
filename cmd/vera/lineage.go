@@ -124,16 +124,7 @@ func (ln *lineage) advance(id, fork string) {
 	f.Write(append(b, '\n'))
 }
 
-// defaultLineagePath is the journal's home, vera's state-dir
-// conventions: $XDG_STATE_HOME/vera/vera-lineage.jsonl.
+// defaultLineagePath is the journal's home in the state dir.
 func defaultLineagePath() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, _ := os.UserHomeDir()
-		if home == "" {
-			return ""
-		}
-		state = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(state, "rook", "vera-lineage.jsonl")
+	return statePath("vera-lineage.jsonl")
 }

@@ -22,15 +22,7 @@ import (
 )
 
 func defaultKeyPath() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, _ := os.UserHomeDir()
-		if home == "" {
-			return ""
-		}
-		state = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(state, "rook", "vera-key")
+	return statePath("vera-key")
 }
 
 // loadOrCreateKey mints the key on first run, 0600. An unreadable

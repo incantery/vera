@@ -83,7 +83,7 @@ type task struct {
 	// when their session goes quiet — the transcript is the record.
 	Adopted bool `json:"adopted,omitempty"`
 
-	// Rook proposes, the human disposes.
+	// Vera proposes, the human disposes.
 	Proposal     string `json:"proposal,omitempty"`
 	ProposalWhy  string `json:"proposalWhy,omitempty"`
 	ProposalKind string `json:"proposalKind,omitempty"` // "start" | "done"
@@ -165,15 +165,7 @@ type taskStore struct {
 }
 
 func defaultTasksDir() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, _ := os.UserHomeDir()
-		if home == "" {
-			return ""
-		}
-		state = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(state, "rook", "vera-tasks")
+	return statePath("vera-tasks")
 }
 
 func (st *taskStore) path(id string) (string, error) {
@@ -283,13 +275,13 @@ func (st *taskStore) mutate(id string, f func(*task) error) (task, error) {
 }
 
 // capture opens an UNASSIGNED task in the inbox — backlog for the
-// next free agent. Rook spends nothing.
+// next free agent. Vera spends nothing.
 func (st *taskStore) capture(text string, now time.Time) (task, error) {
 	t := task{
 		ID:    st.nextID(),
 		Title: transcript.Snip(text, 90), Intent: text,
 		Col: "inbox", State: "inbox · backlog",
-		Face:         "Captured, unassigned. Rook has spent nothing on it yet.",
+		Face:         "Captured, unassigned. Vera has spent nothing on it yet.",
 		Proposal:     "Start on the current agent",
 		ProposalWhy:  "Nothing blocks it and no open task claims the same scope.",
 		ProposalKind: "start",
@@ -948,7 +940,7 @@ func (s *server) taskRunLanded(taskID string, res drive.Result, runErr error, se
 			outcome += ", escalated"
 			t.Col, t.State = "waiting", "waiting · escalated to you"
 			t.Ask = res.Ask
-			t.Face = "Rook escalated: " + transcript.Snip(res.Ask, 120)
+			t.Face = "Vera escalated: " + transcript.Snip(res.Ask, 120)
 			t.event("vera", "escalated — "+transcript.Snip(res.Ask, 100), now)
 		case res.Done:
 			outcome += ", judge said DONE"

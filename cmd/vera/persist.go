@@ -29,7 +29,15 @@ func defaultSuggestPath() string {
 	return statePath("vera-suggests.jsonl")
 }
 
+// worldRoot re-roots every mutable path when vera runs a sandbox
+// world (--world): set once in main before any default path is
+// computed, never after. Empty means the real machine.
+var worldRoot string
+
 func statePath(name string) string {
+	if worldRoot != "" {
+		return filepath.Join(worldRoot, "state", name)
+	}
 	state := os.Getenv("XDG_STATE_HOME")
 	if state == "" {
 		home, _ := os.UserHomeDir()

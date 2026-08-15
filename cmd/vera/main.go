@@ -51,14 +51,45 @@ func main() {
 	window := flag.Duration("window", 48*time.Hour, "how far back sessions are shown")
 	model := flag.String("model", "gpt-5.6-luna", "judge model (any OpenAI-compatible server's name for it)")
 	apiBase := flag.String("api-base", "", "judge API base URL (default OpenAI; ollama etc. work)")
-	keyFile := flag.String("key-file", "", "judge API key file (default ~/.config/rook/openai_key)")
+	keyFile := flag.String("key-file", "", "judge API key file (default ~/.config/vera/openai_key)")
 	effort := flag.String("effort", "low", "judge reasoning effort (empty omits the field)")
 	claudeBin := flag.String("claude", "", "the claude binary (default: claude from PATH)")
 	turns := flag.Int("turns", 4, "prompts a drive may send before giving up")
-	statePath := flag.String("state", defaultLineagePath(), "lineage journal (empty forgets forks across restarts)")
+	defLineage, defArtifacts, defTasks := defaultLineagePath(), defaultArtifactsDir(), defaultTasksDir()
+	statePath := flag.String("state", defLineage, "lineage journal (empty forgets forks across restarts)")
 	artifactsDir := flag.String("artifacts", defaultArtifactsDir(), "artifact shelf directory (empty disables it)")
 	tasksDir := flag.String("tasks", defaultTasksDir(), "task board directory (empty disables it)")
+	world := flag.String("world", "", "sandbox world: state, scratch, and the board re-root under this directory; only sessions working under it are shown. rm -rf resets it")
 	flag.Parse()
+
+	// A world re-roots everything mutable before any of it is touched.
+	// The board, journals, key, scratch — all land under <world>; the
+	// transcripts dir stays real (workers run as the real user, their
+	// transcripts land where claude puts them; the scanner scopes the
+	// view). An explicitly flagged path still wins over the world.
+	if *world != "" {
+		abs, err := filepath.Abs(*world)
+		if err != nil || os.MkdirAll(abs, 0o755) != nil {
+			fmt.Fprintln(os.Stderr, "vera: cannot stand up the world at "+*world)
+			os.Exit(1)
+		}
+		// Workers record RESOLVED cwds in their transcripts (on macOS
+		// /tmp is a symlink to /private/tmp) — the world must match
+		// what they write or it skips its own agents.
+		if r, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = r
+		}
+		worldRoot = abs
+		if *statePath == defLineage {
+			*statePath = defaultLineagePath()
+		}
+		if *artifactsDir == defArtifacts {
+			*artifactsDir = defaultArtifactsDir()
+		}
+		if *tasksDir == defTasks {
+			*tasksDir = defaultTasksDir()
+		}
+	}
 
 	home, _ := os.UserHomeDir()
 	if *dir == "" {
@@ -78,6 +109,10 @@ func main() {
 		}
 	}
 
+	skip := skipProbes(home)
+	if worldRoot != "" {
+		skip = skipOutsideWorld(worldRoot)
+	}
 	s := &server{
 		sc: &transcript.Scanner{
 			Dir:    *dir,
@@ -85,7 +120,7 @@ func main() {
 			Idle:   10 * time.Minute,
 			Quiet:  60 * time.Second,
 			Max:    50,
-			Skip:   skipProbes(home),
+			Skip:   skip,
 		},
 		claudeBin:   *claudeBin,
 		turns:       *turns,
@@ -169,6 +204,9 @@ func main() {
 	mux.Handle("POST "+rpcPath, rpcHandler)
 
 	fmt.Printf("vera: watching %s\n", *dir)
+	if worldRoot != "" {
+		fmt.Printf("vera: world %s — the board sees only sessions working under it\n", worldRoot)
+	}
 	handler := http.Handler(mux)
 	if loopbackOnly(*addr) {
 		fmt.Printf("vera: open http://%s (loopback only — no key needed)\n", printableAddr(*addr))
@@ -205,6 +243,15 @@ func main() {
 func skipProbes(home string) func(*transcript.Session) bool {
 	return func(t *transcript.Session) bool {
 		return !t.Titled && home != "" && t.Cwd == home
+	}
+}
+
+// skipOutsideWorld scopes a sandbox world's board to its own ground:
+// only sessions working under the world dir exist here. It subsumes
+// the probe filter — probes work in the home dir, outside any world.
+func skipOutsideWorld(world string) func(*transcript.Session) bool {
+	return func(t *transcript.Session) bool {
+		return t.Cwd != world && !strings.HasPrefix(t.Cwd, world+string(filepath.Separator))
 	}
 }
 
