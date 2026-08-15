@@ -177,3 +177,14 @@ func TestBoardDoesNotAdoptACardsOwnNewborn(t *testing.T) {
 		t.Fatalf("the newborn must not become a second card: %+v", tasks)
 	}
 }
+
+func TestExecuteRefusesAnAskWithItsQuestion(t *testing.T) {
+	s := testServer(t, t.TempDir())
+	srv := planWire(t)
+	defer srv.Close()
+	s.llm = &drive.LLM{Client: srv.Client(), Base: srv.URL, Name: "test-model"}
+	_, serr := s.executePlanCore(drive.Plan{Kind: "ask", Question: "Where does the site live?", Goal: "g"}, "", "", time.Now())
+	if serr == nil || serr.code != 409 || !strings.Contains(serr.msg, "Where does the site live?") {
+		t.Fatalf("an ask is not executable; the refusal carries the question: %+v", serr)
+	}
+}

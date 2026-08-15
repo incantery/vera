@@ -92,3 +92,21 @@ func TestPlanRefusesAnUnusableAnswer(t *testing.T) {
 		t.Fatalf("a none plan stands on its why: %+v %v", p, err)
 	}
 }
+
+func TestPlanAskIsAKind(t *testing.T) {
+	p := salvagePlan("KIND: ask\nASK: Where does your personal site live — a repo, a host, a folder?\nWHY: I cannot see any site in the offered workspaces.\n")
+	if p.Kind != "ask" || !strings.HasPrefix(p.Question, "Where does your personal site live") {
+		t.Fatalf("the question survives: %+v", p)
+	}
+	// An ask without a question is unusable.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "KIND: ask\nWHY: hm"}}},
+		})
+	}))
+	defer srv.Close()
+	m := &LLM{Client: srv.Client(), Base: srv.URL, Name: "test-model"}
+	if _, err := m.Plan(context.Background(), "x", nil, "2026-08-14"); err == nil {
+		t.Fatal("an ask with no question is unusable")
+	}
+}

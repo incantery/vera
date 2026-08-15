@@ -325,7 +325,7 @@ message PlanRequest {
 }
 
 message PlanShape {
-  string kind = 1;      // repo | new | none
+  string kind = 1;      // repo | new | ask | none
   string where = 2;     // kind repo: the offered workspace path
   string home = 3;      // kind new: code | life
   string name = 4;      // kind new: the workspace directory name
@@ -333,6 +333,7 @@ message PlanShape {
   string deadline = 6;  // YYYY-MM-DD, only if the ask named one
   string goal = 7;      // the instruction the worker would be handed
   string why = 8;       // one line the owner reads to judge the plan
+  string question = 9;  // kind ask: the one missing fact
 }
 
 message PlanResponse {

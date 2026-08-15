@@ -75,6 +75,16 @@
 	}
 	const cost = (v) => (v ? `$${v.toFixed(2)}` : '—');
 
+	// A planned deadline earns a chip; the tone sharpens as the date
+	// nears and turns accent once it is behind us — the board should
+	// never let a spoken date go quietly.
+	function dueTone(iso) {
+		const days = (new Date(iso + 'T23:59:59') - Date.now()) / 86400000;
+		if (days < 0) return 'var(--color-accent-300)';
+		if (days <= 3) return 'var(--color-accent-400)';
+		return 'var(--color-neutral-500)';
+	}
+
 	async function post(path, body) {
 		busy = true;
 		err = '';
@@ -140,7 +150,20 @@
 			? `continue in ${p.where}`
 			: p.kind === 'new'
 				? `new ${p.home} workspace · ${p.name}`
-				: 'no workspace fits';
+				: p.kind === 'ask'
+					? 'vera needs one answer'
+					: 'no workspace fits';
+
+	// KIND ask: vera is missing one fact. The answer rides back on the
+	// ask itself and the plan is asked again — both rounds journaled.
+	let planAnswer = $state('');
+	async function answerPlan() {
+		const a = planAnswer.trim();
+		if (!a) return;
+		capture = capture.trim() + ' — ' + a;
+		planAnswer = '';
+		await submitPlan();
+	}
 
 	const act = (tid, action, extra) => post(`/api/tasks/${tid}/act`, { action, ...extra });
 	const start = (tid, extra) => post(`/api/tasks/${tid}/start`, extra);
@@ -291,9 +314,26 @@
 							? ' · standing'
 							: ''}{plan.plan.deadline ? ` · due ${plan.plan.deadline}` : ''}
 					</div>
-					{#if plan.plan.kind !== 'none'}
+					{#if plan.plan.kind !== 'none' && plan.plan.kind !== 'ask'}
 						<div style="color: var(--color-neutral-100); line-height: 1.5; margin-bottom: 6px;">
 							{plan.plan.goal}
+						</div>
+					{/if}
+					{#if plan.plan.kind === 'ask'}
+						<div style="color: var(--color-neutral-100); line-height: 1.5; margin-bottom: 8px;">
+							{plan.plan.question}
+						</div>
+						<div style="display: flex; gap: 8px; margin-bottom: 10px;">
+							<input
+								class="input"
+								bind:value={planAnswer}
+								onkeydown={(e) => e.key === 'Enter' && answerPlan()}
+								placeholder="your answer…"
+								style="flex: 1; background: transparent;"
+							/>
+							<button class="btn btn-primary" onclick={answerPlan} disabled={busy}
+								>answer → replan</button
+							>
 						</div>
 					{/if}
 					{#if plan.plan.why}
@@ -305,7 +345,7 @@
 						</div>
 					{/if}
 					<div style="display: flex; gap: 10px; align-items: center;">
-						{#if plan.plan.kind !== 'none'}
+						{#if plan.plan.kind !== 'none' && plan.plan.kind !== 'ask'}
 							<button class="btn btn-primary" onclick={approvePlan} disabled={busy}
 								>make it so</button
 							>
@@ -386,6 +426,11 @@
 										>
 										{#if t.pinned}
 											<span style="font-size: 10.5px; color: var(--color-accent-400);">pinned</span>
+										{/if}
+										{#if t.deadline && t.col !== 'done' && t.col !== 'dropped'}
+											<span style="font-size: 10.5px; color: {dueTone(t.deadline)}; font-variant-numeric: tabular-nums;"
+												>due {t.deadline}</span
+											>
 										{/if}
 										<div style="flex: 1;"></div>
 										<span

@@ -2758,7 +2758,7 @@ func (x *PlanRequest) GetText() string {
 
 type PlanShape struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`         // repo | new | none
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`         // repo | new | ask | none
 	Where         string                 `protobuf:"bytes,2,opt,name=where,proto3" json:"where,omitempty"`       // kind repo: the offered workspace path
 	Home          string                 `protobuf:"bytes,3,opt,name=home,proto3" json:"home,omitempty"`         // kind new: code | life
 	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`         // kind new: the workspace directory name
@@ -2766,6 +2766,7 @@ type PlanShape struct {
 	Deadline      string                 `protobuf:"bytes,6,opt,name=deadline,proto3" json:"deadline,omitempty"` // YYYY-MM-DD, only if the ask named one
 	Goal          string                 `protobuf:"bytes,7,opt,name=goal,proto3" json:"goal,omitempty"`         // the instruction the worker would be handed
 	Why           string                 `protobuf:"bytes,8,opt,name=why,proto3" json:"why,omitempty"`           // one line the owner reads to judge the plan
+	Question      string                 `protobuf:"bytes,9,opt,name=question,proto3" json:"question,omitempty"` // kind ask: the one missing fact
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2852,6 +2853,13 @@ func (x *PlanShape) GetGoal() string {
 func (x *PlanShape) GetWhy() string {
 	if x != nil {
 		return x.Why
+	}
+	return ""
+}
+
+func (x *PlanShape) GetQuestion() string {
+	if x != nil {
+		return x.Question
 	}
 	return ""
 }
@@ -3247,7 +3255,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x03now\x18\x02 \x01(\tR\x03now\x12\x18\n" +
 	"\areplies\x18\x03 \x03(\tR\areplies\"!\n" +
 	"\vPlanRequest\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\xb9\x01\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xd5\x01\n" +
 	"\tPlanShape\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05where\x18\x02 \x01(\tR\x05where\x12\x12\n" +
@@ -3256,7 +3264,8 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\acadence\x18\x05 \x01(\tR\acadence\x12\x1a\n" +
 	"\bdeadline\x18\x06 \x01(\tR\bdeadline\x12\x12\n" +
 	"\x04goal\x18\a \x01(\tR\x04goal\x12\x10\n" +
-	"\x03why\x18\b \x01(\tR\x03why\"F\n" +
+	"\x03why\x18\b \x01(\tR\x03why\x12\x1a\n" +
+	"\bquestion\x18\t \x01(\tR\bquestion\"F\n" +
 	"\fPlanResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
 	"\x04plan\x18\x02 \x01(\v2\x12.vera.v1.PlanShapeR\x04plan\"`\n" +

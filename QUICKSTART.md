@@ -51,8 +51,16 @@ nothing real is at stake. (Real repositories appear in the picker once
 vera has seen a Claude session in them; scratch workspaces are the
 ones vera creates itself, under `~/vera-scratch/`.)
 
-1. **Capture** — type what needs doing in the top bar. It lands in the
-   inbox, unassigned, free.
+0. **Or just tell vera what you need** — the top bar's Enter asks vera
+   for a plan first: where the work should live (an existing
+   workspace, a fresh one — code under `go/src/`, everything else
+   under the `vera/` home, git from birth — or honestly nowhere), its
+   cadence, and the goal it would hand a worker. *Make it so* executes
+   the whole chain: workspace made, card opened, worker born. *Just
+   capture* skips the plan. Life work is welcome — "handle food for
+   the birthday party in two weeks" plans as readily as a CLI.
+1. **Capture** — the plain path: type what needs doing and hit the
+   capture button. It lands in the inbox, unassigned, free.
 2. **Start** — open the card. In the *vera proposes* box, pick
    **+ new scratch workspace…** (or a real repo the fleet has shown)
    and a tool policy: **read-only** (analysis; anything mutating stays

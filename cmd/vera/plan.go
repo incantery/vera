@@ -27,7 +27,7 @@ import (
 
 // planGen salts the plan journal so a prompt change reads as a new
 // generation in later analysis. Bump on any planSysPrompt change.
-const planGen = "p2|"
+const planGen = "p4|"
 
 func defaultPlanPath() string {
 	return statePath("vera-plans.jsonl")
@@ -114,6 +114,12 @@ func (s *server) executePlanCore(p drive.Plan, planID, mode string, now time.Tim
 
 	var dir string
 	switch p.Kind {
+	case "ask":
+		q := p.Question
+		if q == "" {
+			q = "vera needs an answer before it can plan this"
+		}
+		return task{}, &sayErr{409, "vera needs an answer first: " + q}
 	case "none":
 		why := p.Why
 		if why == "" {

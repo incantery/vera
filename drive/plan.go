@@ -14,8 +14,9 @@ import (
 
 const planSysPrompt = `You are vera, an owner's agent-runner. The owner says what they need in plain words; you decide the operational plan: where the work should live and what goal to hand a worker agent. A worker is an AI coding agent operating on ONE directory — but a workspace is not only for code: plans, research, lists, and documents are files too.
 Answer in exactly these labeled lines, nothing else — no headings, no blank lines, no commentary:
-"KIND: " + one of: repo (the work clearly continues one of the offered workspaces) | new (it deserves a fresh workspace) | none (no directory of files could hold this work).
+"KIND: " + one of: repo (the work clearly continues one of the offered workspaces) | new (it deserves a fresh workspace) | ask (the plan cannot be shaped without one missing fact) | none (no directory of files could hold this work).
 If KIND is repo: "WHERE: " + the offered workspace path, copied verbatim from the list. Never name a path not offered.
+If KIND is ask: "ASK: " + ONE question whose answer would let you plan — use it when the ask points at something real that is not offered (a site, an app, a repo you cannot see) or hinges on a fact you cannot default. Never ask when a defensible default exists, and never ask about anything the owner already stated — a named place, date, or preference in the ask is a fact, not a question. Never invent a workspace to stand in for ground you cannot see.
 If KIND is new: "HOME: " + code or life, then "NAME: " + a short kebab-case directory name for it. Building any tool, script, or automation — or anything that reads machine data — is code, even when the subject is personal; life is for plans, research, and documents a person reads.
 "CADENCE: " + once (a task that ends) or standing (an ongoing need the owner will keep returning to — routines, habits, and practices like meal prep, tracking, or learning are standing even when phrased as one ask).
 If the ask names a date or deadline: "DEADLINE: " + that date as YYYY-MM-DD, computed from today's date.
@@ -26,7 +27,7 @@ Prefer new over repo unless the ask plainly continues that workspace's own work.
 // Plan is vera's answer to one ask: the shape of the work before any
 // of it exists.
 type Plan struct {
-	Kind     string `json:"kind"`               // repo | new | none
+	Kind     string `json:"kind"`               // repo | new | ask | none
 	Where    string `json:"where,omitempty"`    // kind repo: the offered path
 	Home     string `json:"home,omitempty"`     // kind new: code | life
 	Name     string `json:"name,omitempty"`     // kind new: workspace dir name
@@ -34,6 +35,7 @@ type Plan struct {
 	Deadline string `json:"deadline,omitempty"` // YYYY-MM-DD, only if spoken
 	Goal     string `json:"goal,omitempty"`
 	Why      string `json:"why,omitempty"`
+	Question string `json:"question,omitempty"` // kind ask: the one missing fact
 }
 
 // Plan reads one ask against the offered workspaces and returns the
@@ -57,7 +59,10 @@ func (m *LLM) Plan(ctx context.Context, ask string, repos []string, today string
 		return Plan{}, err
 	}
 	p := salvagePlan(content)
-	if p.Kind == "" || (p.Kind != "none" && p.Goal == "") {
+	switch {
+	case p.Kind == "",
+		p.Kind == "ask" && p.Question == "",
+		p.Kind != "none" && p.Kind != "ask" && p.Goal == "":
 		return Plan{}, errors.New("the model sent nothing usable")
 	}
 	return p, nil
@@ -80,9 +85,11 @@ func salvagePlan(content string) Plan {
 		switch strings.ToUpper(strings.TrimSpace(label)) {
 		case "KIND":
 			switch v := strings.ToLower(rest); v {
-			case "repo", "new", "none":
+			case "repo", "new", "ask", "none":
 				p.Kind = v
 			}
+		case "ASK":
+			p.Question = rest
 		case "WHERE":
 			p.Where = rest
 		case "HOME":
