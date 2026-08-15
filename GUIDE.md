@@ -1,7 +1,7 @@
 # Testing rook's agent-guiding-Claude-Code flow — a complete guide
 
 This guide assumes nothing. Starting from an empty machine state, you
-will: run roost, create a throwaway workspace from the web app, give
+will: run vera, create a throwaway workspace from the web app, give
 the rook agent a three-phase job, watch it start and supervise a fresh
 Claude Code agent that writes and tests real Go code, review the
 approvals it grants on your behalf, personally deny a file deletion,
@@ -9,8 +9,8 @@ verify the results, accept the task, and clean everything up. Budget:
 about ten minutes and well under a dollar.
 
 > **⚠️ Read this first: scratch workspace ≠ sandbox.**
-> The folder roost creates for this test lives at
-> `~/roost-scratch/<name>` and contains nothing you care about — that
+> The folder vera creates for this test lives at
+> `~/vera-scratch/<name>` and contains nothing you care about — that
 > is the *only* isolation. The Claude agent works there with real
 > tools under your user account. The "can edit & test" policy limits
 > which **tools** it may call, not which **files** those tools could
@@ -25,7 +25,7 @@ about ten minutes and well under a dollar.
 ### 1.1 Prerequisites
 
 - **Claude Code**, installed and logged in. Check: run `claude --version`
-  in a terminal. Roost drives Claude headlessly; those turns bill to
+  in a terminal. Vera drives Claude headlessly; those turns bill to
   whatever your `claude` bills to (subscription or API).
 - **Go 1.25 or newer**. Check: `go version`.
 - **A judge key.** The rook agent (the supervisor that approves,
@@ -35,21 +35,21 @@ about ten minutes and well under a dollar.
   - write the key into `~/.config/rook/openai_key`, or
   - run a local server (e.g. ollama) and add
     `--api-base http://localhost:11434/v1 --model <model>` when
-    starting roost — no key needed.
+    starting vera — no key needed.
 
-### 1.2 Start roost
+### 1.2 Start vera
 
 ```
-go run github.com/incantery/rook-host/engine/cmd/roost@latest
+go run github.com/incantery/rook-host/engine/cmd/vera@latest
 ```
 
-Expect two startup lines: `roost: watching /Users/you/.claude/projects`
-and `roost: open http://localhost:4770 (loopback only — no key needed)`.
+Expect two startup lines: `vera: watching /Users/you/.claude/projects`
+and `vera: open http://localhost:4770 (loopback only — no key needed)`.
 
 Open **http://localhost:4770** in your browser.
 
 *Accessing from another machine instead?* Start with
-`--addr :4770`; roost prints URLs like
+`--addr :4770`; vera prints URLs like
 `http://your-machine.local:4770/?key=…` — open one, or open the bare
 address and type the key into the login screen's **key** field, then
 press Enter.
@@ -61,7 +61,7 @@ You land on **rook board** — the home screen. Three regions:
 - **Left rail — agents, ranked by relevance:**
   - **on task · N** — agents currently assigned to open board tasks,
     each wearing its task id as a chip (e.g. `T-112`). These are the
-    actors of your workflow. A `⌂` after the name marks a roost-made
+    actors of your workflow. A `⌂` after the name marks a vera-made
     scratch workspace.
   - **active sessions · N** — live Claude sessions (working or waiting
     on you) not tied to any task — e.g. a terminal session you have
@@ -93,7 +93,7 @@ Click the input at the top of the board — placeholder
 ```
 In this scratch workspace, work in three phases, STOPPING after each
 phase to ask permission before the next. Phase 1: create go.mod
-(module roostdemo) and greet.go with a Greet(name string) string
+(module verademo) and greet.go with a Greet(name string) string
 function. Phase 2: create greet_test.go with a real test and run go
 test. Phase 3: request authorization to ALSO delete DO-NOT-DELETE.txt
 — do not delete anything without explicit authorization.
@@ -115,7 +115,7 @@ In the **rook proposes** box:
 3. In the browser prompt, type a name — use `demo` — and press OK.
 
 **Expect:** the dropdown now reads **fresh agent in demo (scratch)**.
-Roost has created `~/roost-scratch/demo` containing one file,
+Vera has created `~/vera-scratch/demo` containing one file,
 `DO-NOT-DELETE.txt` — the protected file phase 3 will target. (It also
 now appears in the rail's picker for future tasks, marked `⌂`.)
 
@@ -128,7 +128,7 @@ What you just granted, exactly: file edits (`Edit`, `Write`,
 `MultiEdit`) plus `go build/test/vet`, `gofmt`, `npm test`,
 `npm run build`, and `make` — through Claude's own permission system.
 Not granted: git commands, network access, package installs, `rm`.
-These sets are constants in roost's code; neither the worker nor the
+These sets are constants in vera's code; neither the worker nor the
 judge can widen them.
 
 ### 2.4 Start
@@ -212,7 +212,7 @@ The card returns to **WAITING** with state *"waiting for acceptance"*.
 
 1. Open **Conversation** and read the worker's final reply. It should
    state, in its own words: `DO-NOT-DELETE.txt` still exists, `go
-   test` passed (`ok roostdemo`), and nothing was deleted per your
+   test` passed (`ok verademo`), and nothing was deleted per your
    instruction.
 2. Scan the **Log** top to bottom: capture → assignment → each
    `turn N — answered the worker…` approval → your reply → `judged
@@ -221,8 +221,8 @@ The card returns to **WAITING** with state *"waiting for acceptance"*.
    **rolled up** total (typically $0.40–0.80).
 
 *Optional, outside the app, for proof beyond the worker's word:*
-`ls ~/roost-scratch/demo && cd ~/roost-scratch/demo && go test ./...`
-— expect the four files and `ok roostdemo`.
+`ls ~/vera-scratch/demo && cd ~/vera-scratch/demo && go test ./...`
+— expect the four files and `ok verademo`.
 
 Then, in the **rook proposes** box — *"Move to done… Irreversible —
 yours to confirm."* — click **Accept as done**.
@@ -237,7 +237,7 @@ human."*
 With the done card selected, the rail header now shows
 **delete scratch workspace**. Click it and confirm the browser dialog.
 
-**Expect:** `~/roost-scratch/demo` is removed entirely. Roost will
+**Expect:** `~/vera-scratch/demo` is removed entirely. Vera will
 only delete folders it created (they carry its marker file) — it
 cannot be pointed at anything else. The rail's **on task** row for the
 demo agent disappears as its session ages out; the card stays on the
@@ -260,7 +260,7 @@ simply be left as history.
   rode the same drive, not a new conversation.
 - **Costs on the meter:** every claude turn and every judge call,
   per-card and rolled up, surviving restarts.
-- **Cleanup:** one click, fenced to what roost itself created.
+- **Cleanup:** one click, fenced to what vera itself created.
 
 And the one thing this did **not** demonstrate, restated on purpose:
 filesystem isolation. There is none yet. Run work-mode tasks in

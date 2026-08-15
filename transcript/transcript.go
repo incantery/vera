@@ -138,7 +138,7 @@ type Scanner struct {
 	Quiet  time.Duration // a pending tool call quiet longer than this = blocked?
 	Max    int
 	// Skip drops a session from every scan — applied before the Max
-	// cap, so what's skipped can never crowd out what's real. roost
+	// cap, so what's skipped can never crowd out what's real. vera
 	// uses it to hide the usage collector's probes (untitled sessions
 	// living in the home directory).
 	Skip func(*Session) bool

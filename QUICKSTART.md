@@ -1,4 +1,4 @@
-# roost — quick start
+# vera — quick start
 
 Ten minutes from zero to a board that captures work, staffs it with a
 fresh Claude agent, answers the agent's routine questions itself, and
@@ -6,25 +6,25 @@ escalates the rest to you.
 
 ## What you need
 
-- The `claude` CLI, logged in (roost drives it headlessly; its turns
+- The `claude` CLI, logged in (vera drives it headlessly; its turns
   bill to whatever claude itself bills to).
-- Go 1.25+ to run roost.
+- Go 1.25+ to run vera.
 - An OpenAI-compatible API key for the rook agent (the judge that
   supervises drives, writes digests, phrases your messages):
   `$OPENAI_API_KEY`, or a key file at `~/.config/rook/openai_key`, or
   `--api-base` pointed at any compatible local server (ollama works,
-  no key needed). Without one, roost still watches; drives are off.
+  no key needed). Without one, vera still watches; drives are off.
 
 ## Run it
 
 ```
-go run github.com/incantery/rook-host/engine/cmd/roost@latest
+go run github.com/incantery/rook-host/engine/cmd/vera@latest
 ```
 
 Open http://localhost:4770. Loopback needs no key.
 
-To reach it from another machine: `roost --addr :4770`. Beyond
-loopback a key guards the API — roost prints ready-to-share URLs at
+To reach it from another machine: `vera --addr :4770`. Beyond
+loopback a key guards the API — vera prints ready-to-share URLs at
 startup (`http://<your-machine>.local:4770/?key=…`, immune to DHCP
 drift), or open the bare URL and type the key at the login screen.
 
@@ -48,8 +48,8 @@ history, digests, what-rook-sent provenance, /compact, costs).
 
 Everything happens on the board — including making a place where
 nothing real is at stake. (Real repositories appear in the picker once
-roost has seen a Claude session in them; scratch workspaces are the
-ones roost creates itself, under `~/roost-scratch/`.)
+vera has seen a Claude session in them; scratch workspaces are the
+ones vera creates itself, under `~/vera-scratch/`.)
 
 1. **Capture** — type what needs doing in the top bar. It lands in the
    inbox, unassigned, free.
@@ -81,7 +81,7 @@ rook agent's calls); the header sums the day; the rail shows your
 subscription's rate-limit windows. Meters journal to disk — restarts
 don't zero them.
 
-## What roost is NOT (yet)
+## What vera is NOT (yet)
 
 **A sandbox.** A drive runs in a real directory with real tools under
 your user account. "Can edit & test" scopes which *tools* claude may
@@ -95,7 +95,7 @@ directory you don't mind changing."
 
 **GUIDE.md** (beside this file) walks the whole flow through the web
 app, click by click:
-a roost-made scratch workspace, a fresh agent in work mode building
+a vera-made scratch workspace, a fresh agent in work mode building
 and testing real Go code, the rook agent approving the routine asks,
 you personally denying a file deletion from the card, verification in
 the Conversation panel, acceptance, and one-click workspace cleanup.

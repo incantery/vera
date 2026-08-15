@@ -85,7 +85,7 @@ func (h *Headless) exec(ctx context.Context, args []string) (Turn, error) {
 		// the flag is variadic, and a bare form would swallow the
 		// prompt.
 		prompt := args[len(args)-1]
-		args = args[:len(args)-1:len(args)-1]
+		args = args[: len(args)-1 : len(args)-1]
 		if len(h.AllowedTools) > 0 {
 			args = append(args, "--allowedTools="+strings.Join(h.AllowedTools, ","))
 		}

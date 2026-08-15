@@ -72,7 +72,7 @@ Bullets are numbered from 1. Answer with STRICT JSON only, no fences, no prose:
 {"violations":[{"kind":"...","bullet":N,"quote":"the offending words","why":"one short sentence"}]}
 Use bullet 0 for the headline. Empty list if the digest is clean.`
 
-// evalLLM builds the same wire roost runs in production: same model,
+// evalLLM builds the same wire vera runs in production: same model,
 // same effort, key from the same two places.
 func evalLLM(t *testing.T) *LLM {
 	t.Helper()
@@ -192,7 +192,7 @@ func TestJudgeCalibration(t *testing.T) {
 		}
 	})
 
-	// Verbatim from roost-digests.jsonl — what the app actually showed.
+	// Verbatim from a real digests journal (pre-rename roost-digests.jsonl) — what the app actually showed.
 	t.Run("the live bad digest is flagged", func(t *testing.T) {
 		vs := judge(t, c,
 			"Revert complete; `engine/GUIDE.md` remains canonical, and the product has no guide integration.",

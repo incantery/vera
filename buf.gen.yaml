@@ -8,6 +8,6 @@ plugins:
   - local: protoc-gen-connect-go
     out: gen
     opt: paths=source_relative
-  - local: cmd/roost/web/node_modules/.bin/protoc-gen-es
-    out: cmd/roost/web/src/lib/gen
+  - local: cmd/vera/web/node_modules/.bin/protoc-gen-es
+    out: cmd/vera/web/src/lib/gen
     opt: target=ts

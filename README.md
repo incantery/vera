@@ -1,4 +1,4 @@
-# roost
+# vera
 
 The smallest useful piece of rook: one binary, no install, no account.
 It watches every Claude Code session on your machine and gives you the
@@ -8,7 +8,7 @@ going — prompt, judge the reply, prompt again — until the goal is met
 or the turn budget runs out.
 
 ```
-go run github.com/incantery/rook-host/engine/cmd/roost@latest
+go run github.com/incantery/rook-host/engine/cmd/vera@latest
 ```
 
 Open http://localhost:4770. That's it. (First ride: QUICKSTART.md.)
@@ -58,19 +58,19 @@ server — ollama and friends need no key.
 ## Hacking on the UI
 
 The page is a SvelteKit SPA (Svelte 5 + Tailwind 4) under
-`cmd/roost/web`, built to `web/build` and embedded into the binary
+`cmd/vera/web`, built to `web/build` and embedded into the binary
 — the build output is committed so `go run` needs no node. The loop:
 
 ```
-cd engine/cmd/roost/web
+cd engine/cmd/vera/web
 npm install
-npm run dev      # live-reloads against a running roost (proxies /api to :4770)
+npm run dev      # live-reloads against a running vera (proxies /api to :4770)
 npm run build    # then rebuild the Go binary to re-embed
 ```
 
 ## The rest of rook
 
-roost is the on-ramp, not the destination. The same membrane runs
+vera is the on-ramp, not the destination. The same membrane runs
 richer inside the [rook terminal](https://rookide.com) — live pane
 telemetry sharpens the states, drives type into real sessions under
 human-wins gates, digests summarize finished turns — and
