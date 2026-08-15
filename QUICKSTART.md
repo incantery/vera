@@ -9,9 +9,9 @@ escalates the rest to you.
 - The `claude` CLI, logged in (vera drives it headlessly; its turns
   bill to whatever claude itself bills to).
 - Go 1.25+ to run vera.
-- An OpenAI-compatible API key for the rook agent (the judge that
+- An OpenAI-compatible API key for the vera agent (the judge that
   supervises drives, writes digests, phrases your messages):
-  `$OPENAI_API_KEY`, or a key file at `~/.config/rook/openai_key`, or
+  `$OPENAI_API_KEY`, or a key file at `~/.config/vera/openai_key`, or
   `--api-base` pointed at any compatible local server (ollama works,
   no key needed). Without one, vera still watches; drives are off.
 
@@ -42,7 +42,7 @@ One global kanban across every Claude Code session on the machine:
 Your live sessions appear automatically: a working, titled session is
 adopted as an in-progress card bearing its own title. The rail on the
 left lists every agent; click through for the chat surface (full
-history, digests, what-rook-sent provenance, /compact, costs).
+history, digests, what-vera-sent provenance, /compact, costs).
 
 ## Your first task
 
@@ -53,14 +53,14 @@ ones vera creates itself, under `~/vera-scratch/`.)
 
 1. **Capture** — type what needs doing in the top bar. It lands in the
    inbox, unassigned, free.
-2. **Start** — open the card. In the *rook proposes* box, pick
+2. **Start** — open the card. In the *vera proposes* box, pick
    **+ new scratch workspace…** (or a real repo the fleet has shown)
    and a tool policy: **read-only** (analysis; anything mutating stays
    refused) or **can edit & test** (file edits plus scoped
    build/test commands — `go build/test/vet`, `npm test`, `make` —
    through claude's own permission system; no git mutation, no
    network). Hit *Start drive*.
-3. **Watch** — the rook agent compiles your intent into a drive goal
+3. **Watch** — the vera agent compiles your intent into a drive goal
    (both on the record), a fresh claude is born in the workspace, and
    the judge supervises turn by turn. Routine questions — approvals
    the goal grants, option picks — it answers itself; every automatic
@@ -77,7 +77,7 @@ ones vera creates itself, under `~/vera-scratch/`.)
 ## Costs, honestly
 
 Every card rolls up what it cost (claude's own metered turns + the
-rook agent's calls); the header sums the day; the rail shows your
+vera agent's calls); the header sums the day; the rail shows your
 subscription's rate-limit windows. Meters journal to disk — restarts
 don't zero them.
 
@@ -96,7 +96,7 @@ directory you don't mind changing."
 **GUIDE.md** (beside this file) walks the whole flow through the web
 app, click by click:
 a vera-made scratch workspace, a fresh agent in work mode building
-and testing real Go code, the rook agent approving the routine asks,
+and testing real Go code, the vera agent approving the routine asks,
 you personally denying a file deletion from the card, verification in
 the Conversation panel, acceptance, and one-click workspace cleanup.
 (Prefer the terminal? `demo.sh` runs the same flow through the API.)

@@ -19,7 +19,7 @@
 	let chatEl = $state(null);
 	let nearBottom = true;
 
-	// The two ways to talk: through the membrane (rook phrases, rook
+	// The two ways to talk: through the membrane (vera phrases, vera
 	// digests) or direct (your words, claude's words, nothing between).
 	// Both are identities, not toggles-per-message — sticky per agent.
 	let mode = $state('membrane');
@@ -269,7 +269,7 @@
 			<span class="grow"></span>
 			<div
 				class="flex overflow-hidden rounded-md border border-zinc-700 text-[11px]"
-				title="membrane: rook phrases and digests · direct: you and claude, nothing between"
+				title="membrane: vera phrases and digests · direct: you and claude, nothing between"
 			>
 				<button
 					onclick={() => setMode('membrane')}
@@ -287,7 +287,7 @@
 			<a
 				href="/"
 				class="text-xs text-zinc-500 hover:text-zinc-300"
-				title="the board: tell rook what needs doing, it keeps the columns"
+				title="the board: tell vera what needs doing, it keeps the columns"
 			>
 				⌗ board
 			</a>
@@ -301,7 +301,7 @@
 			{#if spendTotal}
 				<span
 					class="text-xs text-zinc-500"
-					title="this agent's bill: claude turns ${(data.spend.claudeUsd ?? 0).toFixed(4)} (at API rates — a subscription already covers them) + rook's own calls ${(data.spend.judgeUsd ?? 0).toFixed(4)}"
+					title="this agent's bill: claude turns ${(data.spend.claudeUsd ?? 0).toFixed(4)} (at API rates — a subscription already covers them) + vera's own calls ${(data.spend.judgeUsd ?? 0).toFixed(4)}"
 				>
 					${spendTotal.toFixed(spendTotal < 0.1 ? 3 : 2)}
 				</span>
@@ -343,9 +343,9 @@
 				<span class="text-zinc-600">context unknown — no usage in the tail yet</span>
 			{/if}
 			<span class="grow"></span>
-			<span title="claude turns are metered at API rates — a subscription already covers them; rook's own calls are real spend on the LLM endpoint">
+			<span title="claude turns are metered at API rates — a subscription already covers them; vera's own calls are real spend on the LLM endpoint">
 				claude <b class="font-medium text-zinc-300">${(data.spend?.claudeUsd ?? 0).toFixed(2)}</b><span class="text-zinc-600">&nbsp;api-rate</span>
-				· rook <b class="font-medium text-zinc-300">${(data.spend?.judgeUsd ?? 0).toFixed(2)}</b>
+				· vera <b class="font-medium text-zinc-300">${(data.spend?.judgeUsd ?? 0).toFixed(2)}</b>
 			</span>
 			<button
 				onclick={sendCompact}
@@ -415,7 +415,7 @@
 						{#if m.rough && m.rough !== m.text}
 							<details class="mt-1 max-w-[85%] text-right">
 								<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
-									⇒ what rook sent
+									⇒ what vera sent
 								</summary>
 								<div
 									class="mt-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-left text-[12px] whitespace-pre-wrap text-zinc-400"
@@ -496,7 +496,7 @@
 				{#if data.pending.sent && data.pending.sent !== data.pending.text}
 					<details class="mt-1 max-w-[85%] text-right" open>
 						<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
-							⇒ what rook sent
+							⇒ what vera sent
 						</summary>
 						<div
 							class="mt-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-left text-[12px] whitespace-pre-wrap text-zinc-400"
@@ -507,7 +507,7 @@
 				{/if}
 			</div>
 			{#if data.pending.status === 'phrasing'}
-				<div class="animate-pulse text-[13px] text-zinc-500">rook is phrasing it…</div>
+				<div class="animate-pulse text-[13px] text-zinc-500">vera is phrasing it…</div>
 			{:else if data.pending.status === 'thinking'}
 				<div class="flex items-center gap-3 text-[13px] text-zinc-500">
 					<span class="animate-pulse">
@@ -632,7 +632,7 @@
 					? `a goal — the supervisor keeps pushing until it’s met (${data?.turns ?? 4} turns max)`
 					: verbatim
 						? 'your exact words go straight to claude'
-						: 'tell rook what you want — it phrases the message for claude'}
+						: 'tell vera what you want — it phrases the message for claude'}
 				class="grow resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-[13px] placeholder:text-zinc-600 focus:border-sky-400 focus:outline-none"
 			></textarea>
 			<div class="flex flex-col items-end gap-1.5">

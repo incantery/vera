@@ -4,7 +4,7 @@
 // bullets under Simplified-Technical-English discipline, because the
 // core of an eight-paragraph answer is usually three bullets, and the
 // human should read the three bullets first and the eight paragraphs
-// by choice. Same shape rook's agent plugin has always written.
+// by choice. Same shape vera's agent plugin has always written.
 //
 // Outbound — Expand: the human's rough words become the message they
 // MEAN, phrased for the worker with specifics pulled from what the

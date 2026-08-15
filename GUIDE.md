@@ -1,8 +1,8 @@
-# Testing rook's agent-guiding-Claude-Code flow — a complete guide
+# Testing vera's agent-guiding-Claude-Code flow — a complete guide
 
 This guide assumes nothing. Starting from an empty machine state, you
 will: run vera, create a throwaway workspace from the web app, give
-the rook agent a three-phase job, watch it start and supervise a fresh
+the vera agent a three-phase job, watch it start and supervise a fresh
 Claude Code agent that writes and tests real Go code, review the
 approvals it grants on your behalf, personally deny a file deletion,
 verify the results, accept the task, and clean everything up. Budget:
@@ -15,7 +15,7 @@ about ten minutes and well under a dollar.
 > tools under your user account. The "can edit & test" policy limits
 > which **tools** it may call, not which **files** those tools could
 > ultimately reach, and `go test` executes whatever code sits in the
-> workspace. The safety demonstrated below comes from the rook agent's
+> workspace. The safety demonstrated below comes from the vera agent's
 > judgment and the tool policy — not from any filesystem barrier.
 
 ---
@@ -28,11 +28,11 @@ about ten minutes and well under a dollar.
   in a terminal. Vera drives Claude headlessly; those turns bill to
   whatever your `claude` bills to (subscription or API).
 - **Go 1.25 or newer**. Check: `go version`.
-- **A judge key.** The rook agent (the supervisor that approves,
+- **A judge key.** The vera agent (the supervisor that approves,
   escalates, and phrases) speaks to any OpenAI-compatible endpoint.
   Do ONE of:
   - `export OPENAI_API_KEY=sk-…`, or
-  - write the key into `~/.config/rook/openai_key`, or
+  - write the key into `~/.config/vera/openai_key`, or
   - run a local server (e.g. ollama) and add
     `--api-base http://localhost:11434/v1 --model <model>` when
     starting vera — no key needed.
@@ -56,7 +56,7 @@ press Enter.
 
 ### 1.3 Know the screen
 
-You land on **rook board** — the home screen. Three regions:
+You land on **vera board** — the home screen. Three regions:
 
 - **Left rail — agents, ranked by relevance:**
   - **on task · N** — agents currently assigned to open board tasks,
@@ -78,7 +78,7 @@ You land on **rook board** — the home screen. Three regions:
 - **Right rail — the detail panel** for whichever card is selected.
 
 Header check: you should see `N working · M agents` and `spend $…`.
-If an amber banner says **"no rook-agent key…"**, revisit 1.1 — drives
+If an amber banner says **"no vera-agent key…"**, revisit 1.1 — drives
 are off until the judge can speak.
 
 ---
@@ -88,7 +88,7 @@ are off until the judge can speak.
 ### 2.1 Capture
 
 Click the input at the top of the board — placeholder
-**Tell rook what needs doing…** — and paste exactly:
+**Tell vera what needs doing…** — and paste exactly:
 
 ```
 In this scratch workspace, work in three phases, STOPPING after each
@@ -102,13 +102,13 @@ test. Phase 3: request authorization to ALSO delete DO-NOT-DELETE.txt
 Click **Capture** (or press Enter).
 
 **Expect:** a new card in the **INBOX** column titled with your text,
-face reading *"Captured, unassigned. Rook has spent nothing on it
-yet."* The right rail opens on it, showing the **rook proposes** box:
+face reading *"Captured, unassigned. Vera has spent nothing on it
+yet."* The right rail opens on it, showing the **vera proposes** box:
 *"Start on the current agent."*
 
 ### 2.2 Create the scratch workspace
 
-In the **rook proposes** box:
+In the **vera proposes** box:
 
 1. Click the **first dropdown** (showing *on the current agent*).
 2. Choose **+ new scratch workspace…**.
@@ -139,8 +139,8 @@ Click **Start drive**.
 - The card moves to **IN PROGRESS**, state *"in progress · a fresh
   agent is being born."*
 - The rail's **Intent** section shows your words; below it, **compiled
-  drive goal** (*written by rook*) shows the judge-ready version the
-  rook agent distilled — both stay on the record.
+  drive goal** (*written by vera*) shows the judge-ready version the
+  vera agent distilled — both stay on the record.
 - Within ~15 seconds, a new row appears in the left rail under
   **on task**: `demo ⌂ · <title>` with this task's id chip. That is
   your fresh agent, born headlessly in the scratch workspace.
@@ -154,11 +154,11 @@ Keep the card selected. Two rail sections narrate live (the page
 refreshes every ~3 seconds):
 
 - **Log** — every decision as it is made. Watch for lines like:
-  `[rook] turn 1 — answered the worker: Proceed with Phase 2: create
-  greet_test.go…` — that is the rook agent granting a routine
+  `[vera] turn 1 — answered the worker: Proceed with Phase 2: create
+  greet_test.go…` — that is the vera agent granting a routine
   approval *by itself*, because your goal already authorized the
   phase. This is the review surface for everything it does unaided.
-- **Conversation** — the full exchange: rook's messages to the worker
+- **Conversation** — the full exchange: vera's messages to the worker
   (accented, prefixed →) and the worker's replies. Long replies fold;
   click **(show all)** to expand.
 
@@ -224,7 +224,7 @@ The card returns to **WAITING** with state *"waiting for acceptance"*.
 `ls ~/vera-scratch/demo && cd ~/vera-scratch/demo && go test ./...`
 — expect the four files and `ok verademo`.
 
-Then, in the **rook proposes** box — *"Move to done… Irreversible —
+Then, in the **vera proposes** box — *"Move to done… Irreversible —
 yours to confirm."* — click **Accept as done**.
 
 **Expect:** the card moves to **DONE**, state *"done · accepted by
@@ -253,7 +253,7 @@ simply be left as history.
 - **Capture → staff:** a task went from words to a working agent in a
   workspace that did not exist five minutes earlier, without a
   terminal.
-- **Bounded autonomy:** the rook agent approved two phase-gates by
+- **Bounded autonomy:** the vera agent approved two phase-gates by
   itself — both authorized by your goal — and every approval is
   individually reviewable in the Log.
 - **The line it will not cross:** deletion required you. Your denial

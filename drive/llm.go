@@ -1,6 +1,6 @@
 // The LLM wire: one chat-completions round trip against any
 // OpenAI-compatible endpoint. The judge, the digester, and the
-// expander all speak through this one type, so "the rook agent" is
+// expander all speak through this one type, so "the vera agent" is
 // one model with one meter, playing three parts.
 package drive
 
@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-// LLM is the rook agent's mouth: endpoint, credentials, model, meter.
+// LLM is the vera agent's mouth: endpoint, credentials, model, meter.
 // Base "" means the OpenAI API; any compatible server (ollama, LM
 // Studio, a proxy) is a base URL away, and a non-default base needs no
 // key.

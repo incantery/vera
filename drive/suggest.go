@@ -1,10 +1,10 @@
 // Suggest: the co-pilot's opening bid. The worker just finished a
-// turn and the owner must answer; the rook agent reads the exchange
+// turn and the owner must answer; the vera agent reads the exchange
 // and offers the owner a digest of where things stand plus one to
 // three replies they could send, best first. The owner clicking one
 // instead of typing their own is the seed of a feedback loop — how
-// often rook's bid is good enough to send is the measure of how much
-// rook can drive.
+// often vera's bid is good enough to send is the measure of how much
+// vera can drive.
 package drive
 
 import (

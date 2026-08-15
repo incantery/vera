@@ -172,7 +172,7 @@
 		<div style="display: flex; align-items: baseline; gap: 10px;">
 			<span
 				style="font-family: var(--font-heading); font-weight: 500; font-size: 15px; letter-spacing: 0.02em;"
-				>rook</span
+				>vera</span
 			>
 			<span style="font-size: 12px; color: var(--color-neutral-500);">board</span>
 		</div>
@@ -196,7 +196,7 @@
 			style="display: flex; align-items: center; gap: 18px; font-size: 12px; color: var(--color-neutral-500);"
 		>
 			<span
-				title="everything vera has spent this process: claude turns at API rates (a subscription already covers those) + rook's own calls"
+				title="everything vera has spent this process: claude turns at API rates (a subscription already covers those) + vera's own calls"
 				>spend
 				<span style="color: var(--color-neutral-200); font-variant-numeric: tabular-nums;"
 					>{cost(board?.spend)}</span
@@ -231,7 +231,7 @@
 					class="input"
 					bind:value={capture}
 					onkeydown={(e) => e.key === 'Enter' && submitCapture()}
-					placeholder="Tell rook what needs doing…"
+					placeholder="Tell vera what needs doing…"
 					style="flex: 1; background: transparent;"
 				/>
 				<button class="btn btn-primary" onclick={submitCapture} disabled={busy}>Capture</button>
@@ -453,7 +453,7 @@
 							<div
 								style="font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-accent-400);"
 							>
-								rook proposes
+								vera proposes
 							</div>
 							<div
 								style="font-size: 13px; line-height: 1.5; color: var(--color-accent-100); text-wrap: pretty;"
@@ -581,7 +581,7 @@
 					</div>
 
 					{#if sel.exchanges?.length}
-						<!-- the drive's own conversation: what rook sent, what
+						<!-- the drive's own conversation: what vera sent, what
 						     the worker said — the review surface for every
 						     judge approval and the worker's verification -->
 						<div style="display: flex; flex-direction: column; gap: 10px;">

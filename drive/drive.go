@@ -9,7 +9,7 @@
 // so a drive never types into anyone's live terminal — the original
 // session keeps its transcript, the drive's rounds land in forks, and
 // the final fork's id is on the record for a human to `claude
-// --resume` when they want the wheel back. (rook's own plugins run the
+// --resume` when they want the wheel back. (vera's own plugins run the
 // other mechanism — typed keystrokes into a live pane — behind the
 // same judge vocabulary.)
 package drive

@@ -247,7 +247,7 @@ message TaskRun {
 
 message TaskEvent {
   int64 at_unix_ms = 1;
-  string actor = 2;  // human | rook | worker
+  string actor = 2;  // human | vera | worker (pre-rename events say "rook")
   string text = 3;
 }
 
@@ -302,7 +302,7 @@ message DiscardRequest {
 
 message DiscardResponse {}
 
-// Suggest is the rook agent's bid on the human's next move: it reads
+// Suggest is the vera agent's bid on the human's next move: it reads
 // the last finished exchange and answers with a digest of where
 // things stand plus one to three ranked replies the human could send.
 // Cached per turn server-side — asking twice bills once.

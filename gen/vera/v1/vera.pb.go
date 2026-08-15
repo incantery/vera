@@ -2040,7 +2040,7 @@ func (x *TaskRun) GetCostUsd() float64 {
 type TaskEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AtUnixMs      int64                  `protobuf:"varint,1,opt,name=at_unix_ms,json=atUnixMs,proto3" json:"at_unix_ms,omitempty"`
-	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"` // human | rook | worker
+	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"` // human | vera | worker (pre-rename events say "rook")
 	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2600,7 +2600,7 @@ func (*DiscardResponse) Descriptor() ([]byte, []int) {
 	return file_vera_v1_vera_proto_rawDescGZIP(), []int{33}
 }
 
-// Suggest is the rook agent's bid on the human's next move: it reads
+// Suggest is the vera agent's bid on the human's next move: it reads
 // the last finished exchange and answers with a digest of where
 // things stand plus one to three ranked replies the human could send.
 // Cached per turn server-side — asking twice bills once.

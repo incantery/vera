@@ -1122,7 +1122,7 @@ export type TaskEvent = Message<"vera.v1.TaskEvent"> & {
   atUnixMs: bigint;
 
   /**
-   * human | rook | worker
+   * human | vera | worker (pre-rename events say "rook")
    *
    * @generated from field: string actor = 2;
    */
@@ -1389,7 +1389,7 @@ export const DiscardResponseSchema: GenMessage<DiscardResponse> = /*@__PURE__*/
   messageDesc(file_vera_v1_vera, 33);
 
 /**
- * Suggest is the rook agent's bid on the human's next move: it reads
+ * Suggest is the vera agent's bid on the human's next move: it reads
  * the last finished exchange and answers with a digest of where
  * things stand plus one to three ranked replies the human could send.
  * Cached per turn server-side — asking twice bills once.

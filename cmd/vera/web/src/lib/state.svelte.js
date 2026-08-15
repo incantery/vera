@@ -403,7 +403,7 @@ export async function discardChange(id, path, all = false) {
 }
 
 // ---- suggestions ----
-// The rook agent's bid on your next move: a digest of the turn that
+// The vera agent's bid on your next move: a digest of the turn that
 // just landed plus ranked replies you could send. Cached per turn
 // server-side — refetching the same turn bills nothing.
 
@@ -412,6 +412,6 @@ export async function agentSuggest(id) {
 		const r = await veraClient.suggest({ id });
 		return { happened: r.happened, now: r.now, replies: r.replies ?? [] };
 	} catch (err) {
-		throw new Error(err?.rawMessage || 'rook did not answer');
+		throw new Error(err?.rawMessage || 'vera did not answer');
 	}
 }

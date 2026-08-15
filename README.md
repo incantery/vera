@@ -1,6 +1,6 @@
 # vera
 
-The smallest useful piece of rook: one binary, no install, no account.
+The smallest useful piece of vera: one binary, no install, no account.
 It watches every Claude Code session on your machine and gives you the
 **membrane** — live session states on a local web page, and a *drive*:
 hand a session a goal, and a supervisor agent keeps the conversation
@@ -15,7 +15,7 @@ Open http://localhost:4770. That's it. (First ride: QUICKSTART.md.)
 
 ## What you get
 
-- **The board is the home screen.** Tell rook what needs doing; it
+- **The board is the home screen.** Tell vera what needs doing; it
   keeps a kanban of tasks per agent — captured, driven, judged, and
   proposed back to you, every transition an audited event. The agents
   rail on the left switches boards; `chat →` opens the conversation.
@@ -41,7 +41,7 @@ Open http://localhost:4770. That's it. (First ride: QUICKSTART.md.)
 
 Drives need an OpenAI-compatible endpoint for the judge (the watcher
 works without one). In order: `$OPENAI_API_KEY`, then
-`~/.config/rook/openai_key`, or point `--api-base` at any compatible
+`~/.config/vera/openai_key`, or point `--api-base` at any compatible
 server — ollama and friends need no key.
 
 ## Flags
@@ -68,12 +68,12 @@ npm run dev      # live-reloads against a running vera (proxies /api to :4770)
 npm run build    # then rebuild the Go binary to re-embed
 ```
 
-## The rest of rook
+## The rest of vera
 
 vera is the on-ramp, not the destination. The same membrane runs
-richer inside the [rook terminal](https://rookide.com) — live pane
+richer inside the [vera terminal](https://rookide.com) — live pane
 telemetry sharpens the states, drives type into real sessions under
 human-wins gates, digests summarize finished turns — and
-[rook-cloud](https://cloud.rookide.com) puts it on your phone. Every
+[vera-cloud](https://cloud.rookide.com) puts it on your phone. Every
 piece speaks the schemas in this repository; use as much or as little
 as you like.

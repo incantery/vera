@@ -1,5 +1,5 @@
 // The LLM judge: goal plus the whole conversation in, DONE-or-CONTINUE
-// out — the same verdict shape rook's agent plugin judges by, so a
+// out — the same verdict shape vera's agent plugin judges by, so a
 // drive means one thing everywhere it runs.
 package drive
 

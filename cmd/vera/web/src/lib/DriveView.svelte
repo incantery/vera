@@ -122,8 +122,8 @@
 			s: l
 		}));
 	}
-	// ── rook suggests ──────────────────────────────────────────────
-	// The co-pilot's panel: when a turn lands and it's your move, rook
+	// ── vera suggests ──────────────────────────────────────────────
+	// The co-pilot's panel: when a turn lands and it's your move, vera
 	// reads the exchange and bids — what just happened, where we are,
 	// and ranked replies. Clicking one sends it on the ordinary say
 	// rail; typing your own instead is the honest counter-signal.
@@ -275,7 +275,7 @@
 				out.push({ kind: 'human', id: 'pend', turn, text: parts.text, names: (p.images ?? []).map((x) => x.split('/').pop()), dim: true });
 				out.push({
 					kind: 'live', id: 'pendlive', turn, live: true,
-					verb: data?.agent?.state === 'working' && data?.agent?.tool ? data.agent.tool.toLowerCase() : p.status === 'phrasing' ? 'rook' : 'claude',
+					verb: data?.agent?.state === 'working' && data?.agent?.tool ? data.agent.tool.toLowerCase() : p.status === 'phrasing' ? 'vera' : 'claude',
 					target: data?.agent?.state === 'working' && data?.agent?.toolDetail ? data.agent.toolDetail : p.status === 'phrasing' ? 'phrasing your message' : 'working'
 				});
 			}
@@ -308,7 +308,7 @@
 		history.forEach((m, mi) => {
 			if (m.role !== 'user') return;
 			const reply = history[mi + 1]?.role === 'assistant' ? history[mi + 1] : null;
-			const bits = [m.rough ? 'you · via rook' : 'you'];
+			const bits = [m.rough ? 'you · via vera' : 'you'];
 			if (reply?.ctx) bits.push(`${k(reply.ctx)} ctx`);
 			if (reply?.tools) bits.push(`${reply.tools} events`);
 			if (reply?.secs) bits.push(dur(reply.secs));
@@ -555,7 +555,7 @@
 		{ k: 'o', d: 'expand or collapse the selected event' },
 		{ k: 'i', d: 'focus the composer' },
 		{ k: 'r', d: 'review the working tree — approve or discard' },
-		{ k: 's', d: 'rook suggests — the co-pilot panel' },
+		{ k: 's', d: 'vera suggests — the co-pilot panel' },
 		{ k: 'esc', d: 'interrupt the current turn' },
 		{ k: '⏎', d: 'send (or queue while working)' },
 		{ k: '\\', d: 'collapse the turns rail' },
@@ -596,7 +596,7 @@
 			<span style="flex: 0 1 auto; min-width: 12ch; font-family: {MONO}; font-size: 13px; font-weight: 500; color: var(--color-neutral-100); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{data?.agent?.title ?? '…'}</span>
 			<span style="flex: 0 1 auto; min-width: 0; font-family: {MONO}; font-size: 11.5px; color: var(--color-neutral-600); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{data?.agent?.dir}{data?.agent?.branch ? ` · ${data.agent.branch}` : ''}{data?.resume ? ` · ${data.resume.slice(0, 8)}` : ''}</span>
 		</div>
-		<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--color-neutral-800); border-radius: var(--radius-sm);" title="membrane: rook phrases and digests · direct: you and claude, nothing between">
+		<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--color-neutral-800); border-radius: var(--radius-sm);" title="membrane: vera phrases and digests · direct: you and claude, nothing between">
 			<button onclick={() => setMode('membrane')} style="font: inherit; font-family: {MONO}; font-size: 11px; padding: 3px 8px; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-600); border-radius: 3px;" class="hover:text-[var(--color-neutral-300)]!">membrane</button>
 			<span style="font-family: {MONO}; font-size: 11px; padding: 3px 8px; color: var(--color-accent-100); background: var(--color-accent-800); border-radius: 3px;">direct</span>
 		</div>
@@ -616,7 +616,7 @@
 			onclick={() => (inspector = !inspector)}
 			style="flex: 0 0 auto; white-space: nowrap; font: inherit; font-family: {MONO}; font-size: 11px; padding: 4px 8px; cursor: pointer; border-radius: var(--radius-sm); border: 1px solid {inspector ? 'var(--color-neutral-800)' : 'transparent'}; background: transparent; color: var(--color-neutral-500);"
 			class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-200)]!"
-			title="context, permissions, working tree, spend (claude turns at API rates + rook's own calls)"
+			title="context, permissions, working tree, spend (claude turns at API rates + vera's own calls)"
 		>
 			{data?.agent?.ctxPct ? `ctx ${data.agent.ctxPct}%` : 'ctx —'}{spendTotal ? ` · $${spendTotal.toFixed(2)}` : ''} · ⌘I
 		</button>
@@ -730,7 +730,7 @@
 										</div>
 									{:else if e.kind === 'human'}
 										<div style="margin: 6px 0 4px; padding: 2px 0 2px 13px; border-left: 2px solid var(--color-accent-500); max-width: 64ch; {e.dim ? 'opacity: 0.8;' : ''}">
-											<div style="font-family: {MONO}; font-size: 10px; letter-spacing: 0.1em; color: var(--color-accent-400); margin-bottom: 5px;">{e.via ? 'YOU · VIA ROOK' : 'YOU'}</div>
+											<div style="font-family: {MONO}; font-size: 10px; letter-spacing: 0.1em; color: var(--color-accent-400); margin-bottom: 5px;">{e.via ? 'YOU · VIA VERA' : 'YOU'}</div>
 											<div style="font-size: 15px; line-height: 1.55; color: var(--color-neutral-100); white-space: pre-wrap; text-wrap: pretty;">{e.text}</div>
 											{#if e.names?.length}
 												<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
@@ -743,7 +743,7 @@
 											{/if}
 											{#if e.rough}
 												<details style="margin-top: 4px;">
-													<summary style="cursor: pointer; font-family: {MONO}; font-size: 10.5px; color: var(--color-neutral-600);">what rook sent</summary>
+													<summary style="cursor: pointer; font-family: {MONO}; font-size: 10.5px; color: var(--color-neutral-600);">what vera sent</summary>
 													<div style="margin-top: 4px; font-size: 12.5px; line-height: 1.55; color: var(--color-neutral-500); white-space: pre-wrap;">{e.rough}</div>
 												</details>
 											{/if}
@@ -921,7 +921,7 @@
 			</div>
 		</main>
 
-		<!-- rook suggests: the co-pilot's panel -->
+		<!-- vera suggests: the co-pilot's panel -->
 		<aside
 			style="flex: 0 0 auto; width: {suggOpen ? '276px' : '42px'}; border-left: 1px solid var(--color-divider); overflow: hidden; transition: width 200ms {EASE}; display: none; flex-direction: column;"
 			class="lg:flex!"
@@ -931,9 +931,9 @@
 					onclick={() => (suggOpen = !suggOpen)}
 					style="font: inherit; font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; padding: 0; cursor: pointer; border: none; background: transparent; color: {suggOpen ? 'var(--color-neutral-500)' : 'var(--color-accent-300)'};"
 					class="hover:text-[var(--color-neutral-300)]!"
-					title="rook reads each finished turn and suggests replies · s"
+					title="vera reads each finished turn and suggests replies · s"
 				>
-					{suggOpen ? 'ROOK SUGGESTS · s' : '◆'}
+					{suggOpen ? 'VERA SUGGESTS · s' : '◆'}
 				</button>
 				{#if suggOpen && suggBusy}
 					<span style="width: 9px; height: 9px; flex: 0 0 auto; border-radius: 99px; border: 1.5px solid var(--color-accent-800); border-top-color: var(--color-accent-300); animation: rk-spin 0.85s linear infinite;"></span>
@@ -943,12 +943,12 @@
 				<div style="flex: 1; min-height: 0; overflow-y: auto; padding: 2px 14px 16px; display: flex; flex-direction: column; gap: 14px;">
 					{#if phase === 'working'}
 						<div style="font-size: 11.5px; line-height: 1.55; color: var(--color-neutral-600); text-wrap: pretty;">
-							claude is working — rook reads the turn when it lands
+							claude is working — vera reads the turn when it lands
 						</div>
 					{:else if suggErr}
 						<div style="font-size: 11.5px; line-height: 1.5; color: var(--ev-sh); text-wrap: pretty;">{suggErr}</div>
 					{:else if !sugg && suggBusy}
-						<div style="font-size: 11.5px; line-height: 1.55; color: var(--color-neutral-600);">rook is reading the turn…</div>
+						<div style="font-size: 11.5px; line-height: 1.55; color: var(--color-neutral-600);">vera is reading the turn…</div>
 					{:else if sugg}
 						<div style="display: flex; flex-direction: column; gap: 5px;">
 							<div style="font-family: {MONO}; font-size: 10px; letter-spacing: 0.08em; color: var(--color-neutral-600);">WHAT JUST HAPPENED</div>
@@ -985,7 +985,7 @@
 							{/each}
 						</div>
 						<div style="font-family: {MONO}; font-size: 10px; line-height: 1.5; color: var(--color-neutral-700); text-wrap: pretty;">
-							rook's own call · one per turn · counted under spend
+							vera's own call · one per turn · counted under spend
 						</div>
 					{:else}
 						<div style="font-size: 11.5px; line-height: 1.55; color: var(--color-neutral-600); text-wrap: pretty;">
@@ -1114,7 +1114,7 @@
 					<span style="color: var(--color-neutral-300); font-variant-numeric: tabular-nums;">${(data?.spend?.claudeUsd ?? 0).toFixed(2)}</span>
 				</div>
 				<div style="display: flex; justify-content: space-between; font-size: 11.5px;" title="judge, digests, phrasing — real spend on the LLM endpoint">
-					<span style="color: var(--color-neutral-500);">rook's own calls</span>
+					<span style="color: var(--color-neutral-500);">vera's own calls</span>
 					<span style="color: var(--color-neutral-300); font-variant-numeric: tabular-nums;">${(data?.spend?.judgeUsd ?? 0).toFixed(2)}</span>
 				</div>
 				<div style="height: 1px; background: var(--color-divider); margin: 3px 0;"></div>

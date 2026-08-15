@@ -13,8 +13,8 @@
 // watch this go green — and only then does it become a regression net.
 //
 // It is tagged out of the default build because every case costs real
-// inference: one Digest call on the rook agent's model (needs
-// $OPENAI_API_KEY or ~/.config/rook/openai_key) and one judge call via
+// inference: one Digest call on the vera agent's model (needs
+// $OPENAI_API_KEY or ~/.config/vera/openai_key) and one judge call via
 // `claude -p --model haiku` (~$0.02). A full run at the default 3
 // iterations is under a dollar.
 //
@@ -79,9 +79,9 @@ func evalLLM(t *testing.T) *LLM {
 	key := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
 	if key == "" {
 		home, _ := os.UserHomeDir()
-		b, err := os.ReadFile(filepath.Join(home, ".config", "rook", "openai_key"))
+		b, err := os.ReadFile(filepath.Join(home, ".config", "vera", "openai_key"))
 		if err != nil {
-			t.Skip("no $OPENAI_API_KEY and no ~/.config/rook/openai_key — cannot run the production digest model")
+			t.Skip("no $OPENAI_API_KEY and no ~/.config/vera/openai_key — cannot run the production digest model")
 		}
 		key = strings.TrimSpace(string(b))
 	}
