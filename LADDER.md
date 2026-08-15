@@ -71,6 +71,7 @@ the ask, not the ground; there is no survey step yet.)
 | 2026-08-15 | 3 | plan-only | plan PASS (build a monitor, standing) · operate RED | — | cents | "alive when it reports back" needs an operate verb vera does not have |
 | 2026-08-15 | 4 | plan-only | RED — planned as ONE card; no decomposition | — | cents | plans are single-step; multi-card plans are the missing shape |
 | 2026-08-15 | 4 (retry) | plan-only | YELLOW — p5 plans STEP lines when the work is honestly several (home-office ask → research + 2 dependency-aware steps); the nod lays them as backlog cards | — | cents | chaining a finished card into the next is still unbuilt — steps start by hand |
+| 2026-08-15 | 4 (chain) | unit-proven | the shape is whole: step cards name their successors and ACCEPTING a finished piece starts the next — the board is the program counter | one accept per piece | — | live end-to-end run still owed |
 | 2026-08-15 | 5 | plan-only | RED then FIXED at the planning layer — p2 invented an empty "personal-site" workspace to audit; that finding built KIND: ask (p4 asks "Where is the source for your personal site located?") | — | cents | surveying real ground before scoping remains unbuilt; the ask verb is the honest stopgap |
 
 Every red rung names the next feature. That is the point.

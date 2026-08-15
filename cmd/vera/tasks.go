@@ -110,6 +110,10 @@ type task struct {
 	// yet return on its own; each pass starts from the card.
 	Cadence  string `json:"cadence,omitempty"`
 	Deadline string `json:"deadline,omitempty"`
+	// NextID chains a plan's pieces: accepting this card as done is
+	// the nod that starts the card it names. The chain spends only at
+	// human acceptance boundaries.
+	NextID string `json:"nextId,omitempty"`
 	// Exchanges is the drive's own conversation, persisted so an
 	// owner's reply can seed a continuation after any restart. Capped:
 	// the transcript holds the full story, the task holds the working
@@ -1033,6 +1037,10 @@ func (s *server) handleTaskAct(w http.ResponseWriter, r *http.Request) {
 			t.event("human", "accepted as done", now)
 			return nil
 		})
+		// Accepting a plan-step card is the nod for the piece after it.
+		if err == nil && t.NextID != "" {
+			s.chainNext(t.NextID, t.Mode, now)
+		}
 		respond(w, t, err)
 	case "decline":
 		t, err := s.tasks.mutate(tid, func(t *task) error {

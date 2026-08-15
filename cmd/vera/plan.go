@@ -195,17 +195,18 @@ func (s *server) executePlanCore(p drive.Plan, planID, mode string, now time.Tim
 	appendLine(s.planPath, planLine{ID: planID, Executed: t.ID, At: now})
 	// A plan that is honestly several pieces lays the later ones on
 	// the board as backlog, same ground, vera's authorship on the log —
-	// the decomposition is visible before anyone asks for it. They
-	// start by hand: chaining a finished card into the next is a
-	// capability vera does not have yet, and the cards say so only by
-	// waiting.
+	// the decomposition is visible before anyone asks for it. Each
+	// card names its successor: accepting a finished piece is the nod
+	// that starts the next, so the chain spends only at human
+	// acceptance boundaries.
+	stepIDs := make([]string, 0, len(p.Steps))
 	for i, step := range p.Steps {
 		st := task{
 			ID:    s.tasks.nextID(),
 			Title: transcript.Snip(step, 90), Intent: step,
-			Workspace: dir,
-			Col:       "inbox", State: "inbox · planned",
-			Face:     "Step " + strconv.Itoa(i+2) + " of " + t.ID + "'s plan — starts when the piece before it lands.",
+			Workspace: dir, Mode: mode,
+			Col: "inbox", State: "inbox · planned",
+			Face:     "Step " + strconv.Itoa(i+2) + " of " + t.ID + "'s plan — starts when you accept the piece before it.",
 			Proposal: "Start in " + filepath.Base(dir), ProposalWhy: "The piece before it is underway on the same ground.", ProposalKind: "start",
 			CreatedAt: now, UpdatedAt: now,
 		}
@@ -213,9 +214,66 @@ func (s *server) executePlanCore(p drive.Plan, planID, mode string, now time.Tim
 		if err := s.tasks.write(st); err != nil {
 			break
 		}
+		stepIDs = append(stepIDs, st.ID)
+	}
+	for i, id := range stepIDs {
+		next := ""
+		if i+1 < len(stepIDs) {
+			next = stepIDs[i+1]
+		}
+		s.tasks.mutate(id, func(t *task) error { t.NextID = next; return nil })
+	}
+	if len(stepIDs) > 0 {
+		if t2, err := s.tasks.mutate(t.ID, func(t *task) error { t.NextID = stepIDs[0]; return nil }); err == nil {
+			t = t2
+		}
 	}
 	s.spawnFresh(t, dir, mode, p.Goal, held)
 	return t, nil
+}
+
+// chainNext is the acceptance boundary's other half: the owner just
+// accepted a card that names a successor, so the successor starts —
+// its intent compiled, a fresh worker born on its ground. A card the
+// human already moved, started, or deleted is left exactly alone.
+func (s *server) chainNext(id, mode string, now time.Time) {
+	if s.llm == nil {
+		return
+	}
+	next, err := s.tasks.get(id)
+	if err != nil || next.Col != "inbox" || next.Workspace == "" {
+		return
+	}
+	if _, err := os.Stat(next.Workspace); err != nil {
+		return
+	}
+	var held float64
+	ll := *s.llm
+	ll.Spend = func(c float64) { held += c }
+	goal, err := ll.CompileGoal(context.Background(), next.Intent)
+	if err != nil {
+		s.tasks.mutate(id, func(t *task) error {
+			t.event("vera", "the step before this landed, but the goal would not compile: "+err.Error(), now)
+			return nil
+		})
+		return
+	}
+	if mode != "read" {
+		mode = "work"
+	}
+	next, err = s.tasks.mutate(id, func(t *task) error {
+		t.Mode = mode
+		t.Goal, t.GoalActor = goal, "vera"
+		t.Col, t.State = "progress", "in progress · a fresh agent is being born"
+		t.Face = "The piece before it landed. Starting a fresh agent in " + filepath.Base(t.Workspace) + "."
+		t.clearProposal()
+		t.event("vera", "the step before this was accepted — compiled intent → goal, starting", now)
+		return nil
+	})
+	if err != nil {
+		return
+	}
+	s.spawnFresh(next, next.Workspace, mode, goal, held)
 }
 
 // ---- the routes ----

@@ -228,3 +228,67 @@ func TestExecuteLaysStepCardsOnTheSameGround(t *testing.T) {
 		t.Fatalf("both steps land: %d", steps)
 	}
 }
+
+func TestAcceptanceChainsThePlannedSuccessor(t *testing.T) {
+	oldWorld := worldRoot
+	defer func() { worldRoot = oldWorld }()
+	worldRoot = t.TempDir()
+	s := testServer(t, t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "Do the next piece."}}},
+		})
+	}))
+	defer srv.Close()
+	s.llm = &drive.LLM{Client: srv.Client(), Base: srv.URL, Name: "test-model"}
+	s.claudeBin = "false"
+
+	ground := t.TempDir()
+	now := time.Now()
+	first := task{ID: "T-900", Title: "first", Intent: "first",
+		Mode: "work", Workspace: ground, NextID: "T-901",
+		Col: "waiting", State: "waiting for acceptance",
+		ProposalKind: "done", Proposal: "Move to done",
+		CreatedAt: now, UpdatedAt: now}
+	step := task{ID: "T-901", Title: "wire the delivery", Intent: "wire the delivery",
+		Workspace: ground, Col: "inbox", State: "inbox · planned",
+		CreatedAt: now, UpdatedAt: now}
+	if err := s.tasks.write(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.tasks.write(step); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/tasks/T-900/act", strings.NewReader(`{"action":"accept"}`))
+	req.SetPathValue("tid", "T-900")
+	s.handleTaskAct(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("accept refused: %s", rec.Body.String())
+	}
+	got, err := s.tasks.get("T-901")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Col != "progress" || got.Goal != "Do the next piece." || got.GoalActor != "vera" {
+		t.Fatalf("the acceptance is the nod that starts the successor: %+v", got)
+	}
+
+	// A successor the human already moved is left exactly alone.
+	parked := task{ID: "T-902", Title: "second", Intent: "second",
+		Mode: "work", Workspace: ground, NextID: "T-903",
+		Col: "waiting", ProposalKind: "done", Proposal: "Move to done",
+		CreatedAt: now, UpdatedAt: now}
+	moved := task{ID: "T-903", Title: "moved", Intent: "moved",
+		Workspace: ground, Col: "dropped", CreatedAt: now, UpdatedAt: now}
+	s.tasks.write(parked)
+	s.tasks.write(moved)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/api/tasks/T-902/act", strings.NewReader(`{"action":"accept"}`))
+	req.SetPathValue("tid", "T-902")
+	s.handleTaskAct(rec, req)
+	if got, _ := s.tasks.get("T-903"); got.Col != "dropped" {
+		t.Fatalf("a human-moved successor stays where the human put it: %+v", got)
+	}
+}
