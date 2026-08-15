@@ -110,3 +110,10 @@ func TestPlanAskIsAKind(t *testing.T) {
 		t.Fatal("an ask with no question is unusable")
 	}
 }
+
+func TestPlanStepsSalvageAndCap(t *testing.T) {
+	p := salvagePlan("KIND: new\nHOME: code\nNAME: pipeline\nCADENCE: once\nGOAL: Build the collector.\nSTEP: Build the summarizer over the collector's output.\nSTEP: Wire a morning delivery.\nSTEP: three\nSTEP: four is past the cap\nWHY: several honest pieces.")
+	if len(p.Steps) != 3 || p.Steps[0] != "Build the summarizer over the collector's output." {
+		t.Fatalf("steps in order, capped at three: %v", p.Steps)
+	}
+}

@@ -334,6 +334,7 @@ message PlanShape {
   string goal = 7;      // the instruction the worker would be handed
   string why = 8;       // one line the owner reads to judge the plan
   string question = 9;  // kind ask: the one missing fact
+  repeated string steps = 10;  // later pieces, when the work is honestly several
 }
 
 message PlanResponse {

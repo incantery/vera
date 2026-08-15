@@ -21,6 +21,7 @@ If KIND is new: "HOME: " + code or life, then "NAME: " + a short kebab-case dire
 "CADENCE: " + once (a task that ends) or standing (an ongoing need the owner will keep returning to — routines, habits, and practices like meal prep, tracking, or learning are standing even when phrased as one ask).
 If the ask names a date or deadline: "DEADLINE: " + that date as YYYY-MM-DD, computed from today's date.
 "GOAL: " + the instruction to hand the worker: one or two sentences, imperative, concrete, self-contained. For a standing need, the goal is the FIRST pass only.
+If the work is honestly two or more distinct pieces that cannot ride one goal: GOAL carries the first piece, then one "STEP: " line per later piece (at most three), each a self-contained instruction in order. Most asks are one piece — never pad.
 "WHY: " + one short sentence the owner reads to judge your plan. If KIND is none, WHY says what this ask actually needs instead.
 Prefer new over repo unless the ask plainly continues that workspace's own work. Never invent facts the ask does not carry.`
 
@@ -36,6 +37,9 @@ type Plan struct {
 	Goal     string `json:"goal,omitempty"`
 	Why      string `json:"why,omitempty"`
 	Question string `json:"question,omitempty"` // kind ask: the one missing fact
+	// Steps are the later pieces when the work is honestly more than
+	// one: Goal is the first piece, each Step a card of its own.
+	Steps []string `json:"steps,omitempty"`
 }
 
 // Plan reads one ask against the offered workspaces and returns the
@@ -90,6 +94,10 @@ func salvagePlan(content string) Plan {
 			}
 		case "ASK":
 			p.Question = rest
+		case "STEP":
+			if len(p.Steps) < 3 && rest != "" {
+				p.Steps = append(p.Steps, rest)
+			}
 		case "WHERE":
 			p.Where = rest
 		case "HOME":

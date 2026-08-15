@@ -318,6 +318,19 @@
 						<div style="color: var(--color-neutral-100); line-height: 1.5; margin-bottom: 6px;">
 							{plan.plan.goal}
 						</div>
+						{#if plan.plan.steps?.length}
+							<div style="margin-bottom: 6px;">
+								{#each plan.plan.steps as st, i (i)}
+									<div style="display: flex; gap: 8px; color: var(--color-neutral-300); line-height: 1.5; font-size: 12px;">
+										<span style="color: var(--color-neutral-600); font-variant-numeric: tabular-nums;">then</span>
+										<span>{st}</span>
+									</div>
+								{/each}
+								<div style="color: var(--color-neutral-500); font-size: 11px; margin-top: 3px;">
+									later pieces land as cards on the same ground
+								</div>
+							</div>
+						{/if}
 					{/if}
 					{#if plan.plan.kind === 'ask'}
 						<div style="color: var(--color-neutral-100); line-height: 1.5; margin-bottom: 8px;">

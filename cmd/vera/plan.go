@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ import (
 
 // planGen salts the plan journal so a prompt change reads as a new
 // generation in later analysis. Bump on any planSysPrompt change.
-const planGen = "p4|"
+const planGen = "p5|"
 
 func defaultPlanPath() string {
 	return statePath("vera-plans.jsonl")
@@ -192,6 +193,27 @@ func (s *server) executePlanCore(p drive.Plan, planID, mode string, now time.Tim
 		return task{}, &sayErr{500, err.Error()}
 	}
 	appendLine(s.planPath, planLine{ID: planID, Executed: t.ID, At: now})
+	// A plan that is honestly several pieces lays the later ones on
+	// the board as backlog, same ground, vera's authorship on the log —
+	// the decomposition is visible before anyone asks for it. They
+	// start by hand: chaining a finished card into the next is a
+	// capability vera does not have yet, and the cards say so only by
+	// waiting.
+	for i, step := range p.Steps {
+		st := task{
+			ID:    s.tasks.nextID(),
+			Title: transcript.Snip(step, 90), Intent: step,
+			Workspace: dir,
+			Col:       "inbox", State: "inbox · planned",
+			Face:     "Step " + strconv.Itoa(i+2) + " of " + t.ID + "'s plan — starts when the piece before it lands.",
+			Proposal: "Start in " + filepath.Base(dir), ProposalWhy: "The piece before it is underway on the same ground.", ProposalKind: "start",
+			CreatedAt: now, UpdatedAt: now,
+		}
+		st.event("vera", "planned as step "+strconv.Itoa(i+2)+" of "+t.ID+"'s plan", now)
+		if err := s.tasks.write(st); err != nil {
+			break
+		}
+	}
 	s.spawnFresh(t, dir, mode, p.Goal, held)
 	return t, nil
 }

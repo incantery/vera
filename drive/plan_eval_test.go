@@ -33,6 +33,7 @@ type planCase struct {
 	cadences []string // accepted cadences
 	deadline string   // "" none expected · "*" required · else exact
 	goalMust []string // must survive into the goal (case-insensitive)
+	noSteps  bool     // a plainly single-piece ask: steps would be padding
 }
 
 // The standing fleet most rows see: two code repos and a blog.
@@ -45,9 +46,10 @@ var evalFleet = []string{
 var planCorpus = []planCase{
 	// ---- the ladder's own rungs ----
 	{
-		name:  "unnamed-mechanics-tool",
-		ask:   "I need a little tool that tells me which of my git repos have uncommitted changes",
-		repos: evalFleet, kinds: []string{"new"}, homes: []string{"code"},
+		name:    "unnamed-mechanics-tool",
+		noSteps: true,
+		ask:     "I need a little tool that tells me which of my git repos have uncommitted changes",
+		repos:   evalFleet, kinds: []string{"new"}, homes: []string{"code"},
 		cadences: []string{"once"}, goalMust: []string{"uncommitted"},
 	},
 	{
@@ -78,29 +80,33 @@ var planCorpus = []planCase{
 	},
 	// ---- continuing offered ground ----
 	{
-		name:  "flaky-test-in-vera",
-		ask:   "fix the flaky test in the vera repo",
-		repos: evalFleet, kinds: []string{"repo"},
+		name:    "flaky-test-in-vera",
+		noSteps: true,
+		ask:     "fix the flaky test in the vera repo",
+		repos:   evalFleet, kinds: []string{"repo"},
 		where:    "/w/go/src/github.com/incantery/vera",
 		cadences: []string{"once"}, goalMust: []string{"flaky"},
 	},
 	{
-		name:  "dark-mode-blog",
-		ask:   "add dark mode to my blog",
-		repos: evalFleet, kinds: []string{"repo"}, where: "/w/projects/blog",
+		name:    "dark-mode-blog",
+		noSteps: true,
+		ask:     "add dark mode to my blog",
+		repos:   evalFleet, kinds: []string{"repo"}, where: "/w/projects/blog",
 		cadences: []string{"once"}, goalMust: []string{"dark"},
 	},
 	{
-		name:  "stale-readme",
-		ask:   "the readme in vera is way out of date",
-		repos: evalFleet, kinds: []string{"repo"},
+		name:    "stale-readme",
+		noSteps: true,
+		ask:     "the readme in vera is way out of date",
+		repos:   evalFleet, kinds: []string{"repo"},
 		where:    "/w/go/src/github.com/incantery/vera",
 		cadences: []string{"once"}, goalMust: []string{"readme"},
 	},
 	{
-		name:  "branch-cleanup",
-		ask:   "clean up the stale branches in rook-cloud",
-		repos: evalFleet, kinds: []string{"repo"},
+		name:    "branch-cleanup",
+		noSteps: true,
+		ask:     "clean up the stale branches in rook-cloud",
+		repos:   evalFleet, kinds: []string{"repo"},
 		where:    "/w/go/src/github.com/incantery/rook-cloud",
 		cadences: []string{"once"}, goalMust: []string{"branch"},
 	},
@@ -130,9 +136,10 @@ var planCorpus = []planCase{
 		cadences: []string{"standing"}, goalMust: []string{"weight"},
 	},
 	{
-		name:  "ebike-research",
-		ask:   "research the best e-bike under $2000 for a tall rider",
-		repos: evalFleet, kinds: []string{"new"}, homes: []string{"life"},
+		name:    "ebike-research",
+		noSteps: true,
+		ask:     "research the best e-bike under $2000 for a tall rider",
+		repos:   evalFleet, kinds: []string{"new"}, homes: []string{"life"},
 		cadences: []string{"once"}, goalMust: []string{"000", "tall"},
 	},
 	{
@@ -289,6 +296,9 @@ func checkPlanRow(m *LLM, c planCase, today string) (Plan, []string, error) {
 	}
 	if p.Kind == "ask" && p.Question == "" {
 		miss("an ask stands on its question")
+	}
+	if c.noSteps && len(p.Steps) > 0 {
+		miss("a single-piece ask got padded with steps: %v", p.Steps)
 	}
 	return p, misses, nil
 }

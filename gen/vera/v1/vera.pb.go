@@ -2767,6 +2767,7 @@ type PlanShape struct {
 	Goal          string                 `protobuf:"bytes,7,opt,name=goal,proto3" json:"goal,omitempty"`         // the instruction the worker would be handed
 	Why           string                 `protobuf:"bytes,8,opt,name=why,proto3" json:"why,omitempty"`           // one line the owner reads to judge the plan
 	Question      string                 `protobuf:"bytes,9,opt,name=question,proto3" json:"question,omitempty"` // kind ask: the one missing fact
+	Steps         []string               `protobuf:"bytes,10,rep,name=steps,proto3" json:"steps,omitempty"`      // later pieces, when the work is honestly several
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2862,6 +2863,13 @@ func (x *PlanShape) GetQuestion() string {
 		return x.Question
 	}
 	return ""
+}
+
+func (x *PlanShape) GetSteps() []string {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
 }
 
 type PlanResponse struct {
@@ -3255,7 +3263,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x03now\x18\x02 \x01(\tR\x03now\x12\x18\n" +
 	"\areplies\x18\x03 \x03(\tR\areplies\"!\n" +
 	"\vPlanRequest\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\xd5\x01\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xeb\x01\n" +
 	"\tPlanShape\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05where\x18\x02 \x01(\tR\x05where\x12\x12\n" +
@@ -3265,7 +3273,9 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\bdeadline\x18\x06 \x01(\tR\bdeadline\x12\x12\n" +
 	"\x04goal\x18\a \x01(\tR\x04goal\x12\x10\n" +
 	"\x03why\x18\b \x01(\tR\x03why\x12\x1a\n" +
-	"\bquestion\x18\t \x01(\tR\bquestion\"F\n" +
+	"\bquestion\x18\t \x01(\tR\bquestion\x12\x14\n" +
+	"\x05steps\x18\n" +
+	" \x03(\tR\x05steps\"F\n" +
 	"\fPlanResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
 	"\x04plan\x18\x02 \x01(\v2\x12.vera.v1.PlanShapeR\x04plan\"`\n" +

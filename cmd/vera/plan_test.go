@@ -188,3 +188,43 @@ func TestExecuteRefusesAnAskWithItsQuestion(t *testing.T) {
 		t.Fatalf("an ask is not executable; the refusal carries the question: %+v", serr)
 	}
 }
+
+func TestExecuteLaysStepCardsOnTheSameGround(t *testing.T) {
+	oldWorld := worldRoot
+	defer func() { worldRoot = oldWorld }()
+	worldRoot = t.TempDir()
+	s := testServer(t, t.TempDir())
+	srv := planWire(t)
+	defer srv.Close()
+	s.llm = &drive.LLM{Client: srv.Client(), Base: srv.URL, Name: "test-model"}
+	s.planPath = filepath.Join(t.TempDir(), "plans.jsonl")
+	s.claudeBin = "false"
+
+	p := drive.Plan{Kind: "new", Home: "code", Name: "pipeline", Cadence: "once",
+		Goal:  "Build the collector.",
+		Steps: []string{"Build the summarizer.", "Wire the delivery."}}
+	first, serr := s.executePlanCore(p, "", "", time.Now())
+	if serr != nil {
+		t.Fatal(serr.msg)
+	}
+	all := s.tasks.list()
+	if len(all) != 3 {
+		t.Fatalf("one driving card and two planned steps: %d cards", len(all))
+	}
+	var steps int
+	for _, tk := range all {
+		if tk.ID == first.ID {
+			continue
+		}
+		steps++
+		if tk.Col != "inbox" || tk.Workspace != first.Workspace {
+			t.Fatalf("a step waits as backlog on the same ground: %+v", tk)
+		}
+		if tk.Log[0].Actor != "vera" {
+			t.Fatalf("the decomposition wears vera's name: %+v", tk.Log)
+		}
+	}
+	if steps != 2 {
+		t.Fatalf("both steps land: %d", steps)
+	}
+}

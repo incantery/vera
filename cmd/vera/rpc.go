@@ -192,7 +192,7 @@ func (r *veraRPC) ExecutePlan(ctx context.Context, req *connect.Request[verav1.E
 	p := drive.Plan{
 		Kind: sh.Kind, Where: sh.Where, Home: sh.Home, Name: sh.Name,
 		Cadence: sh.Cadence, Deadline: sh.Deadline, Goal: sh.Goal, Why: sh.Why,
-		Question: sh.Question,
+		Question: sh.Question, Steps: sh.Steps,
 	}
 	t, serr := r.s.executePlanCore(p, req.Msg.Id, req.Msg.Mode, time.Now())
 	if serr != nil {
@@ -207,7 +207,7 @@ func planShape(p drive.Plan) *verav1.PlanShape {
 	return &verav1.PlanShape{
 		Kind: p.Kind, Where: p.Where, Home: p.Home, Name: p.Name,
 		Cadence: p.Cadence, Deadline: p.Deadline, Goal: p.Goal, Why: p.Why,
-		Question: p.Question,
+		Question: p.Question, Steps: p.Steps,
 	}
 }
 
