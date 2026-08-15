@@ -203,6 +203,37 @@ func (r *veraRPC) ExecutePlan(ctx context.Context, req *connect.Request[verav1.E
 	}), nil
 }
 
+// Browse, StartSession, and Birth are the explorer on the typed wire:
+// walk the fenced directories, say the first word somewhere, watch
+// the ticket until the session has a name. Same cores as REST.
+func (r *veraRPC) Browse(ctx context.Context, req *connect.Request[verav1.BrowseRequest]) (*connect.Response[verav1.BrowseResponse], error) {
+	v, serr := r.s.listDirs(req.Msg.Path, time.Now())
+	if serr != nil {
+		return nil, connectErr(serr)
+	}
+	resp := &verav1.BrowseResponse{Root: v.Root, Path: v.Path, Parent: v.Parent, Git: v.Git}
+	for _, d := range v.Dirs {
+		resp.Dirs = append(resp.Dirs, &verav1.DirEntry{Name: d.Name, Cwd: d.Cwd, Git: d.Git, Known: d.Known})
+	}
+	return connect.NewResponse(resp), nil
+}
+
+func (r *veraRPC) StartSession(ctx context.Context, req *connect.Request[verav1.StartSessionRequest]) (*connect.Response[verav1.StartSessionResponse], error) {
+	id, serr := r.s.startSession(req.Msg.Cwd, req.Msg.Text, req.Msg.Perm)
+	if serr != nil {
+		return nil, connectErr(serr)
+	}
+	return connect.NewResponse(&verav1.StartSessionResponse{BirthId: id}), nil
+}
+
+func (r *veraRPC) Birth(ctx context.Context, req *connect.Request[verav1.BirthRequest]) (*connect.Response[verav1.BirthResponse], error) {
+	j, serr := r.s.birth(req.Msg.Id)
+	if serr != nil {
+		return nil, connectErr(serr)
+	}
+	return connect.NewResponse(&verav1.BirthResponse{Status: j.Status, Root: j.Root, Err: j.Err}), nil
+}
+
 func planShape(p drive.Plan) *verav1.PlanShape {
 	return &verav1.PlanShape{
 		Kind: p.Kind, Where: p.Where, Home: p.Home, Name: p.Name,

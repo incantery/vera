@@ -130,6 +130,7 @@ func main() {
 		digests:     map[string]*digestRec{},
 		suggests:    map[string]*suggestRec{},
 		plans:       map[string]*planRec{},
+		births:      map[string]*birthJob{},
 		sent:        map[string]string{},
 		uc:          &usage.Collector{Bin: *claudeBin},
 		shelf:       &artifactStore{dir: *artifactsDir},
@@ -196,6 +197,9 @@ func main() {
 	mux.HandleFunc("POST /api/tasks/{tid}/reply", s.handleTaskReply)
 	mux.HandleFunc("POST /api/plan", s.handlePlan)
 	mux.HandleFunc("POST /api/plan/execute", s.handlePlanExecute)
+	mux.HandleFunc("GET /api/dirs", s.handleDirs)
+	mux.HandleFunc("POST /api/sessions", s.handleSessionStart)
+	mux.HandleFunc("GET /api/births/{id}", s.handleBirth)
 	mux.HandleFunc("POST /api/workspaces", s.handleWorkspaceCreate)
 	mux.HandleFunc("DELETE /api/workspaces/{name}", s.handleWorkspaceDelete)
 	mux.HandleFunc("POST /api/drive", s.handleDrive)
@@ -318,6 +322,7 @@ type server struct {
 	digests  map[string]*digestRec  // reply-hash -> the membrane's compression of it
 	suggests map[string]*suggestRec // exchange-hash -> vera's bid on the reply
 	plans    map[string]*planRec    // plan id -> the bid awaiting its nod
+	births   map[string]*birthJob   // birth ticket -> the session being born
 	sent     map[string]string      // sent-text-hash -> the rough words behind it
 	queues   map[string][]queuedSay // agent root -> direct messages typed ahead
 

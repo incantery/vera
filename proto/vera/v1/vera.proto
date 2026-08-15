@@ -353,6 +353,49 @@ message ExecutePlanResponse {
   string workspace = 2;
 }
 
+// Browse walks the machine's directories one level at a time, fenced
+// to the home dir (or the world). StartSession births a fresh claude
+// in a browsed directory with the owner's first message — the ticket
+// it answers with is watched via Birth until the session has a name.
+message BrowseRequest {
+  string path = 1;  // "" = the fence root
+}
+
+message DirEntry {
+  string name = 1;
+  string cwd = 2;
+  bool git = 3;    // the directory is a git repo
+  bool known = 4;  // the fleet already has a session here
+}
+
+message BrowseResponse {
+  string root = 1;
+  string path = 2;
+  string parent = 3;  // "" at the root
+  bool git = 4;
+  repeated DirEntry dirs = 5;
+}
+
+message StartSessionRequest {
+  string cwd = 1;
+  string text = 2;  // the first message, verbatim — direct from the first word
+  string perm = 3;  // "" (read) | read | edit | all
+}
+
+message StartSessionResponse {
+  string birth_id = 1;
+}
+
+message BirthRequest {
+  string id = 1;
+}
+
+message BirthResponse {
+  string status = 1;  // thinking | born | failed
+  string root = 2;    // the newborn session, once born
+  string err = 3;
+}
+
 service VeraService {
   rpc WatchAgent(WatchAgentRequest) returns (stream WatchAgentResponse);
   rpc Say(SayRequest) returns (SayResponse);
@@ -364,4 +407,7 @@ service VeraService {
   rpc Suggest(SuggestRequest) returns (SuggestResponse);
   rpc Plan(PlanRequest) returns (PlanResponse);
   rpc ExecutePlan(ExecutePlanRequest) returns (ExecutePlanResponse);
+  rpc Browse(BrowseRequest) returns (BrowseResponse);
+  rpc StartSession(StartSessionRequest) returns (StartSessionResponse);
+  rpc Birth(BirthRequest) returns (BirthResponse);
 }

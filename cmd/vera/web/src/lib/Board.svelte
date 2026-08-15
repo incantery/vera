@@ -6,6 +6,7 @@
 	// working agent's card wears its live status; captures land as
 	// unassigned backlog.
 	import { api } from '$lib/state.svelte.js';
+	import Explorer from '$lib/Explorer.svelte';
 
 	// data: the WatchBoard stream's frame, when the page holds one.
 	// Without it (stream down, or a page that still polls) the board
@@ -16,6 +17,13 @@
 	let selId = $state(null);
 	let capture = $state('');
 	let triage = $state(null); // {id, near:{id,title}}
+	// The explorer: browse anywhere under the fence, start a session
+	// there. ?explore=1 deep-links it open (read from location — the
+	// ?key= stash rewrites history before the router looks).
+	let explorerOpen = $state(false);
+	$effect(() => {
+		if (new URLSearchParams(location.search).get('explore') === '1') explorerOpen = true;
+	});
 	let busy = $state(false);
 	let err = $state('');
 
@@ -301,6 +309,11 @@
 				/>
 				<button class="btn btn-primary" onclick={submitPlan} disabled={busy}>Plan</button>
 				<button class="btn" onclick={submitCapture} disabled={busy} title="skip the plan — straight to the inbox">capture</button>
+				<button
+					class="btn"
+					onclick={() => (explorerOpen = true)}
+					title="browse directories · start a session anywhere">explore</button
+				>
 			</div>
 
 			{#if plan}
@@ -835,3 +848,7 @@
 		{/if}
 	</div>
 </div>
+
+{#if explorerOpen}
+	<Explorer onclose={() => (explorerOpen = false)} />
+{/if}

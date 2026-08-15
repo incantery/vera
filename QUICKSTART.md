@@ -61,6 +61,10 @@ ones vera creates itself, under `~/vera-scratch/`.)
    the birthday party in two weeks" plans as readily as a CLI.
 1. **Capture** — the plain path: type what needs doing and hit the
    capture button. It lands in the inbox, unassigned, free.
+   And **explore** opens the directory browser: walk anywhere under
+   your home (or the world), pick a directory, and say the first
+   word — a fresh session is born there and the direct cockpit opens
+   on it. The last reason to run `claude` in a terminal, gone.
 2. **Start** — open the card. In the *vera proposes* box, pick
    **+ new scratch workspace…** (or a real repo the fleet has shown)
    and a tool policy: **read-only** (analysis; anything mutating stays

@@ -59,6 +59,13 @@ const (
 	VeraServicePlanProcedure = "/vera.v1.VeraService/Plan"
 	// VeraServiceExecutePlanProcedure is the fully-qualified name of the VeraService's ExecutePlan RPC.
 	VeraServiceExecutePlanProcedure = "/vera.v1.VeraService/ExecutePlan"
+	// VeraServiceBrowseProcedure is the fully-qualified name of the VeraService's Browse RPC.
+	VeraServiceBrowseProcedure = "/vera.v1.VeraService/Browse"
+	// VeraServiceStartSessionProcedure is the fully-qualified name of the VeraService's StartSession
+	// RPC.
+	VeraServiceStartSessionProcedure = "/vera.v1.VeraService/StartSession"
+	// VeraServiceBirthProcedure is the fully-qualified name of the VeraService's Birth RPC.
+	VeraServiceBirthProcedure = "/vera.v1.VeraService/Birth"
 )
 
 // VeraServiceClient is a client for the vera.v1.VeraService service.
@@ -73,6 +80,9 @@ type VeraServiceClient interface {
 	Suggest(context.Context, *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error)
 	Plan(context.Context, *connect.Request[v1.PlanRequest]) (*connect.Response[v1.PlanResponse], error)
 	ExecutePlan(context.Context, *connect.Request[v1.ExecutePlanRequest]) (*connect.Response[v1.ExecutePlanResponse], error)
+	Browse(context.Context, *connect.Request[v1.BrowseRequest]) (*connect.Response[v1.BrowseResponse], error)
+	StartSession(context.Context, *connect.Request[v1.StartSessionRequest]) (*connect.Response[v1.StartSessionResponse], error)
+	Birth(context.Context, *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error)
 }
 
 // NewVeraServiceClient constructs a client for the vera.v1.VeraService service. By default, it uses
@@ -146,21 +156,42 @@ func NewVeraServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(veraServiceMethods.ByName("ExecutePlan")),
 			connect.WithClientOptions(opts...),
 		),
+		browse: connect.NewClient[v1.BrowseRequest, v1.BrowseResponse](
+			httpClient,
+			baseURL+VeraServiceBrowseProcedure,
+			connect.WithSchema(veraServiceMethods.ByName("Browse")),
+			connect.WithClientOptions(opts...),
+		),
+		startSession: connect.NewClient[v1.StartSessionRequest, v1.StartSessionResponse](
+			httpClient,
+			baseURL+VeraServiceStartSessionProcedure,
+			connect.WithSchema(veraServiceMethods.ByName("StartSession")),
+			connect.WithClientOptions(opts...),
+		),
+		birth: connect.NewClient[v1.BirthRequest, v1.BirthResponse](
+			httpClient,
+			baseURL+VeraServiceBirthProcedure,
+			connect.WithSchema(veraServiceMethods.ByName("Birth")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // veraServiceClient implements VeraServiceClient.
 type veraServiceClient struct {
-	watchAgent  *connect.Client[v1.WatchAgentRequest, v1.WatchAgentResponse]
-	say         *connect.Client[v1.SayRequest, v1.SayResponse]
-	interrupt   *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
-	watchBoard  *connect.Client[v1.WatchBoardRequest, v1.WatchBoardResponse]
-	review      *connect.Client[v1.ReviewRequest, v1.ReviewResponse]
-	commit      *connect.Client[v1.CommitRequest, v1.CommitResponse]
-	discard     *connect.Client[v1.DiscardRequest, v1.DiscardResponse]
-	suggest     *connect.Client[v1.SuggestRequest, v1.SuggestResponse]
-	plan        *connect.Client[v1.PlanRequest, v1.PlanResponse]
-	executePlan *connect.Client[v1.ExecutePlanRequest, v1.ExecutePlanResponse]
+	watchAgent   *connect.Client[v1.WatchAgentRequest, v1.WatchAgentResponse]
+	say          *connect.Client[v1.SayRequest, v1.SayResponse]
+	interrupt    *connect.Client[v1.InterruptRequest, v1.InterruptResponse]
+	watchBoard   *connect.Client[v1.WatchBoardRequest, v1.WatchBoardResponse]
+	review       *connect.Client[v1.ReviewRequest, v1.ReviewResponse]
+	commit       *connect.Client[v1.CommitRequest, v1.CommitResponse]
+	discard      *connect.Client[v1.DiscardRequest, v1.DiscardResponse]
+	suggest      *connect.Client[v1.SuggestRequest, v1.SuggestResponse]
+	plan         *connect.Client[v1.PlanRequest, v1.PlanResponse]
+	executePlan  *connect.Client[v1.ExecutePlanRequest, v1.ExecutePlanResponse]
+	browse       *connect.Client[v1.BrowseRequest, v1.BrowseResponse]
+	startSession *connect.Client[v1.StartSessionRequest, v1.StartSessionResponse]
+	birth        *connect.Client[v1.BirthRequest, v1.BirthResponse]
 }
 
 // WatchAgent calls vera.v1.VeraService.WatchAgent.
@@ -213,6 +244,21 @@ func (c *veraServiceClient) ExecutePlan(ctx context.Context, req *connect.Reques
 	return c.executePlan.CallUnary(ctx, req)
 }
 
+// Browse calls vera.v1.VeraService.Browse.
+func (c *veraServiceClient) Browse(ctx context.Context, req *connect.Request[v1.BrowseRequest]) (*connect.Response[v1.BrowseResponse], error) {
+	return c.browse.CallUnary(ctx, req)
+}
+
+// StartSession calls vera.v1.VeraService.StartSession.
+func (c *veraServiceClient) StartSession(ctx context.Context, req *connect.Request[v1.StartSessionRequest]) (*connect.Response[v1.StartSessionResponse], error) {
+	return c.startSession.CallUnary(ctx, req)
+}
+
+// Birth calls vera.v1.VeraService.Birth.
+func (c *veraServiceClient) Birth(ctx context.Context, req *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error) {
+	return c.birth.CallUnary(ctx, req)
+}
+
 // VeraServiceHandler is an implementation of the vera.v1.VeraService service.
 type VeraServiceHandler interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error
@@ -225,6 +271,9 @@ type VeraServiceHandler interface {
 	Suggest(context.Context, *connect.Request[v1.SuggestRequest]) (*connect.Response[v1.SuggestResponse], error)
 	Plan(context.Context, *connect.Request[v1.PlanRequest]) (*connect.Response[v1.PlanResponse], error)
 	ExecutePlan(context.Context, *connect.Request[v1.ExecutePlanRequest]) (*connect.Response[v1.ExecutePlanResponse], error)
+	Browse(context.Context, *connect.Request[v1.BrowseRequest]) (*connect.Response[v1.BrowseResponse], error)
+	StartSession(context.Context, *connect.Request[v1.StartSessionRequest]) (*connect.Response[v1.StartSessionResponse], error)
+	Birth(context.Context, *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error)
 }
 
 // NewVeraServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -294,6 +343,24 @@ func NewVeraServiceHandler(svc VeraServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(veraServiceMethods.ByName("ExecutePlan")),
 		connect.WithHandlerOptions(opts...),
 	)
+	veraServiceBrowseHandler := connect.NewUnaryHandler(
+		VeraServiceBrowseProcedure,
+		svc.Browse,
+		connect.WithSchema(veraServiceMethods.ByName("Browse")),
+		connect.WithHandlerOptions(opts...),
+	)
+	veraServiceStartSessionHandler := connect.NewUnaryHandler(
+		VeraServiceStartSessionProcedure,
+		svc.StartSession,
+		connect.WithSchema(veraServiceMethods.ByName("StartSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	veraServiceBirthHandler := connect.NewUnaryHandler(
+		VeraServiceBirthProcedure,
+		svc.Birth,
+		connect.WithSchema(veraServiceMethods.ByName("Birth")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/vera.v1.VeraService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case VeraServiceWatchAgentProcedure:
@@ -316,6 +383,12 @@ func NewVeraServiceHandler(svc VeraServiceHandler, opts ...connect.HandlerOption
 			veraServicePlanHandler.ServeHTTP(w, r)
 		case VeraServiceExecutePlanProcedure:
 			veraServiceExecutePlanHandler.ServeHTTP(w, r)
+		case VeraServiceBrowseProcedure:
+			veraServiceBrowseHandler.ServeHTTP(w, r)
+		case VeraServiceStartSessionProcedure:
+			veraServiceStartSessionHandler.ServeHTTP(w, r)
+		case VeraServiceBirthProcedure:
+			veraServiceBirthHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -363,4 +436,16 @@ func (UnimplementedVeraServiceHandler) Plan(context.Context, *connect.Request[v1
 
 func (UnimplementedVeraServiceHandler) ExecutePlan(context.Context, *connect.Request[v1.ExecutePlanRequest]) (*connect.Response[v1.ExecutePlanResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.ExecutePlan is not implemented"))
+}
+
+func (UnimplementedVeraServiceHandler) Browse(context.Context, *connect.Request[v1.BrowseRequest]) (*connect.Response[v1.BrowseResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.Browse is not implemented"))
+}
+
+func (UnimplementedVeraServiceHandler) StartSession(context.Context, *connect.Request[v1.StartSessionRequest]) (*connect.Response[v1.StartSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.StartSession is not implemented"))
+}
+
+func (UnimplementedVeraServiceHandler) Birth(context.Context, *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.Birth is not implemented"))
 }

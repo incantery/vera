@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vera/v1/vera.proto.
  */
 export const file_vera_v1_vera: GenFile = /*@__PURE__*/
-  fileDesc("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cGUSDAoEa2luZBgBIAEoCRINCgV3aGVyZRgCIAEoCRIMCgRob21lGAMgASgJEgwKBG5hbWUYBCABKAkSDwoHY2FkZW5jZRgFIAEoCRIQCghkZWFkbGluZRgGIAEoCRIMCgRnb2FsGAcgASgJEgsKA3doeRgIIAEoCRIQCghxdWVzdGlvbhgJIAEoCRINCgVzdGVwcxgKIAMoCSI8CgxQbGFuUmVzcG9uc2USCgoCaWQYASABKAkSIAoEcGxhbhgCIAEoCzISLnZlcmEudjEuUGxhblNoYXBlIlAKEkV4ZWN1dGVQbGFuUmVxdWVzdBIKCgJpZBgBIAEoCRIgCgRwbGFuGAIgASgLMhIudmVyYS52MS5QbGFuU2hhcGUSDAoEbW9kZRgDIAEoCSI5ChNFeGVjdXRlUGxhblJlc3BvbnNlEg8KB3Rhc2tfaWQYASABKAkSEQoJd29ya3NwYWNlGAIgASgJMoYFCgtWZXJhU2VydmljZRJHCgpXYXRjaEFnZW50EhoudmVyYS52MS5XYXRjaEFnZW50UmVxdWVzdBobLnZlcmEudjEuV2F0Y2hBZ2VudFJlc3BvbnNlMAESMAoDU2F5EhMudmVyYS52MS5TYXlSZXF1ZXN0GhQudmVyYS52MS5TYXlSZXNwb25zZRJCCglJbnRlcnJ1cHQSGS52ZXJhLnYxLkludGVycnVwdFJlcXVlc3QaGi52ZXJhLnYxLkludGVycnVwdFJlc3BvbnNlEkcKCldhdGNoQm9hcmQSGi52ZXJhLnYxLldhdGNoQm9hcmRSZXF1ZXN0GhsudmVyYS52MS5XYXRjaEJvYXJkUmVzcG9uc2UwARI5CgZSZXZpZXcSFi52ZXJhLnYxLlJldmlld1JlcXVlc3QaFy52ZXJhLnYxLlJldmlld1Jlc3BvbnNlEjkKBkNvbW1pdBIWLnZlcmEudjEuQ29tbWl0UmVxdWVzdBoXLnZlcmEudjEuQ29tbWl0UmVzcG9uc2USPAoHRGlzY2FyZBIXLnZlcmEudjEuRGlzY2FyZFJlcXVlc3QaGC52ZXJhLnYxLkRpc2NhcmRSZXNwb25zZRI8CgdTdWdnZXN0EhcudmVyYS52MS5TdWdnZXN0UmVxdWVzdBoYLnZlcmEudjEuU3VnZ2VzdFJlc3BvbnNlEjMKBFBsYW4SFC52ZXJhLnYxLlBsYW5SZXF1ZXN0GhUudmVyYS52MS5QbGFuUmVzcG9uc2USSAoLRXhlY3V0ZVBsYW4SGy52ZXJhLnYxLkV4ZWN1dGVQbGFuUmVxdWVzdBocLnZlcmEudjEuRXhlY3V0ZVBsYW5SZXNwb25zZUIuWixnaXRodWIuY29tL2luY2FudGVyeS92ZXJhL2dlbi92ZXJhL3YxO3ZlcmF2MWIGcHJvdG8z");
+  fileDesc("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SW50ZXJydXB0EhkudmVyYS52MS5JbnRlcnJ1cHRSZXF1ZXN0GhoudmVyYS52MS5JbnRlcnJ1cHRSZXNwb25zZRJHCgpXYXRjaEJvYXJkEhoudmVyYS52MS5XYXRjaEJvYXJkUmVxdWVzdBobLnZlcmEudjEuV2F0Y2hCb2FyZFJlc3BvbnNlMAESOQoGUmV2aWV3EhYudmVyYS52MS5SZXZpZXdSZXF1ZXN0GhcudmVyYS52MS5SZXZpZXdSZXNwb25zZRI5CgZDb21taXQSFi52ZXJhLnYxLkNvbW1pdFJlcXVlc3QaFy52ZXJhLnYxLkNvbW1pdFJlc3BvbnNlEjwKB0Rpc2NhcmQSFy52ZXJhLnYxLkRpc2NhcmRSZXF1ZXN0GhgudmVyYS52MS5EaXNjYXJkUmVzcG9uc2USPAoHU3VnZ2VzdBIXLnZlcmEudjEuU3VnZ2VzdFJlcXVlc3QaGC52ZXJhLnYxLlN1Z2dlc3RSZXNwb25zZRIzCgRQbGFuEhQudmVyYS52MS5QbGFuUmVxdWVzdBoVLnZlcmEudjEuUGxhblJlc3BvbnNlEkgKC0V4ZWN1dGVQbGFuEhsudmVyYS52MS5FeGVjdXRlUGxhblJlcXVlc3QaHC52ZXJhLnYxLkV4ZWN1dGVQbGFuUmVzcG9uc2USOQoGQnJvd3NlEhYudmVyYS52MS5Ccm93c2VSZXF1ZXN0GhcudmVyYS52MS5Ccm93c2VSZXNwb25zZRJLCgxTdGFydFNlc3Npb24SHC52ZXJhLnYxLlN0YXJ0U2Vzc2lvblJlcXVlc3QaHS52ZXJhLnYxLlN0YXJ0U2Vzc2lvblJlc3BvbnNlEjYKBUJpcnRoEhUudmVyYS52MS5CaXJ0aFJlcXVlc3QaFi52ZXJhLnYxLkJpcnRoUmVzcG9uc2VCLlosZ2l0aHViLmNvbS9pbmNhbnRlcnkvdmVyYS9nZW4vdmVyYS92MTt2ZXJhdjFiBnByb3RvMw");
 
 /**
  * WatchAgent streams one agent's whole present: a full snapshot
@@ -1629,6 +1629,201 @@ export const ExecutePlanResponseSchema: GenMessage<ExecutePlanResponse> = /*@__P
   messageDesc(file_vera_v1_vera, 40);
 
 /**
+ * Browse walks the machine's directories one level at a time, fenced
+ * to the home dir (or the world). StartSession births a fresh claude
+ * in a browsed directory with the owner's first message — the ticket
+ * it answers with is watched via Birth until the session has a name.
+ *
+ * @generated from message vera.v1.BrowseRequest
+ */
+export type BrowseRequest = Message<"vera.v1.BrowseRequest"> & {
+  /**
+   * "" = the fence root
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+};
+
+/**
+ * Describes the message vera.v1.BrowseRequest.
+ * Use `create(BrowseRequestSchema)` to create a new message.
+ */
+export const BrowseRequestSchema: GenMessage<BrowseRequest> = /*@__PURE__*/
+  messageDesc(file_vera_v1_vera, 41);
+
+/**
+ * @generated from message vera.v1.DirEntry
+ */
+export type DirEntry = Message<"vera.v1.DirEntry"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string cwd = 2;
+   */
+  cwd: string;
+
+  /**
+   * the directory is a git repo
+   *
+   * @generated from field: bool git = 3;
+   */
+  git: boolean;
+
+  /**
+   * the fleet already has a session here
+   *
+   * @generated from field: bool known = 4;
+   */
+  known: boolean;
+};
+
+/**
+ * Describes the message vera.v1.DirEntry.
+ * Use `create(DirEntrySchema)` to create a new message.
+ */
+export const DirEntrySchema: GenMessage<DirEntry> = /*@__PURE__*/
+  messageDesc(file_vera_v1_vera, 42);
+
+/**
+ * @generated from message vera.v1.BrowseResponse
+ */
+export type BrowseResponse = Message<"vera.v1.BrowseResponse"> & {
+  /**
+   * @generated from field: string root = 1;
+   */
+  root: string;
+
+  /**
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * "" at the root
+   *
+   * @generated from field: string parent = 3;
+   */
+  parent: string;
+
+  /**
+   * @generated from field: bool git = 4;
+   */
+  git: boolean;
+
+  /**
+   * @generated from field: repeated vera.v1.DirEntry dirs = 5;
+   */
+  dirs: DirEntry[];
+};
+
+/**
+ * Describes the message vera.v1.BrowseResponse.
+ * Use `create(BrowseResponseSchema)` to create a new message.
+ */
+export const BrowseResponseSchema: GenMessage<BrowseResponse> = /*@__PURE__*/
+  messageDesc(file_vera_v1_vera, 43);
+
+/**
+ * @generated from message vera.v1.StartSessionRequest
+ */
+export type StartSessionRequest = Message<"vera.v1.StartSessionRequest"> & {
+  /**
+   * @generated from field: string cwd = 1;
+   */
+  cwd: string;
+
+  /**
+   * the first message, verbatim — direct from the first word
+   *
+   * @generated from field: string text = 2;
+   */
+  text: string;
+
+  /**
+   * "" (read) | read | edit | all
+   *
+   * @generated from field: string perm = 3;
+   */
+  perm: string;
+};
+
+/**
+ * Describes the message vera.v1.StartSessionRequest.
+ * Use `create(StartSessionRequestSchema)` to create a new message.
+ */
+export const StartSessionRequestSchema: GenMessage<StartSessionRequest> = /*@__PURE__*/
+  messageDesc(file_vera_v1_vera, 44);
+
+/**
+ * @generated from message vera.v1.StartSessionResponse
+ */
+export type StartSessionResponse = Message<"vera.v1.StartSessionResponse"> & {
+  /**
+   * @generated from field: string birth_id = 1;
+   */
+  birthId: string;
+};
+
+/**
+ * Describes the message vera.v1.StartSessionResponse.
+ * Use `create(StartSessionResponseSchema)` to create a new message.
+ */
+export const StartSessionResponseSchema: GenMessage<StartSessionResponse> = /*@__PURE__*/
+  messageDesc(file_vera_v1_vera, 45);
+
+/**
+ * @generated from message vera.v1.BirthRequest
+ */
+export type BirthRequest = Message<"vera.v1.BirthRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+};
+
+/**
+ * Describes the message vera.v1.BirthRequest.
+ * Use `create(BirthRequestSchema)` to create a new message.
+ */
+export const BirthRequestSchema: GenMessage<BirthRequest> = /*@__PURE__*/
+  messageDesc(file_vera_v1_vera, 46);
+
+/**
+ * @generated from message vera.v1.BirthResponse
+ */
+export type BirthResponse = Message<"vera.v1.BirthResponse"> & {
+  /**
+   * thinking | born | failed
+   *
+   * @generated from field: string status = 1;
+   */
+  status: string;
+
+  /**
+   * the newborn session, once born
+   *
+   * @generated from field: string root = 2;
+   */
+  root: string;
+
+  /**
+   * @generated from field: string err = 3;
+   */
+  err: string;
+};
+
+/**
+ * Describes the message vera.v1.BirthResponse.
+ * Use `create(BirthResponseSchema)` to create a new message.
+ */
+export const BirthResponseSchema: GenMessage<BirthResponse> = /*@__PURE__*/
+  messageDesc(file_vera_v1_vera, 47);
+
+/**
  * @generated from service vera.v1.VeraService
  */
 export const VeraService: GenService<{
@@ -1711,6 +1906,30 @@ export const VeraService: GenService<{
     methodKind: "unary";
     input: typeof ExecutePlanRequestSchema;
     output: typeof ExecutePlanResponseSchema;
+  },
+  /**
+   * @generated from rpc vera.v1.VeraService.Browse
+   */
+  browse: {
+    methodKind: "unary";
+    input: typeof BrowseRequestSchema;
+    output: typeof BrowseResponseSchema;
+  },
+  /**
+   * @generated from rpc vera.v1.VeraService.StartSession
+   */
+  startSession: {
+    methodKind: "unary";
+    input: typeof StartSessionRequestSchema;
+    output: typeof StartSessionResponseSchema;
+  },
+  /**
+   * @generated from rpc vera.v1.VeraService.Birth
+   */
+  birth: {
+    methodKind: "unary";
+    input: typeof BirthRequestSchema;
+    output: typeof BirthResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_vera_v1_vera, 0);
