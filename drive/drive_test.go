@@ -324,6 +324,26 @@ echo '{"type":"result","result":"ok","session_id":"s1"}'`)
 	}
 }
 
+func TestHeadlessCarriesTheModel(t *testing.T) {
+	// The model rides as its own flag, before the trailing prompt, and
+	// composes with a tool policy — the ladder's per-run rung.
+	bin := stubClaude(t, `case "$*" in *"--model claude-sonnet-5"*"--allowedTools=Edit"*" go"*) ;; *) echo "model missing or misplaced: $*" >&2; exit 1;; esac
+echo '{"type":"result","result":"ok","session_id":"s1"}'`)
+	h := &Headless{Bin: bin, Dir: t.TempDir(), Model: "claude-sonnet-5", AllowedTools: []string{"Edit"}}
+	if _, err := h.RunTurn(context.Background(), "abc", "go"); err != nil {
+		t.Fatalf("resume with model: %v", err)
+	}
+	if _, err := h.StartTurn(context.Background(), "go"); err != nil {
+		t.Fatalf("start with model: %v", err)
+	}
+	// And absent by default.
+	bin2 := stubClaude(t, `case "$*" in *--model*) echo "model leaked" >&2; exit 1;; esac
+echo '{"type":"result","result":"ok","session_id":"s1"}'`)
+	if _, err := (&Headless{Bin: bin2, Dir: t.TempDir()}).RunTurn(context.Background(), "abc", "go"); err != nil {
+		t.Fatalf("default must carry no model: %v", err)
+	}
+}
+
 func TestHeadlessCarriesThePermissionMode(t *testing.T) {
 	// The mode rides as its own flag, before the trailing prompt, and
 	// composes with a tool policy.

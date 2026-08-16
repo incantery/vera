@@ -1,0 +1,47 @@
+[
+  {
+    "id": "fix-clip-off-by-one",
+    "goal": "The Go module in this directory has a failing test. Run `go test ./...`, find the bug in clip.go, and fix it so the tests pass. Do not modify clip_test.go.",
+    "mode": "work",
+    "files": {
+      "go.mod": "module lab/clip\n\ngo 1.21\n",
+      "clip.go": "package clip\n\n// Clip returns s cut to at most max runes, with \"…\" appended when\n// something was actually cut.\nfunc Clip(s string, max int) string {\n\tr := []rune(s)\n\tif len(r) < max {\n\t\treturn s\n\t}\n\treturn string(r[:max]) + \"…\"\n}\n",
+      "clip_test.go": "package clip\n\nimport \"testing\"\n\nfunc TestClip(t *testing.T) {\n\tcases := []struct {\n\t\tin   string\n\t\tmax  int\n\t\twant string\n\t}{\n\t\t{\"hello\", 5, \"hello\"},\n\t\t{\"hi\", 5, \"hi\"},\n\t\t{\"hello world\", 5, \"hello…\"},\n\t\t{\"\", 3, \"\"},\n\t}\n\tfor _, c := range cases {\n\t\tif got := Clip(c.in, c.max); got != c.want {\n\t\t\tt.Errorf(\"Clip(%q, %d) = %q, want %q\", c.in, c.max, got, c.want)\n\t\t}\n\t}\n}\n",
+      ".golden/clip_test.go": "package clip\n\nimport \"testing\"\n\nfunc TestClip(t *testing.T) {\n\tcases := []struct {\n\t\tin   string\n\t\tmax  int\n\t\twant string\n\t}{\n\t\t{\"hello\", 5, \"hello\"},\n\t\t{\"hi\", 5, \"hi\"},\n\t\t{\"hello world\", 5, \"hello…\"},\n\t\t{\"\", 3, \"\"},\n\t}\n\tfor _, c := range cases {\n\t\tif got := Clip(c.in, c.max); got != c.want {\n\t\t\tt.Errorf(\"Clip(%q, %d) = %q, want %q\", c.in, c.max, got, c.want)\n\t\t}\n\t}\n}\n"
+    },
+    "check": "cmp -s clip_test.go .golden/clip_test.go && go test ./..."
+  },
+  {
+    "id": "implement-median",
+    "goal": "Implement the Median function in median.go so that `go test ./...` passes. Do not modify median_test.go.",
+    "mode": "work",
+    "files": {
+      "go.mod": "module lab/median\n\ngo 1.21\n",
+      "median.go": "package median\n\n// Median returns the median of xs: the middle value when sorted, or\n// the mean of the two middle values when len(xs) is even. An empty\n// slice returns 0. xs must not be reordered by the call.\nfunc Median(xs []float64) float64 {\n\treturn 0 // TODO\n}\n",
+      "median_test.go": "package median\n\nimport \"testing\"\n\nfunc TestMedian(t *testing.T) {\n\tcases := []struct {\n\t\tin   []float64\n\t\twant float64\n\t}{\n\t\t{[]float64{1, 3, 2}, 2},\n\t\t{[]float64{4, 1, 3, 2}, 2.5},\n\t\t{[]float64{5}, 5},\n\t\t{nil, 0},\n\t}\n\tfor _, c := range cases {\n\t\tif got := Median(c.in); got != c.want {\n\t\t\tt.Errorf(\"Median(%v) = %v, want %v\", c.in, got, c.want)\n\t\t}\n\t}\n\tin := []float64{9, 1, 5}\n\tMedian(in)\n\tif in[0] != 9 || in[1] != 1 || in[2] != 5 {\n\t\tt.Errorf(\"Median reordered its input: %v\", in)\n\t}\n}\n",
+      ".golden/median_test.go": "package median\n\nimport \"testing\"\n\nfunc TestMedian(t *testing.T) {\n\tcases := []struct {\n\t\tin   []float64\n\t\twant float64\n\t}{\n\t\t{[]float64{1, 3, 2}, 2},\n\t\t{[]float64{4, 1, 3, 2}, 2.5},\n\t\t{[]float64{5}, 5},\n\t\t{nil, 0},\n\t}\n\tfor _, c := range cases {\n\t\tif got := Median(c.in); got != c.want {\n\t\t\tt.Errorf(\"Median(%v) = %v, want %v\", c.in, got, c.want)\n\t\t}\n\t}\n\tin := []float64{9, 1, 5}\n\tMedian(in)\n\tif in[0] != 9 || in[1] != 1 || in[2] != 5 {\n\t\tt.Errorf(\"Median reordered its input: %v\", in)\n\t}\n}\n"
+    },
+    "check": "cmp -s median_test.go .golden/median_test.go && go test ./..."
+  },
+  {
+    "id": "dedupe-preserve-order",
+    "goal": "Implement the Dedupe function in dedupe.go so that `go test ./...` passes. Do not modify dedupe_test.go.",
+    "mode": "work",
+    "files": {
+      "go.mod": "module lab/dedupe\n\ngo 1.21\n",
+      "dedupe.go": "package dedupe\n\n// Dedupe returns xs with duplicates removed, keeping the first\n// occurrence of each value and the order they first appeared in.\nfunc Dedupe(xs []string) []string {\n\treturn nil // TODO\n}\n",
+      "dedupe_test.go": "package dedupe\n\nimport (\n\t\"reflect\"\n\t\"testing\"\n)\n\nfunc TestDedupe(t *testing.T) {\n\tcases := []struct {\n\t\tin, want []string\n\t}{\n\t\t{[]string{\"b\", \"a\", \"b\", \"c\", \"a\"}, []string{\"b\", \"a\", \"c\"}},\n\t\t{[]string{\"x\"}, []string{\"x\"}},\n\t\t{[]string{}, []string{}},\n\t}\n\tfor _, c := range cases {\n\t\tgot := Dedupe(c.in)\n\t\tif len(got) == 0 && len(c.want) == 0 {\n\t\t\tcontinue\n\t\t}\n\t\tif !reflect.DeepEqual(got, c.want) {\n\t\t\tt.Errorf(\"Dedupe(%v) = %v, want %v\", c.in, got, c.want)\n\t\t}\n\t}\n}\n",
+      ".golden/dedupe_test.go": "package dedupe\n\nimport (\n\t\"reflect\"\n\t\"testing\"\n)\n\nfunc TestDedupe(t *testing.T) {\n\tcases := []struct {\n\t\tin, want []string\n\t}{\n\t\t{[]string{\"b\", \"a\", \"b\", \"c\", \"a\"}, []string{\"b\", \"a\", \"c\"}},\n\t\t{[]string{\"x\"}, []string{\"x\"}},\n\t\t{[]string{}, []string{}},\n\t}\n\tfor _, c := range cases {\n\t\tgot := Dedupe(c.in)\n\t\tif len(got) == 0 && len(c.want) == 0 {\n\t\t\tcontinue\n\t\t}\n\t\tif !reflect.DeepEqual(got, c.want) {\n\t\t\tt.Errorf(\"Dedupe(%v) = %v, want %v\", c.in, got, c.want)\n\t\t}\n\t}\n}\n"
+    },
+    "check": "cmp -s dedupe_test.go .golden/dedupe_test.go && go test ./..."
+  },
+  {
+    "id": "spot-the-race",
+    "goal": "Read counter.go in this directory and explain in one paragraph what is wrong with it and how you would fix it.",
+    "mode": "read",
+    "files": {
+      "counter.go": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tvar wg sync.WaitGroup\n\tcount := 0\n\tfor i := 0; i < 1000; i++ {\n\t\twg.Add(1)\n\t\tgo func() {\n\t\t\tdefer wg.Done()\n\t\t\tcount++\n\t\t}()\n\t}\n\twg.Wait()\n\tfmt.Println(count)\n}\n"
+    },
+    "expect": ["race", "count"]
+  }
+]

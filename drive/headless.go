@@ -23,6 +23,7 @@ import (
 type Headless struct {
 	Bin     string        // the claude binary; "" means "claude" from PATH
 	Dir     string        // the session's cwd — resume looks the session up by project
+	Model   string        // rides to claude's --model untouched; "" means the CLI's own default
 	Timeout time.Duration // per turn; default 10m
 	// AllowedTools is the turn's tool policy, passed straight to
 	// claude's own permission system (--allowedTools). Empty means
@@ -79,13 +80,15 @@ func (h *Headless) StartTurn(ctx context.Context, prompt string) (Turn, error) {
 }
 
 func (h *Headless) exec(ctx context.Context, args []string) (Turn, error) {
-	if len(h.AllowedTools) > 0 || h.PermissionMode != "" {
-		// Policy flags ride before the trailing prompt, into claude's
-		// own permission system. --allowedTools is one =-joined token:
-		// the flag is variadic, and a bare form would swallow the
-		// prompt.
+	if h.Model != "" || len(h.AllowedTools) > 0 || h.PermissionMode != "" {
+		// Model and policy flags ride before the trailing prompt.
+		// --allowedTools is one =-joined token: the flag is variadic,
+		// and a bare form would swallow the prompt.
 		prompt := args[len(args)-1]
 		args = args[: len(args)-1 : len(args)-1]
+		if h.Model != "" {
+			args = append(args, "--model", h.Model)
+		}
 		if len(h.AllowedTools) > 0 {
 			args = append(args, "--allowedTools="+strings.Join(h.AllowedTools, ","))
 		}
