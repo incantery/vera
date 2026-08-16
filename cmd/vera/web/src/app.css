@@ -48,6 +48,23 @@ body {
 	--shadow-sm: 0 0 0 1px #3f424d;
 	--shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
 	--shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
+
+	/* ev-* — the event palette (adds green, deletes red, shell amber,
+	   reads blue). Born in the Direct Mode cockpit; global now so every
+	   surface names danger and success the same way. */
+	--ev-add: oklch(0.86 0.1 155);
+	--ev-add-mid: oklch(0.72 0.13 155);
+	--ev-add-fill: oklch(0.3 0.045 155);
+	--ev-del: oklch(0.85 0.1 22);
+	--ev-del-mid: oklch(0.67 0.15 22);
+	--ev-del-fill: oklch(0.29 0.06 22);
+	--ev-del-edge: oklch(0.45 0.11 22);
+	--ev-sh: oklch(0.88 0.09 82);
+	--ev-sh-mid: oklch(0.75 0.12 82);
+	--ev-sh-fill: oklch(0.31 0.05 82);
+	--ev-rd: oklch(0.86 0.07 228);
+	--ev-rd-mid: oklch(0.7 0.1 228);
+	--ev-rd-fill: oklch(0.3 0.045 228);
 }
 
 /* Nocturne component classes the board consumes (ported from the DS
@@ -157,12 +174,38 @@ body {
 /* rk-* — the Direct Mode design's motion vocabulary. Keyframes live
    globally because the cockpit references them from inline styles,
    which Svelte's scoped-keyframe rewriting never touches. */
+/* v* — the Vera home surface's motion vocabulary (the Vera design).
+   Global for the same reason as rk-*: inline styles reference them. */
+@keyframes vEnter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+@keyframes vCore { 0%, 100% { opacity: 0.5; transform: scale(0.88); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes vGather { 0%, 100% { transform: scale(1.08); opacity: 0.45; } 50% { transform: scale(0.78); opacity: 1; } }
+@keyframes vOrbit { to { transform: rotate(360deg); } }
+@keyframes vBreathSlow { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.62; } }
+@keyframes vBreathe { 0%, 100% { box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.18); } 50% { box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.42), 0 0 26px -8px rgba(139, 160, 250, 0.28); } }
+@keyframes vBreatheMint { 0%, 100% { box-shadow: inset 0 0 0 1px rgba(110, 223, 195, 0.2); } 50% { box-shadow: inset 0 0 0 1px rgba(110, 223, 195, 0.45), 0 0 26px -8px rgba(110, 223, 195, 0.25); } }
+
 @keyframes rk-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 @keyframes rk-spin { to { transform: rotate(360deg); } }
 @keyframes rk-travel { 0% { transform: translateY(-24px); } 100% { transform: translateY(150px); } }
 @keyframes rk-glow { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.9; } }
 @keyframes rk-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @keyframes rk-sweep { from { opacity: 0.16; transform: translateX(-100%); } to { opacity: 0; transform: translateX(100%); } }
+/* ── mobile ground rules. Form controls hold 16px on narrow screens so
+   iOS Safari doesn't zoom the page on focus; !important because every
+   surface sizes its inputs inline. ── */
+@media (max-width: 720px) {
+	input[type='text'],
+	input[type='password'],
+	input:not([type]),
+	textarea,
+	select {
+		font-size: 16px !important;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
-	.nk *, .nk *::before, .nk *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+	.nk *, .nk *::before, .nk *::after,
+	.vx *, .vx *::before, .vx *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+	/* the membrane surface leans on Tailwind's animate-* utilities */
+	.animate-ping, .animate-pulse, .animate-spin { animation: none !important; }
 }

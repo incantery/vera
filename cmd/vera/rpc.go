@@ -372,6 +372,7 @@ func protoTask(t task) *verav1.BoardTask {
 		Pinned: t.Pinned, Proposal: t.Proposal, ProposalWhy: t.ProposalWhy,
 		ProposalKind: t.ProposalKind, CostUsd: t.CostUSD,
 		Workspace: t.Workspace, ScratchName: t.ScratchName, Mode: t.Mode,
+		Cadence: t.Cadence, Deadline: t.Deadline,
 		CreatedUnixMs: t.CreatedAt.UnixMilli(), UpdatedUnixMs: t.UpdatedAt.UnixMilli(),
 	}
 	for _, r := range t.Runs {

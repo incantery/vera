@@ -262,6 +262,7 @@ export function boardFrame(f) {
 			runs: t.runs?.length ? t.runs.map((r) => ({ kind: r.kind, outcome: r.outcome, costUsd: r.costUsd })) : undefined,
 			workspace: t.workspace || undefined, scratchName: t.scratchName || undefined,
 			mode: t.mode || undefined,
+			cadence: t.cadence || undefined, deadline: t.deadline || undefined,
 			log: (t.log ?? []).map((e) => ({ at: iso(e.atUnixMs), actor: e.actor, text: e.text })),
 			exchanges: t.exchanges?.length ? t.exchanges.map((x) => ({ prompt: x.prompt, reply: x.reply })) : undefined,
 			createdAt: iso(t.createdUnixMs), updatedAt: iso(t.updatedUnixMs),

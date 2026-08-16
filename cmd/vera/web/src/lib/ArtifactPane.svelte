@@ -7,7 +7,7 @@
 		deleteArtifact
 	} from '$lib/state.svelte.js';
 
-	let { agentId, onchanged } = $props();
+	let { agentId, onchanged, onclose = null } = $props();
 
 	let list = $state(null); // null = loading
 	let sel = $state(null); // the open artifact, or null for the list
@@ -37,6 +37,7 @@
 			title = sel.title;
 			content = sel.content;
 			dirty = false;
+			confirmDel = false;
 			error = '';
 		} catch (e) {
 			error = e.message;
@@ -69,8 +70,15 @@
 		}
 	}
 
+	// Deleting is forever — the first click arms, the second commits.
+	let confirmDel = $state(false);
 	async function remove() {
 		if (!sel?.id) return;
+		if (!confirmDel) {
+			confirmDel = true;
+			return;
+		}
+		confirmDel = false;
 		try {
 			await deleteArtifact(agentId, sel.id);
 			sel = null;
@@ -97,14 +105,30 @@
 	}
 </script>
 
-<aside class="flex w-full max-w-sm shrink-0 flex-col border-l border-zinc-800 pl-4">
+<!-- below sm the shelf leaves the flow and takes the screen; the ✕
+     (phone-only) hands it back -->
+<aside
+	class="flex w-full max-w-sm shrink-0 flex-col border-l border-zinc-800 pl-4 max-sm:fixed max-sm:inset-0 max-sm:z-40 max-sm:max-w-none max-sm:border-l-0 max-sm:bg-zinc-950 max-sm:px-4 max-sm:pb-3"
+>
 	<div class="flex items-baseline gap-2 border-b border-zinc-800 py-3">
 		{#if sel}
-			<button class="text-zinc-500 hover:text-zinc-300" onclick={() => (sel = null)}>←</button>
+			<button
+				aria-label="back to the artifact list"
+				class="px-1 text-zinc-500 hover:text-zinc-300"
+				onclick={() => {
+					sel = null;
+					confirmDel = false;
+				}}>←</button
+			>
 			<span class="text-xs font-semibold tracking-widest text-zinc-500 uppercase">artifact</span>
 			<span class="grow"></span>
 			{#if sel.id}
-				<button class="text-[11px] text-zinc-600 hover:text-rose-400" onclick={remove}>delete</button>
+				<button
+					class="text-[11px] {confirmDel
+						? 'font-semibold text-rose-400'
+						: 'text-zinc-500 hover:text-rose-400'}"
+					onclick={remove}>{confirmDel ? 'delete — sure?' : 'delete'}</button
+				>
 			{/if}
 			<button
 				class="rounded-md bg-sky-400 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-950 disabled:opacity-40"
@@ -117,6 +141,13 @@
 			<span class="text-xs font-semibold tracking-widest text-zinc-500 uppercase">artifacts</span>
 			<span class="grow"></span>
 			<button class="text-[11px] text-zinc-500 hover:text-zinc-300" onclick={startNew}>+ new</button>
+		{/if}
+		{#if onclose}
+			<button
+				aria-label="close the artifact shelf"
+				class="px-1 text-zinc-500 hover:text-zinc-300 sm:hidden"
+				onclick={onclose}>✕</button
+			>
 		{/if}
 	</div>
 

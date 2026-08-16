@@ -36,7 +36,7 @@
 >
 	<form
 		onsubmit={submit}
-		style="width: 300px; display: flex; flex-direction: column; gap: 14px; padding: 26px 24px; background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-lg);"
+		style="width: min(300px, calc(100vw - 40px)); display: flex; flex-direction: column; gap: 14px; padding: 26px 24px; background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-lg);"
 	>
 		<div style="display: flex; align-items: baseline; gap: 8px;">
 			<span style="font-family: var(--font-heading); font-weight: 600; font-size: 16px;">vera</span>
@@ -58,7 +58,7 @@
 			disabled={busy}
 		/>
 		{#if error}
-			<div style="font-size: 12px; color: var(--color-accent-300); line-height: 1.5;">{error}</div>
+			<div role="alert" style="font-size: 12px; color: var(--ev-del); line-height: 1.5;">{error}</div>
 		{/if}
 		<button class="btn btn-primary" type="submit" disabled={busy || !pass.trim()}>
 			{busy ? 'trying…' : 'open'}

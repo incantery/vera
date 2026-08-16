@@ -587,11 +587,11 @@
 
 <div
 	class="nk"
-	style="flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); overflow: hidden; --ev-add: oklch(0.86 0.10 155); --ev-add-mid: oklch(0.72 0.13 155); --ev-add-fill: oklch(0.30 0.045 155); --ev-del: oklch(0.85 0.10 22); --ev-del-mid: oklch(0.67 0.15 22); --ev-del-fill: oklch(0.29 0.06 22); --ev-del-edge: oklch(0.45 0.11 22); --ev-sh: oklch(0.88 0.09 82); --ev-sh-mid: oklch(0.75 0.12 82); --ev-sh-fill: oklch(0.31 0.05 82); --ev-rd: oklch(0.86 0.07 228); --ev-rd-mid: oklch(0.70 0.10 228); --ev-rd-fill: oklch(0.30 0.045 228);"
+	style="flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); overflow: hidden;"
 >
 	<!-- header -->
-	<header style="flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 9px 16px 9px 14px; border-bottom: 1px solid var(--color-divider);">
-		<a href="/" style="font-size: 13px; line-height: 1; padding: 4px 6px; color: var(--color-neutral-600); border-radius: var(--radius-sm);" class="hover:text-[var(--color-neutral-200)]!">←</a>
+	<header class="dv-head" style="flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 9px 16px 9px 14px; border-bottom: 1px solid var(--color-divider);">
+		<a href="/" aria-label="back to the board" style="font-size: 13px; line-height: 1; padding: 4px 6px; color: var(--color-neutral-600); border-radius: var(--radius-sm);" class="hover:text-[var(--color-neutral-200)]!">←</a>
 		<div style="flex: 1 1 auto; display: flex; align-items: baseline; gap: 9px; min-width: 12ch; overflow: hidden;">
 			<span style="flex: 0 1 auto; min-width: 12ch; font-family: {MONO}; font-size: 13px; font-weight: 500; color: var(--color-neutral-100); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{data?.agent?.title ?? '…'}</span>
 			<span style="flex: 0 1 auto; min-width: 0; font-family: {MONO}; font-size: 11.5px; color: var(--color-neutral-600); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{data?.agent?.dir}{data?.agent?.branch ? ` · ${data.agent.branch}` : ''}{data?.resume ? ` · ${data.resume.slice(0, 8)}` : ''}</span>
@@ -600,8 +600,8 @@
 			<button onclick={() => setMode('membrane')} style="font: inherit; font-family: {MONO}; font-size: 11px; padding: 3px 8px; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-600); border-radius: 3px;" class="hover:text-[var(--color-neutral-300)]!">membrane</button>
 			<span style="font-family: {MONO}; font-size: 11px; padding: 3px 8px; color: var(--color-accent-100); background: var(--color-accent-800); border-radius: 3px;">direct</span>
 		</div>
-		<a href="/" style="flex: 0 0 auto; white-space: nowrap; font-family: {MONO}; font-size: 11.5px; padding: 4px 7px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--color-neutral-400);" class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-100)]!">board</a>
-		<button onclick={onshelf} style="flex: 0 0 auto; white-space: nowrap; font: inherit; font-family: {MONO}; font-size: 11.5px; padding: 4px 7px; cursor: pointer; border: 1px solid {shelfOpen ? 'var(--color-neutral-800)' : 'transparent'}; border-radius: var(--radius-sm); background: transparent; color: var(--color-neutral-400);" class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-100)]!">
+		<a href="/" title="mission control: what needs you, and the fleet's now" style="flex: 0 0 auto; white-space: nowrap; font-family: {MONO}; font-size: 11.5px; padding: 4px 7px; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--color-neutral-400);" class="dv-desk hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-100)]!">home</a>
+		<button onclick={onshelf} aria-pressed={shelfOpen} style="flex: 0 0 auto; white-space: nowrap; font: inherit; font-family: {MONO}; font-size: 11.5px; padding: 4px 7px; cursor: pointer; border: 1px solid {shelfOpen ? 'var(--color-neutral-800)' : 'transparent'}; border-radius: var(--radius-sm); background: transparent; color: var(--color-neutral-400);" class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-100)]!">
 			artifacts{#if data?.artifacts}&nbsp;<span style="color: var(--color-accent-300);">({data.artifacts})</span>{/if}
 		</button>
 		<button
@@ -614,6 +614,7 @@
 		</button>
 		<button
 			onclick={() => (inspector = !inspector)}
+			aria-pressed={inspector}
 			style="flex: 0 0 auto; white-space: nowrap; font: inherit; font-family: {MONO}; font-size: 11px; padding: 4px 8px; cursor: pointer; border-radius: var(--radius-sm); border: 1px solid {inspector ? 'var(--color-neutral-800)' : 'transparent'}; background: transparent; color: var(--color-neutral-500);"
 			class="hover:border-[var(--color-neutral-800)]! hover:text-[var(--color-neutral-200)]!"
 			title="context, permissions, working tree, spend (claude turns at API rates + vera's own calls)"
@@ -661,7 +662,7 @@
 			class="lg:flex!"
 		>
 			<div style="display: flex; align-items: center; gap: 7px; padding: 11px 12px 9px; white-space: nowrap;">
-				<button onclick={() => (rail = !rail)} style="font: inherit; font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; padding: 0; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-600);" class="hover:text-[var(--color-neutral-300)]!">
+				<button onclick={() => (rail = !rail)} aria-expanded={rail} aria-label="turns rail" style="font: inherit; font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; padding: 0; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-600);" class="hover:text-[var(--color-neutral-300)]!">
 					{rail ? `TURNS · ${turns.length} · \\` : '\\'}
 				</button>
 			</div>
@@ -701,7 +702,7 @@
 		<!-- the stream -->
 		<main style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
 			<div bind:this={chatEl} onscroll={onScroll} style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;">
-				<div style="max-width: 940px; margin: 0 auto; padding: 22px 28px 30px;">
+				<div class="dv-pad" style="max-width: 940px; margin: 0 auto; padding: 22px 28px 30px;">
 					{#each events as e, i (e.id)}
 						{#if e.kind !== 'reason' || showReason}
 							{@const kd = KIND[e.kind] ?? KIND.prose}
@@ -817,7 +818,7 @@
 														<div style="font-family: {MONO}; font-size: 12px; line-height: 1.6; color: {bodyTone(l)}; white-space: pre-wrap; word-break: break-word; padding: 0.5px 0;">{l}</div>
 													{/each}
 													{#if e.st.lines > e.st.out.split('\n').length}
-														<div style="font-family: {MONO}; font-size: 10.5px; color: var(--color-neutral-700); padding-top: 3px;">… {e.st.lines} lines total</div>
+														<div style="font-family: {MONO}; font-size: 10.5px; color: var(--color-neutral-600); padding-top: 3px;">… {e.st.lines} lines total</div>
 													{/if}
 												</div>
 											{/if}
@@ -836,7 +837,7 @@
 				{#if phase === 'waiting'}
 					<div style="position: absolute; top: -14px; left: 0; right: 0; height: 15px; background: linear-gradient(to top, var(--color-accent-800), transparent); opacity: 0.5; animation: rk-glow 2.1s ease-in-out infinite; pointer-events: none;"></div>
 				{/if}
-				<div style="max-width: 940px; margin: 0 auto; padding: 10px 28px 12px;">
+				<div class="dv-pad2" style="max-width: 940px; margin: 0 auto; padding: 10px 28px 12px;">
 					<div style="display: flex; align-items: center; gap: 9px; min-height: 18px; margin-bottom: 7px; flex-wrap: wrap;">
 						<span style="font-family: {MONO}; font-size: 11px; color: {statusTone};">{statusLine}</span>
 						{#each data?.queue ?? [] as q, qi (qi)}
@@ -854,6 +855,62 @@
 							</button>
 						{/if}
 					</div>
+					<!-- vera suggests, phone-sized: the rail is lg-only, so below
+					     it the same bid lands here — tappable replies above the
+					     composer, where a thumb can reach them. Same state, same
+					     send rail; ◆ collapses to a pill and stops the asking. -->
+					{#if phase !== 'working' && (sugg || suggBusy || suggErr)}
+						<div class="lg:hidden" style="margin-bottom: 8px;">
+							{#if suggOpen}
+								<div style="display: flex; flex-direction: column; gap: 6px; max-height: 34vh; overflow-y: auto;">
+									<div style="display: flex; align-items: center; gap: 7px;">
+										<button
+											onclick={() => (suggOpen = false)}
+											aria-expanded="true"
+											aria-label="vera suggests"
+											style="font: inherit; font-family: {MONO}; font-size: 10px; letter-spacing: 0.08em; padding: 0; cursor: pointer; border: none; background: transparent; color: var(--color-accent-300);"
+											title="vera reads each finished turn and suggests replies"
+										>◆ VERA SUGGESTS</button>
+										{#if suggBusy}
+											<span style="width: 9px; height: 9px; flex: 0 0 auto; border-radius: 99px; border: 1.5px solid var(--color-accent-800); border-top-color: var(--color-accent-300); animation: rk-spin 0.85s linear infinite;"></span>
+										{/if}
+									</div>
+									{#if suggErr}
+										<div style="font-size: 11.5px; line-height: 1.5; color: var(--ev-sh); text-wrap: pretty;">{suggErr}</div>
+									{:else if !sugg}
+										<div style="font-size: 11.5px; color: var(--color-neutral-600);">vera is reading the turn…</div>
+									{:else}
+										{#if sugg.happened}
+											<div style="font-size: 11.5px; line-height: 1.5; color: var(--color-neutral-500); text-wrap: pretty;">{sugg.happened}</div>
+										{/if}
+										{#each sugg.replies as rep, ri (ri)}
+											<div style="display: flex; align-items: stretch; border: 1px solid {ri === 0 ? 'var(--color-accent-700)' : 'var(--color-neutral-800)'}; border-radius: var(--radius-md); overflow: hidden;">
+												<button
+													onclick={() => sendSuggestion(rep)}
+													style="flex: 1; min-width: 0; font: inherit; text-align: left; cursor: pointer; border: none; background: transparent; padding: 8px 10px; font-size: 12.5px; line-height: 1.5; color: var(--color-neutral-200); text-wrap: pretty;"
+													title="send this reply now"
+												>{rep}</button>
+												<button
+													onclick={() => editSuggestion(rep)}
+													aria-label="put this reply in the composer to edit first"
+													style="flex: 0 0 auto; font: inherit; font-size: 12px; padding: 0 12px; cursor: pointer; border: none; border-left: 1px solid var(--color-neutral-800); background: transparent; color: var(--color-neutral-500);"
+													title="put this reply in the composer to edit first"
+												>✎</button>
+											</div>
+										{/each}
+									{/if}
+								</div>
+							{:else}
+								<button
+									onclick={() => (suggOpen = true)}
+									aria-expanded="false"
+									aria-label="vera suggests"
+									style="font: inherit; font-family: {MONO}; font-size: 10.5px; padding: 2px 9px; cursor: pointer; border-radius: 99px; border: 1px solid var(--color-neutral-800); background: transparent; color: var(--color-accent-300);"
+									title="vera reads each finished turn and suggests replies"
+								>◆ suggestions</button>
+							{/if}
+						</div>
+					{/if}
 					{#if attachments.length || uploadErr}
 						<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 7px;">
 							{#each attachments as a, ai (a.name)}
@@ -891,12 +948,13 @@
 						</button>
 					</form>
 					<div style="display: flex; align-items: center; gap: 12px; padding-top: 8px; font-family: {MONO}; font-size: 10.5px; color: var(--color-neutral-600); flex-wrap: wrap; white-space: nowrap;">
-						<span style="color: var(--color-neutral-500);">/ commands</span>
-						<span>⌘V image</span>
-						<span style="color: var(--color-neutral-800);">|</span>
+						<span class="dv-desk" style="color: var(--color-neutral-500);">/ commands</span>
+						<span class="dv-desk">⌘V image</span>
+						<span class="dv-desk" style="color: var(--color-neutral-800);">|</span>
 						<span>claude code{data?.ctx?.model ? ` · ${data.ctx.model.replace('claude-', '')}` : ''}</span>
 						<button
 							onclick={() => (showReason = !showReason)}
+							aria-pressed={showReason}
 							style="flex: 0 0 auto; white-space: nowrap; font: inherit; font-family: {MONO}; font-size: 10.5px; padding: 2px 7px; cursor: pointer; border-radius: 99px; border: 1px solid {showReason ? 'var(--color-accent-700)' : 'var(--color-neutral-800)'}; background: transparent; color: {showReason ? 'var(--color-accent-200)' : 'var(--color-neutral-500)'};"
 							class="hover:border-[var(--color-accent-500)]!"
 						>
@@ -910,9 +968,9 @@
 							{perm === 'all' ? 'UNGATED' : perm === 'edit' ? 'gate: shell' : 'gate: writes'}
 						</button>
 						<div style="flex: 1;"></div>
-						<span>⏎ send</span>
+						<span class="dv-desk">⏎ send</span>
 						<span class="hidden sm:inline">j k move</span>
-						<button onclick={() => (keysOpen = !keysOpen)} style="font: inherit; font-size: 10.5px; padding: 0 4px; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-500);" class="hover:text-[var(--color-neutral-100)]!">? keys</button>
+						<button onclick={() => (keysOpen = !keysOpen)} style="font: inherit; font-size: 10.5px; padding: 0 4px; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-500);" class="dv-desk hover:text-[var(--color-neutral-100)]!">? keys</button>
 					</div>
 					<div style="padding-top: 4px; font-family: {MONO}; font-size: 10.5px; color: var(--color-neutral-600);">
 						every turn logs to this agent's transcript with actor <span style="color: var(--color-neutral-400);">human</span>
@@ -929,6 +987,8 @@
 			<div style="display: flex; align-items: center; gap: 7px; padding: 11px 12px 9px; white-space: nowrap;">
 				<button
 					onclick={() => (suggOpen = !suggOpen)}
+					aria-expanded={suggOpen}
+					aria-label="vera suggests"
 					style="font: inherit; font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; padding: 0; cursor: pointer; border: none; background: transparent; color: {suggOpen ? 'var(--color-neutral-500)' : 'var(--color-accent-300)'};"
 					class="hover:text-[var(--color-neutral-300)]!"
 					title="vera reads each finished turn and suggests replies · s"
@@ -984,7 +1044,7 @@
 								</div>
 							{/each}
 						</div>
-						<div style="font-family: {MONO}; font-size: 10px; line-height: 1.5; color: var(--color-neutral-700); text-wrap: pretty;">
+						<div style="font-family: {MONO}; font-size: 10px; line-height: 1.5; color: var(--color-neutral-600); text-wrap: pretty;">
 							vera's own call · one per turn · counted under spend
 						</div>
 					{:else}
@@ -998,12 +1058,12 @@
 
 		<!-- inspector -->
 		<aside
-			style="position: absolute; top: 0; right: 0; bottom: 0; width: 300px; border-left: 1px solid var(--color-divider); background: var(--color-surface); transform: translateX({inspector ? '0' : '308px'}); transition: transform 220ms {EASE}; overflow-y: auto; box-shadow: {inspector ? 'var(--shadow-lg, 0 12px 40px rgba(0,0,0,0.5))' : 'none'}; z-index: 20;"
+			style="position: absolute; top: 0; right: 0; bottom: 0; width: min(300px, 88vw); border-left: 1px solid var(--color-divider); background: var(--color-surface); transform: translateX({inspector ? '0' : '308px'}); transition: transform 220ms {EASE}; overflow-y: auto; box-shadow: {inspector ? 'var(--shadow-lg, 0 12px 40px rgba(0,0,0,0.5))' : 'none'}; z-index: 20;"
 		>
 			<div style="display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-bottom: 1px solid var(--color-divider);">
 				<span style="font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.08em; color: var(--color-neutral-500);">SESSION</span>
 				<div style="flex: 1;"></div>
-				<button onclick={() => (inspector = false)} style="font: inherit; font-size: 12px; line-height: 1; padding: 3px 5px; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-600); border-radius: var(--radius-sm);" class="hover:text-[var(--color-neutral-100)]!">✕</button>
+				<button onclick={() => (inspector = false)} aria-label="close the inspector" style="font: inherit; font-size: 12px; line-height: 1; padding: 3px 5px; cursor: pointer; border: none; background: transparent; color: var(--color-neutral-600); border-radius: var(--radius-sm);" class="hover:text-[var(--color-neutral-100)]!">✕</button>
 			</div>
 
 			<div style="padding: 14px; border-bottom: 1px solid var(--color-divider); display: flex; flex-direction: column; gap: 9px;">
@@ -1128,7 +1188,7 @@
 		<!-- review overlay: the verdict surface -->
 		{#if reviewOpen}
 			<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(10, 11, 18, 0.6); z-index: 30; animation: rk-enter 140ms ease-out both;">
-				<div style="width: min(1080px, calc(100% - 40px)); height: calc(100% - 56px); display: flex; flex-direction: column; background: var(--color-surface); border: 1px solid var(--color-neutral-800); border-radius: var(--radius-lg); box-shadow: 0 18px 60px rgba(0,0,0,0.55); overflow: hidden;">
+				<div class="dv-review-card" style="width: min(1080px, calc(100% - 40px)); height: calc(100% - 56px); display: flex; flex-direction: column; background: var(--color-surface); border: 1px solid var(--color-neutral-800); border-radius: var(--radius-lg); box-shadow: 0 18px 60px rgba(0,0,0,0.55); overflow: hidden;">
 					<!-- overlay header -->
 					<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--color-divider);">
 						<span style="font-family: {MONO}; font-size: 10.5px; letter-spacing: 0.1em; color: var(--color-neutral-500);">REVIEW</span>
@@ -1160,9 +1220,9 @@
 							the working tree is clean — nothing to review
 						</div>
 					{:else if review}
-						<div style="flex: 1; min-height: 0; display: flex;">
+						<div class="dv-review-body" style="flex: 1; min-height: 0; display: flex;">
 							<!-- file list -->
-							<div style="flex: 0 0 250px; border-right: 1px solid var(--color-divider); overflow-y: auto; padding: 8px 0;">
+							<div class="dv-review-files" style="flex: 0 0 250px; border-right: 1px solid var(--color-divider); overflow-y: auto; padding: 8px 0;">
 								{#each review.files as f, i (f.path)}
 									<button
 										onclick={() => (reviewSel = i)}
@@ -1217,7 +1277,7 @@
 					{/if}
 
 					<!-- verdicts -->
-					<div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--color-divider);">
+					<div class="dv-verdict" style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--color-divider);">
 						<button
 							onclick={requestChanges}
 							style="font: inherit; font-family: {MONO}; font-size: 11px; padding: 5px 10px; cursor: pointer; border: 1px solid var(--color-neutral-800); border-radius: var(--radius-sm); background: transparent; color: var(--color-neutral-300);"
@@ -1240,6 +1300,7 @@
 								bind:value={commitMsg}
 								onkeydown={(e) => e.key === 'Enter' && commitMsg.trim() && approve()}
 								placeholder="commit message — the commit is yours, your git identity signs it"
+								class="dv-commit"
 								style="flex: 0 1 420px; font: inherit; font-family: {MONO}; font-size: 11.5px; padding: 6px 10px; background: var(--color-bg); border: 1px solid var(--color-neutral-800); border-radius: var(--radius-sm); color: var(--color-neutral-100); outline: none;"
 							/>
 							<button
@@ -1256,7 +1317,7 @@
 			</div>
 		{/if}
 
-		<!-- keyboard dialog -->
+		<!-- keyboard dialog: pointless without a keyboard -->
 		{#if keysOpen}
 			<div
 				onclick={() => (keysOpen = false)}
@@ -1278,3 +1339,47 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	/* The cockpit on a phone: the rails are already lg-only; what's left
+	   is the header learning to wrap, the gutters narrowing, the
+	   keyboard-shaped hints leaving, and the review overlay stacking its
+	   file list above the diff instead of beside it. Media-query only —
+	   desktop renders untouched. */
+	@media (max-width: 720px) {
+		.dv-head {
+			flex-wrap: wrap;
+			row-gap: 6px;
+			padding: 8px 10px !important;
+		}
+		.dv-desk {
+			display: none !important;
+		}
+		.dv-pad {
+			padding: 14px 12px 22px !important;
+		}
+		.dv-pad2 {
+			padding: 8px 12px 10px !important;
+		}
+		.dv-review-card {
+			width: calc(100% - 12px) !important;
+			height: calc(100% - 12px) !important;
+		}
+		.dv-review-body {
+			flex-direction: column !important;
+		}
+		.dv-review-files {
+			flex: 0 0 auto !important;
+			max-height: 32%;
+			border-right: 0 !important;
+			border-bottom: 1px solid var(--color-divider);
+		}
+		.dv-verdict {
+			flex-wrap: wrap;
+		}
+		.dv-commit {
+			flex: 1 1 100% !important;
+			order: -1;
+		}
+	}
+</style>

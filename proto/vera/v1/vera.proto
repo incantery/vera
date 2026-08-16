@@ -237,6 +237,8 @@ message BoardTask {
   int64 created_unix_ms = 22;
   int64 updated_unix_ms = 23;
   TaskLive live = 24;  // absent for backlog and closed cards
+  string cadence = 25;   // "" | "once" | "standing" — from the plan the card was born from
+  string deadline = 26;  // YYYY-MM-DD, only if the ask named one
 }
 
 message TaskRun {

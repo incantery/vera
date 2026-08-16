@@ -6,24 +6,26 @@
 	// working agent's card wears its live status; captures land as
 	// unassigned backlog.
 	import { api } from '$lib/state.svelte.js';
-	import Explorer from '$lib/Explorer.svelte';
 
 	// data: the WatchBoard stream's frame, when the page holds one.
 	// Without it (stream down, or a page that still polls) the board
 	// feeds itself from the REST list — same shapes, slower truth.
-	let { data = null } = $props();
+	// onexplore: the explorer is the left panel's mode, not the
+	// board's — the button only asks the page to switch to it.
+	let { data = null, onexplore = null } = $props();
 	let polled = $state(null); // {tasks, inflight, spend, fleet, notice}
 	const board = $derived(data ?? polled);
 	let selId = $state(null);
+	// On a phone the detail pane is a full-screen slide-over: tapping a
+	// card opens it, ✕ closes it. Desktop ignores the flag — the media
+	// query is the only reader.
+	let paneOpen = $state(false);
+	function pick(id) {
+		selId = id;
+		paneOpen = true;
+	}
 	let capture = $state('');
 	let triage = $state(null); // {id, near:{id,title}}
-	// The explorer: browse anywhere under the fence, start a session
-	// there. ?explore=1 deep-links it open (read from location — the
-	// ?key= stash rewrites history before the router looks).
-	let explorerOpen = $state(false);
-	$effect(() => {
-		if (new URLSearchParams(location.search).get('explore') === '1') explorerOpen = true;
-	});
 	let busy = $state(false);
 	let err = $state('');
 
@@ -122,16 +124,19 @@
 	// planning is off (no key) the ask falls back to a plain capture —
 	// the composer never dead-ends.
 	let plan = $state(null); // {id, plan} — vera's bid, awaiting the nod
+	let planning = $state(false); // the ask is an LLM round trip — say so
 	async function submitPlan() {
 		const text = capture.trim();
 		if (!text || busy) return;
 		busy = true;
+		planning = true;
 		err = '';
 		try {
 			const r = await api('/api/plan', { method: 'POST', body: JSON.stringify({ text }) });
 			const out = await r.json();
 			if (r.status === 409) {
 				busy = false;
+				planning = false;
 				return submitCapture();
 			}
 			if (!r.ok) throw new Error(out.error ?? 'vera did not answer');
@@ -140,6 +145,7 @@
 			err = e.message;
 		} finally {
 			busy = false;
+			planning = false;
 		}
 	}
 	async function approvePlan() {
@@ -193,11 +199,14 @@
 	let startIn = $state('');
 	let startMode = $state('read');
 	let replyText = $state('');
+	let confirmDel = $state(false); // "delete scratch" waits for a second click
 	$effect(() => {
 		selId;
 		startIn = '';
 		startMode = 'read';
 		replyText = '';
+		newWs = null;
+		confirmDel = false;
 	});
 
 	async function sendReply() {
@@ -209,18 +218,30 @@
 
 	// "+ new scratch workspace…": vera creates a directory under its
 	// managed parent — a place where nothing real is at stake. Not a
-	// sandbox; a spare room.
-	async function onRepoPick(e) {
+	// sandbox; a spare room. Naming happens inline, in the proposal
+	// card itself — no browser prompt.
+	let newWs = $state(null); // the name being typed, or null when closed
+	function onRepoPick(e) {
 		if (e.target.value !== '__new__') return;
 		startIn = '';
-		const name = window.prompt('Name the scratch workspace (letters, digits, dashes):');
-		if (!name) return;
-		const out = await post('/api/workspaces', { name: name.trim() });
-		if (out?.cwd) startIn = out.cwd;
+		newWs = '';
+	}
+	async function createWs() {
+		const name = (newWs ?? '').trim();
+		if (!name || busy) return;
+		const out = await post('/api/workspaces', { name });
+		if (out?.cwd) {
+			startIn = out.cwd;
+			newWs = null;
+		}
 	}
 
 	async function deleteScratch(name) {
-		if (!window.confirm(`Delete the scratch workspace “${name}” and everything in it?`)) return;
+		if (!confirmDel) {
+			confirmDel = true;
+			return;
+		}
+		confirmDel = false;
 		busy = true;
 		err = '';
 		try {
@@ -240,14 +261,23 @@
 	style="height: 100%; flex: 1; min-width: 0; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); display: flex; flex-direction: column;"
 >
 	<header
+		class="board-head"
 		style="display: flex; align-items: center; gap: 17px; padding: 14px 24px; border-bottom: 1px solid var(--color-divider);"
 	>
+		<a
+			href="/"
+			aria-label="back to mission control"
+			title="mission control — what needs you"
+			style="font-size: 13px; line-height: 1; padding: 4px 6px; margin-left: -6px; color: var(--color-neutral-500); text-decoration: none; border-radius: var(--radius-sm);">←</a
+		>
 		<div style="display: flex; align-items: baseline; gap: 10px;">
 			<span
 				style="font-family: var(--font-heading); font-weight: 500; font-size: 15px; letter-spacing: 0.02em;"
 				>vera</span
 			>
-			<span style="font-size: 12px; color: var(--color-neutral-500);">board</span>
+			<span style="font-size: 12px; color: var(--color-neutral-500);"
+				>board · the map view</span
+			>
 		</div>
 		<div style="width: 1px; height: 20px; background: var(--color-divider);"></div>
 		{#if board?.fleet}
@@ -287,7 +317,8 @@
 
 	{#if err}
 		<div
-			style="margin: 10px 24px 0; font-size: 12.5px; color: #e08585; border: 1px solid #6a3a3a; border-radius: var(--radius-md); padding: 8px 12px;"
+			role="alert"
+			style="margin: 10px 24px 0; font-size: 12.5px; color: var(--ev-del); background: var(--ev-del-fill); border: 1px solid var(--ev-del-edge); border-radius: var(--radius-md); padding: 8px 12px;"
 		>
 			{err}
 		</div>
@@ -295,24 +326,28 @@
 
 	<div style="display: flex; flex: 1; min-height: 0;">
 		<main
+			class="board-main"
 			style="flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 20px 0 0 24px;"
 		>
 			<div
-				style="display: flex; align-items: center; gap: 12px; padding-right: 24px; margin-bottom: 18px;"
+				class="capture-row"
+				style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-right: 24px; margin-bottom: 18px;"
 			>
 				<input
 					class="input"
 					bind:value={capture}
 					onkeydown={(e) => e.key === 'Enter' && submitPlan()}
 					placeholder="Tell vera what you need…"
-					style="flex: 1; background: transparent;"
+					style="flex: 1; min-width: 220px; background: transparent;"
 				/>
-				<button class="btn btn-primary" onclick={submitPlan} disabled={busy}>Plan</button>
+				<button class="btn btn-primary" onclick={submitPlan} disabled={busy}
+					>{planning ? 'planning…' : 'Plan'}</button
+				>
 				<button class="btn" onclick={submitCapture} disabled={busy} title="skip the plan — straight to the inbox">capture</button>
 				<button
 					class="btn"
-					onclick={() => (explorerOpen = true)}
-					title="browse directories · start a session anywhere">explore</button
+					onclick={() => onexplore?.()}
+					title="browse directories · start a session anywhere — the left panel switches to the explorer">explore</button
 				>
 			</div>
 
@@ -405,11 +440,13 @@
 			{/if}
 
 			<div
+				class="board-scroll"
 				style="flex: 1; min-height: 0; display: flex; gap: 14px; overflow-x: auto; padding-bottom: 24px; padding-right: 24px;"
 			>
 				{#each columns as col (col.key)}
 					<section
-						style="width: 244px; flex: 0 0 244px; display: flex; flex-direction: column; min-height: 0;"
+						class="board-col"
+						style="display: flex; flex-direction: column; min-height: 0;"
 					>
 						<div style="display: flex; align-items: center; gap: 8px; padding: 0 2px 10px;">
 							<span style="width: 5px; height: 5px; border-radius: 99px; background: {col.dot};"
@@ -429,12 +466,21 @@
 						<div
 							style="flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px 2px 4px;"
 						>
+							{#if col.key === 'inbox' && board && !(board.tasks ?? []).length}
+								<div
+									style="font-size: 11.5px; line-height: 1.55; color: var(--color-neutral-500); padding: 6px 2px;"
+								>
+									the board is empty — tell vera what you need above, and Plan or
+									capture lands it here
+								</div>
+							{/if}
 							{#each col.tasks as t (t.id)}
-								<article
-									onclick={() => (selId = t.id)}
-									onkeydown={(e) => e.key === 'Enter' && (selId = t.id)}
+								<div
+									onclick={() => pick(t.id)}
+									onkeydown={(e) => e.key === 'Enter' && pick(t.id)}
 									role="button"
 									tabindex="0"
+									aria-pressed={sel?.id === t.id}
 									style="cursor: pointer; text-align: left; background: var(--color-surface); border: 1px solid {sel?.id ===
 									t.id
 										? 'var(--color-accent-600)'
@@ -521,7 +567,7 @@
 										<span>·</span>
 										<span>{relAge(t.updatedAt)}</span>
 									</div>
-								</article>
+								</div>
 							{/each}
 						</div>
 					</section>
@@ -531,10 +577,17 @@
 
 		{#if sel}
 			<aside
-				style="width: 396px; flex: 0 0 396px; border-left: 1px solid var(--color-divider); display: flex; flex-direction: column; min-height: 0; background: linear-gradient(180deg, #1a1c2c, var(--color-bg) 320px);"
+				class="detail-pane"
+				class:open={paneOpen}
+				style="border-left: 1px solid var(--color-divider); display: flex; flex-direction: column; min-height: 0; background: linear-gradient(180deg, #1a1c2c, var(--color-bg) 320px);"
 			>
 				<div style="padding: 20px 22px 14px; border-bottom: 1px solid var(--color-divider);">
 					<div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+						<button
+							class="pane-close"
+							aria-label="back to the board"
+							onclick={() => (paneOpen = false)}>←</button
+						>
 						<span
 							style="font-size: 10.5px; letter-spacing: 0.08em; color: var(--color-neutral-600); font-variant-numeric: tabular-nums;"
 							>{sel.id}</span
@@ -580,9 +633,14 @@
 						{:else if sel.scratchName}
 							<button
 								class="btn btn-ghost"
-								style="font-size: 11px; color: var(--color-neutral-500);"
+								style="font-size: 11px; color: {confirmDel
+									? 'var(--ev-del)'
+									: 'var(--color-neutral-500)'};"
 								title="remove ~/vera-scratch/{sel.scratchName} and everything in it"
-								onclick={() => deleteScratch(sel.scratchName)}>delete scratch workspace</button
+								onclick={() => deleteScratch(sel.scratchName)}
+								>{confirmDel
+									? 'everything in it goes — sure?'
+									: 'delete scratch workspace'}</button
 							>
 						{/if}
 					</div>
@@ -635,6 +693,28 @@
 											{/each}
 											<option value="__new__">+ new scratch workspace…</option>
 										</select>
+									{/if}
+									{#if newWs !== null}
+										<div style="flex-basis: 100%; display: flex; gap: 6px;">
+											<input
+												class="input"
+												bind:value={newWs}
+												onkeydown={(e) => e.key === 'Enter' && createWs()}
+												placeholder="name the scratch workspace — letters, digits, dashes"
+												style="flex: 1; min-height: 0; font-size: 12px; padding: 5px 8px; background: transparent;"
+											/>
+											<button
+												class="btn btn-primary"
+												style="font-size: 12px;"
+												disabled={busy || !newWs.trim()}
+												onclick={createWs}>create</button
+											>
+											<button
+												class="btn"
+												style="font-size: 12px;"
+												onclick={() => (newWs = null)}>cancel</button
+											>
+										</div>
 									{/if}
 									<!-- the tool policy: code-side sets, never LLM-chosen -->
 									<select
@@ -849,6 +929,68 @@
 	</div>
 </div>
 
-{#if explorerOpen}
-	<Explorer onclose={() => (explorerOpen = false)} />
-{/if}
+<style>
+	/* The board's two fixed shapes learn to give: the detail pane and
+	   the columns shrink with the window instead of shoving the columns
+	   into a sliver. Widths only — everything else stays inline. */
+	.board-col {
+		width: 244px;
+		flex: 0 0 244px;
+	}
+	.detail-pane {
+		width: clamp(300px, 30vw, 396px);
+		flex: 0 0 clamp(300px, 30vw, 396px);
+	}
+	@media (max-width: 1100px) {
+		.board-col {
+			width: 216px;
+			flex-basis: 216px;
+		}
+	}
+	/* the phone board: the columns keep the screen (they already scroll
+	   sideways — a swipeable kanban); the detail pane becomes a
+	   full-screen slide-over a tapped card opens and ← closes. */
+	.pane-close {
+		display: none;
+		border: 0;
+		background: transparent;
+		color: var(--color-neutral-400);
+		font: inherit;
+		font-size: 15px;
+		line-height: 1;
+		padding: 4px 8px 4px 0;
+		cursor: pointer;
+	}
+	@media (max-width: 840px) {
+		.board-head {
+			flex-wrap: wrap;
+			row-gap: 6px;
+			padding: 10px 14px !important;
+		}
+		.board-main {
+			padding: 14px 0 0 14px !important;
+		}
+		.capture-row {
+			padding-right: 14px !important;
+		}
+		.board-scroll {
+			padding-right: 14px !important;
+			padding-bottom: 14px !important;
+		}
+		.detail-pane {
+			display: none !important;
+			position: fixed;
+			inset: 0;
+			z-index: 40;
+			width: auto !important;
+			flex: none !important;
+			border-left: 0 !important;
+		}
+		.detail-pane.open {
+			display: flex !important;
+		}
+		.pane-close {
+			display: inline-flex;
+		}
+	}
+</style>

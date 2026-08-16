@@ -1774,7 +1774,9 @@ type BoardTask struct {
 	Exchanges     []*Exchange            `protobuf:"bytes,21,rep,name=exchanges,proto3" json:"exchanges,omitempty"`
 	CreatedUnixMs int64                  `protobuf:"varint,22,opt,name=created_unix_ms,json=createdUnixMs,proto3" json:"created_unix_ms,omitempty"`
 	UpdatedUnixMs int64                  `protobuf:"varint,23,opt,name=updated_unix_ms,json=updatedUnixMs,proto3" json:"updated_unix_ms,omitempty"`
-	Live          *TaskLive              `protobuf:"bytes,24,opt,name=live,proto3" json:"live,omitempty"` // absent for backlog and closed cards
+	Live          *TaskLive              `protobuf:"bytes,24,opt,name=live,proto3" json:"live,omitempty"`         // absent for backlog and closed cards
+	Cadence       string                 `protobuf:"bytes,25,opt,name=cadence,proto3" json:"cadence,omitempty"`   // "" | "once" | "standing" — from the plan the card was born from
+	Deadline      string                 `protobuf:"bytes,26,opt,name=deadline,proto3" json:"deadline,omitempty"` // YYYY-MM-DD, only if the ask named one
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1975,6 +1977,20 @@ func (x *BoardTask) GetLive() *TaskLive {
 		return x.Live
 	}
 	return nil
+}
+
+func (x *BoardTask) GetCadence() string {
+	if x != nil {
+		return x.Cadence
+	}
+	return ""
+}
+
+func (x *BoardTask) GetDeadline() string {
+	if x != nil {
+		return x.Deadline
+	}
+	return ""
 }
 
 type TaskRun struct {
@@ -3754,7 +3770,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x0fweek_all_resets\x18\x05 \x01(\tR\rweekAllResets\x12&\n" +
 	"\x0fweek_model_name\x18\x06 \x01(\tR\rweekModelName\x12$\n" +
 	"\x0eweek_model_pct\x18\a \x01(\x05R\fweekModelPct\x12*\n" +
-	"\x11week_model_resets\x18\b \x01(\tR\x0fweekModelResets\"\xc0\x05\n" +
+	"\x11week_model_resets\x18\b \x01(\tR\x0fweekModelResets\"\xf6\x05\n" +
 	"\tBoardTask\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x16\n" +
@@ -3781,7 +3797,9 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\texchanges\x18\x15 \x03(\v2\x11.vera.v1.ExchangeR\texchanges\x12&\n" +
 	"\x0fcreated_unix_ms\x18\x16 \x01(\x03R\rcreatedUnixMs\x12&\n" +
 	"\x0fupdated_unix_ms\x18\x17 \x01(\x03R\rupdatedUnixMs\x12%\n" +
-	"\x04live\x18\x18 \x01(\v2\x11.vera.v1.TaskLiveR\x04live\"R\n" +
+	"\x04live\x18\x18 \x01(\v2\x11.vera.v1.TaskLiveR\x04live\x12\x18\n" +
+	"\acadence\x18\x19 \x01(\tR\acadence\x12\x1a\n" +
+	"\bdeadline\x18\x1a \x01(\tR\bdeadline\"R\n" +
 	"\aTaskRun\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
 	"\aoutcome\x18\x02 \x01(\tR\aoutcome\x12\x19\n" +

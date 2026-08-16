@@ -1,8 +1,10 @@
 <script>
-	// The explorer: browse the machine's directories from the board and
-	// say the first word anywhere — a fresh claude session is born there
-	// and the direct cockpit opens on it. The server fences the walk to
-	// the home dir (or the world); this panel just walks it.
+	// The explorer: a first-class mode of the left panel. Browse the
+	// machine's directories and say the first word anywhere — a fresh
+	// claude session is born there and the direct cockpit opens on it.
+	// The server fences the walk to the home dir (or the world); this
+	// panel just walks it. `onclose` hands the panel back to the agents
+	// rail (esc does the same).
 	import { api } from '$lib/state.svelte.js';
 	import { goto } from '$app/navigation';
 
@@ -105,157 +107,191 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div
-	style="position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center;"
-	onclick={(e) => e.target === e.currentTarget && !busy && onclose()}
-	role="presentation"
->
-	<section
-		style="width: min(680px, 92vw); max-height: 80vh; display: flex; flex-direction: column; background: var(--color-neutral-950); border: 1px solid var(--color-neutral-800); border-radius: var(--radius-lg, 10px); overflow: hidden;"
+<div style="flex: 1; min-height: 0; display: flex; flex-direction: column;">
+	<header
+		style="display: flex; flex-direction: column; gap: 6px; padding: 4px 4px 10px; border-bottom: 1px solid var(--color-divider);"
 	>
-		<header
-			style="display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--color-divider);"
-		>
-			<span
-				style="font-family: var(--font-mono, monospace); font-size: 10px; letter-spacing: 0.12em; color: var(--color-accent-300);"
-				>EXPLORER</span
-			>
+		<div style="display: flex; align-items: center; gap: 8px;">
 			{#if view}
 				<span
-					style="font-family: var(--font-mono, monospace); font-size: 12px; color: var(--color-neutral-300); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-					>{crumb(view)}</span
+					style="flex: 1; min-width: 0; font-family: var(--font-mono, monospace); font-size: 12px; color: var(--color-neutral-300); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+					title={view.path}>{crumb(view)}</span
 				>
 				{#if view.git}
-					<span style="font-size: 10.5px; color: var(--color-accent-400);">git</span>
+					<span style="flex: none; font-size: 10.5px; color: var(--color-accent-400);">git</span>
 				{/if}
+			{:else}
+				<span style="flex: 1; font-size: 12px; color: var(--color-neutral-600);">looking…</span>
 			{/if}
-			<div style="flex: 1;"></div>
 			{#if view?.marked}
-				<span style="font-size: 10.5px; color: var(--color-accent-400);" title="bookmarked — the planner knows this ground">★ {view.marked}</span>
+				<span
+					style="flex: none; font-size: 10.5px; color: var(--color-accent-400);"
+					title="bookmarked — the planner knows this ground">★ {view.marked}</span
+				>
 			{:else if view}
 				<button
-					style="font-size: 10.5px; color: var(--color-neutral-500);"
-					onclick={() => { marking = !marking; markName = view.path === view.root ? '' : view.path.split('/').pop(); }}
+					style="flex: none; cursor: pointer; background: none; border: none; font: inherit; font-size: 10.5px; color: var(--color-neutral-500); padding: 0;"
+					onclick={() => {
+						marking = !marking;
+						markName = view.path === view.root ? '' : view.path.split('/').pop();
+					}}
 					title="bookmark this directory — named ground the planner can trust">☆ bookmark</button
 				>
 			{/if}
-			<span style="font-size: 10.5px; color: var(--color-neutral-600);">esc closes</span>
-		</header>
+		</div>
+	</header>
 
-		{#if marking}
-			<div
-				style="display: flex; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--color-divider); align-items: center;"
-			>
-				<input
-					class="input"
-					bind:value={markName}
-					placeholder="name"
-					style="width: 140px; background: transparent;"
-				/>
-				<input
-					class="input"
-					bind:value={markNote}
-					onkeydown={(e) => e.key === 'Enter' && saveMark()}
-					placeholder="one line the planner will read — what is this workspace?"
-					style="flex: 1; background: transparent;"
-				/>
-				<button class="btn btn-primary" onclick={saveMark} disabled={!markName.trim()}>save</button>
-			</div>
-		{/if}
-
-		{#if view?.bookmarks?.length}
-			<div
-				style="display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 16px; border-bottom: 1px solid var(--color-divider);"
-			>
-				{#each view.bookmarks as bm (bm.name)}
-					<button
-						style="font-size: 11px; padding: 3px 9px; border: 1px solid var(--color-neutral-800); border-radius: 99px; color: var(--color-neutral-300);"
-						onclick={() => load(bm.cwd)}
-						title={bm.note || bm.cwd}>★ {bm.name}</button
-					>
-				{/each}
-			</div>
-		{/if}
-
-		{#if err}
-			<div
-				style="padding: 8px 16px; font-size: 12px; color: var(--color-accent-200); background: var(--color-accent-900); border-bottom: 1px solid var(--color-accent-700);"
-			>
-				{err}
-			</div>
-		{/if}
-
-		<div style="flex: 1; min-height: 120px; overflow-y: auto; padding: 6px 8px;">
-			{#if view?.parent}
+	{#if marking}
+		<div
+			style="display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; border-bottom: 1px solid var(--color-divider);"
+		>
+			<input
+				class="input"
+				bind:value={markName}
+				placeholder="name"
+				style="background: transparent; font-size: 12.5px;"
+			/>
+			<input
+				class="input"
+				bind:value={markNote}
+				onkeydown={(e) => e.key === 'Enter' && saveMark()}
+				placeholder="one line the planner will read — what is this workspace?"
+				style="background: transparent; font-size: 12.5px;"
+			/>
+			<div style="display: flex;">
 				<button
-					style="display: flex; width: 100%; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm, 6px); font-family: var(--font-mono, monospace); font-size: 12.5px; color: var(--color-neutral-500); text-align: left;"
-					onclick={() => load(view.parent)}>..</button
+					class="btn btn-primary"
+					style="font-size: 12px;"
+					onclick={saveMark}
+					disabled={!markName.trim()}>save</button
 				>
-			{/if}
-			{#each view?.dirs ?? [] as d (d.cwd)}
+			</div>
+		</div>
+	{/if}
+
+	{#if view?.bookmarks?.length}
+		<div
+			style="display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 4px; border-bottom: 1px solid var(--color-divider);"
+		>
+			{#each view.bookmarks as bm (bm.name)}
 				<button
-					style="display: flex; align-items: baseline; width: 100%; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm, 6px); font-size: 13px; color: var(--color-neutral-200); text-align: left;"
-					onclick={() => load(d.cwd)}
+					class="bm-chip"
+					style="cursor: pointer; background: none; font: inherit; font-size: 11px; padding: 3px 9px; border: 1px solid var(--color-neutral-800); border-radius: 99px; color: var(--color-neutral-300);"
+					onclick={() => load(bm.cwd)}
+					title={bm.note || bm.cwd}>★ {bm.name}</button
 				>
-					<span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-						>{d.name}/</span
-					>
-					{#if d.known}
-						<span
-							style="width: 5px; height: 5px; align-self: center; border-radius: 99px; background: var(--color-accent);"
-							title="the fleet has a session here"
-						></span>
-					{/if}
-					{#if d.git}
-						<span style="font-size: 10.5px; color: var(--color-neutral-500);">git</span>
-					{/if}
-				</button>
-			{:else}
-				<div style="padding: 14px 10px; font-size: 12px; color: var(--color-neutral-600);">
-					no directories under here — this is ground, not a hallway
-				</div>
 			{/each}
 		</div>
+	{/if}
 
-		<footer style="border-top: 1px solid var(--color-divider); padding: 12px 16px;">
-			{#if birth}
-				<div style="font-size: 12.5px; color: var(--color-neutral-400); line-height: 1.5;">
-					a session is being born in
-					<span style="font-family: var(--font-mono, monospace); color: var(--color-neutral-200);"
-						>{crumb(view)}</span
-					>
-					— the cockpit opens when it has a name…
-				</div>
-			{:else}
-				<div style="font-size: 11px; color: var(--color-neutral-500); margin-bottom: 8px;">
-					start a session in <span
-						style="font-family: var(--font-mono, monospace); color: var(--color-neutral-300);"
-						>{view ? crumb(view) : '…'}</span
-					> — the first message births it, direct from the first word
-				</div>
-				<div style="display: flex; gap: 8px; align-items: stretch;">
-					<input
-						class="input"
-						bind:value={text}
-						onkeydown={(e) => e.key === 'Enter' && start()}
-						placeholder="the first message…"
-						style="flex: 1; background: transparent;"
-					/>
-					<select
-						class="input"
-						bind:value={perm}
-						title="tool policy: read (mutations refused) · edit (files + scoped build/test) · all (no gate)"
-						style="background: transparent; width: auto;"
-					>
-						<option value="read">read</option>
-						<option value="edit">edit</option>
-						<option value="all">all</option>
-					</select>
-					<button class="btn btn-primary" onclick={start} disabled={busy || !text.trim()}
-						>start here</button
-					>
-				</div>
-			{/if}
-		</footer>
-	</section>
+	{#if err}
+		<div
+			role="alert"
+			style="margin: 8px 0 0; padding: 7px 10px; font-size: 11.5px; line-height: 1.5; color: var(--ev-del); background: var(--ev-del-fill); border: 1px solid var(--ev-del-edge); border-radius: var(--radius-sm, 6px);"
+		>
+			{err}
+		</div>
+	{/if}
+
+	<div style="flex: 1; min-height: 120px; overflow-y: auto; padding: 6px 0;">
+		{#if view?.parent}
+			<button
+				class="dir-row"
+				aria-label="up to the parent directory"
+				style="display: flex; width: 100%; gap: 8px; padding: 6px 9px; border-radius: var(--radius-sm, 6px); cursor: pointer; background: none; border: none; font-family: var(--font-mono, monospace); font-size: 12.5px; color: var(--color-neutral-500); text-align: left;"
+				onclick={() => load(view.parent)}>..</button
+			>
+		{/if}
+		{#each view?.dirs ?? [] as d (d.cwd)}
+			<button
+				class="dir-row"
+				style="display: flex; align-items: baseline; width: 100%; gap: 8px; padding: 6px 9px; border-radius: var(--radius-sm, 6px); cursor: pointer; background: none; border: none; font: inherit; font-size: 12.5px; color: var(--color-neutral-200); text-align: left;"
+				onclick={() => load(d.cwd)}
+			>
+				<span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+					>{d.name}/</span
+				>
+				{#if d.known}
+					<span
+						style="width: 5px; height: 5px; flex: none; align-self: center; border-radius: 99px; background: var(--color-accent);"
+						title="the fleet has a session here"
+					></span>
+				{/if}
+				{#if d.git}
+					<span style="flex: none; font-size: 10.5px; color: var(--color-neutral-500);">git</span>
+				{/if}
+			</button>
+		{:else}
+			<div style="padding: 14px 9px; font-size: 12px; color: var(--color-neutral-600); line-height: 1.5;">
+				no directories under here — this is ground, not a hallway
+			</div>
+		{/each}
+	</div>
+
+	<footer
+		style="border-top: 1px solid var(--color-divider); padding: 10px 4px 0; display: flex; flex-direction: column; gap: 8px;"
+	>
+		{#if birth}
+			<div style="font-size: 12px; color: var(--color-neutral-400); line-height: 1.5;">
+				a session is being born in
+				<span style="font-family: var(--font-mono, monospace); color: var(--color-neutral-200);"
+					>{crumb(view)}</span
+				>
+				— the cockpit opens when it has a name…
+			</div>
+		{:else}
+			<div style="font-size: 11px; color: var(--color-neutral-500); line-height: 1.5;">
+				start a session in <span
+					style="font-family: var(--font-mono, monospace); color: var(--color-neutral-300);"
+					>{view ? crumb(view) : '…'}</span
+				> — the first message births it, direct from the first word
+			</div>
+			<input
+				class="input"
+				bind:value={text}
+				onkeydown={(e) => e.key === 'Enter' && start()}
+				placeholder="the first message…"
+				style="background: transparent; font-size: 12.5px;"
+			/>
+			<div style="display: flex; gap: 8px; align-items: stretch;">
+				<select
+					class="input"
+					bind:value={perm}
+					title="tool policy: read (mutations refused) · edit (files + scoped build/test) · all (no gate)"
+					style="background: transparent; flex: 1; width: auto; font-size: 12px;"
+				>
+					<option value="read">read</option>
+					<option value="edit">edit</option>
+					<option value="all">all</option>
+				</select>
+				<button
+					class="btn btn-primary"
+					style="font-size: 12px;"
+					onclick={start}
+					disabled={busy || !text.trim()}>start here</button
+				>
+			</div>
+		{/if}
+	</footer>
 </div>
+
+<style>
+	/* rows and chips answer the pointer — the walk should feel held */
+	.dir-row:hover {
+		background: var(--color-neutral-900);
+	}
+	.bm-chip:hover {
+		border-color: var(--color-neutral-600);
+		color: var(--color-neutral-100);
+	}
+	/* fingers get taller rows than mouse pointers do */
+	@media (pointer: coarse) {
+		.dir-row {
+			padding-top: 11px !important;
+			padding-bottom: 11px !important;
+		}
+		.bm-chip {
+			padding: 7px 12px !important;
+		}
+	}
+</style>

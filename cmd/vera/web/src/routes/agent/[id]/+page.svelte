@@ -260,7 +260,7 @@
 	{#if !direct}
 	<!-- header -->
 	<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-zinc-800 py-3">
-		<a href="/" class="text-zinc-500 hover:text-zinc-300">←</a>
+		<a href="/" aria-label="back to the board" class="px-1 text-zinc-500 hover:text-zinc-300">←</a>
 		{#if data}
 			<span class="font-semibold">{data.agent.title}</span>
 			<span class="text-xs text-zinc-500">
@@ -273,12 +273,14 @@
 			>
 				<button
 					onclick={() => setMode('membrane')}
+					aria-pressed={!direct}
 					class="px-2 py-0.5 {direct ? 'text-zinc-500 hover:text-zinc-300' : 'bg-sky-400/20 text-sky-300'}"
 				>
 					membrane
 				</button>
 				<button
 					onclick={() => setMode('direct')}
+					aria-pressed={direct}
 					class="px-2 py-0.5 {direct ? 'bg-emerald-400/20 text-emerald-300' : 'text-zinc-500 hover:text-zinc-300'}"
 				>
 					direct
@@ -287,12 +289,13 @@
 			<a
 				href="/"
 				class="text-xs text-zinc-500 hover:text-zinc-300"
-				title="the board: tell vera what needs doing, it keeps the columns"
+				title="mission control: what needs you, and the fleet's now"
 			>
-				⌗ board
+				⌗ home
 			</a>
 			<button
 				class="text-xs {shelfOpen ? 'text-sky-400' : 'text-zinc-500 hover:text-zinc-300'}"
+				aria-pressed={shelfOpen}
 				onclick={() => (shelfOpen = !shelfOpen)}
 				title="the artifact shelf: documents that belong to this agent"
 			>
@@ -414,7 +417,7 @@
 						{/if}
 						{#if m.rough && m.rough !== m.text}
 							<details class="mt-1 max-w-[85%] text-right">
-								<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
+								<summary class="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">
 									⇒ what vera sent
 								</summary>
 								<div
@@ -432,7 +435,7 @@
 							     open while the agent works, so a running turn reads
 							     like a terminal, not a spinner -->
 							<details class="mb-1">
-								<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
+								<summary class="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">
 									⛭ {m.tools} tool {m.tools === 1 ? 'call' : 'calls'}
 								</summary>
 								<div class="mt-1 space-y-0.5 border-l-2 border-zinc-800 pl-3">
@@ -450,7 +453,7 @@
 								</div>
 							</details>
 						{:else if m.tools}
-							<div class="mb-1 text-[11px] text-zinc-600">⛭ {m.tools} tool {m.tools === 1 ? 'call' : 'calls'}</div>
+							<div class="mb-1 text-[11px] text-zinc-500">⛭ {m.tools} tool {m.tools === 1 ? 'call' : 'calls'}</div>
 						{/if}
 						{#if m.digest?.state === 'ready'}
 							<div class="text-[13px] leading-relaxed font-semibold">{m.digest.headline}</div>
@@ -464,7 +467,7 @@
 								</ul>
 							{/if}
 							<details class="mt-1">
-								<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
+								<summary class="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">
 									full reply
 								</summary>
 								<div class="mt-1 border-l-2 border-zinc-800 pl-3 text-[13px] text-zinc-400">
@@ -473,7 +476,7 @@
 							</details>
 						{:else}
 							{#if m.digest?.state === 'pending'}
-								<div class="mb-1 animate-pulse text-[11px] text-zinc-600">summarizing…</div>
+								<div class="mb-1 animate-pulse text-[11px] text-zinc-500">summarizing…</div>
 							{/if}
 							{#if m.text}
 								<div class="text-[13px]"><Markdown text={m.text} /></div>
@@ -483,7 +486,7 @@
 				{/if}
 			{/each}
 		{:else if data}
-			<div class="py-8 text-center text-[13px] text-zinc-600">no conversation on record yet</div>
+			<div class="py-8 text-center text-[13px] text-zinc-500">no conversation on record yet</div>
 		{/if}
 
 		{#if data?.pending}
@@ -495,7 +498,7 @@
 				</div>
 				{#if data.pending.sent && data.pending.sent !== data.pending.text}
 					<details class="mt-1 max-w-[85%] text-right" open>
-						<summary class="cursor-pointer text-[11px] text-zinc-600 hover:text-zinc-400">
+						<summary class="cursor-pointer text-[11px] text-zinc-500 hover:text-zinc-300">
 							⇒ what vera sent
 						</summary>
 						<div
@@ -612,6 +615,7 @@
 						<img src={a.preview} alt={a.name} class="h-11 rounded-md border border-sky-900" />
 						<button
 							onclick={() => dropAttachment(ai)}
+							aria-label="drop this attachment"
 							class="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full border border-zinc-700 bg-zinc-950 text-[10px] leading-none text-zinc-400"
 							title="drop this attachment"
 						>✕</button>
@@ -641,6 +645,7 @@
 						<button
 							type="button"
 							onclick={() => (verbatim = !verbatim)}
+							aria-pressed={verbatim}
 							class="rounded-md px-2 py-0.5 text-[11px] {verbatim
 								? 'bg-zinc-400/20 text-zinc-300'
 								: 'text-zinc-600 hover:text-zinc-400'}"
@@ -652,6 +657,7 @@
 					<button
 						type="button"
 						onclick={() => (driveMode = !driveMode)}
+						aria-pressed={driveMode}
 						class="rounded-md px-2 py-0.5 text-[11px] {driveMode
 							? 'bg-amber-400/20 text-amber-300'
 							: 'text-zinc-600 hover:text-zinc-400'}"
@@ -676,6 +682,6 @@
 </div>
 
 {#if shelfOpen}
-	<ArtifactPane agentId={id} onchanged={refresh} />
+	<ArtifactPane agentId={id} onchanged={refresh} onclose={() => (shelfOpen = false)} />
 {/if}
 </div>
