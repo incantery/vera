@@ -536,6 +536,23 @@
 						sel.state
 					]
 	);
+	// the phone thread header's second line: owner · state, the Vera
+	// Mobile design's "With Vera · working" voice
+	const subline = $derived.by(() => {
+		if (!sel) return '';
+		if (sel.owner === 'done') return sel.state === 'dropped' ? 'Dropped' : 'Done';
+		const word = isReview
+			? 'ready for review'
+			: {
+					working: 'working',
+					quiet: 'quiet',
+					ask: 'needs your answer',
+					proposal: 'decision',
+					attention: 'waiting on you',
+					inbox: 'not started'
+				}[sel.state] ?? sel.state;
+		return (sel.owner === 'vera' ? 'With Vera' : 'With you') + ' · ' + word;
+	});
 	const tabStyle = (i) =>
 		`background: transparent; border: 0; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; padding: 4px 1px 10px; color: ${tab === i ? INK : MUT}; box-shadow: ${tab === i ? 'inset 0 -2px 0 rgba(242,238,231,0.8)' : 'none'};`;
 
@@ -589,18 +606,24 @@
 		style="display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 10px; cursor: pointer; margin-bottom: 2px; background: {th.id === selId ? PANEL : 'transparent'}; box-shadow: {th.id === selId ? 'inset 2px 0 0 rgba(242,238,231,0.35)' : 'none'};"
 	>
 		<div style="display: flex; align-items: center; gap: 9px;">
-			<span style="width: 7px; height: 7px; border-radius: 50%; flex: none; {rowDot(th)}"></span>
+			<span class="v-rdot" style="width: 7px; height: 7px; border-radius: 50%; flex: none; {rowDot(th)}"></span>
 			<span
+				class="v-rname"
 				style="flex: 1; min-width: 0; font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; {th.owner === 'done' ? 'opacity: 0.62;' : ''}">{th.name}</span
 			>
 			{#if th.owner === 'done'}
 				<span style="font-size: 11px; font-family: {MONO}; color: rgba(146,153,170,0.55);"
 					>{th.state === 'dropped' ? 'dropped' : relAge(th.task.updatedAt)}</span
 				>
+			{:else if th.owner === 'you'}
+				<span class="v-chev" aria-hidden="true">›</span>
+			{:else if th.task}
+				<span class="v-mtime" style="font-family: {MONO};">{relAge(th.task.updatedAt)}</span>
 			{/if}
 		</div>
 		{#if th.owner !== 'done'}
 			<div
+				class="v-rsub"
 				style="font-size: 12.5px; padding-left: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {th.owner === 'you' ? AMBER : 'rgba(146,153,170,0.85)'};"
 			>
 				{phraseOf(th)}
@@ -723,7 +746,7 @@
 			>
 		{/if}
 		<span class="v-status" style="font-size: 13.5px; color: {SUB}; font-variant-numeric: tabular-nums;">{statusLine}</span>
-		<button class="vbtn" onclick={goNew}>Give Vera work</button>
+		<button class="vbtn v-give" onclick={goNew}>Give Vera work</button>
 	</header>
 
 	{#if err}
@@ -774,6 +797,12 @@
 					<a href="/board" style="color: {MUT}; text-decoration: none;" title="the map view — every card by stage">board →</a>
 					<a href="/explore" style="color: {MUT}; text-decoration: none;" title="browse directories · start a session anywhere">explorer →</a>
 				</div>
+				<!-- the phone's door: the header button steps aside for a
+				     docked ask pill (the Vera Mobile design's home screen) -->
+				<button class="v-ask" onclick={goNew}>
+					{@render glyph('idle', 18)}
+					<span>What should we work on?</span>
+				</button>
 			</div>
 		</aside>
 
@@ -874,6 +903,9 @@
 							>
 						{/if}
 					</div>
+					<div class="v-sub" style="color: {sel.owner === 'vera' ? '#C4B5FD' : sel.owner === 'done' ? MINT : AMBER};">
+						{subline}
+					</div>
 					{#if sel.task?.intent && !sel.task.intent.toLowerCase().startsWith(sel.name.toLowerCase())}
 						<p style="margin: 6px 0 0; font-size: 13.5px; color: {MUT}; max-width: 76ch; line-height: 1.5;">{sel.task.intent}</p>
 					{/if}
@@ -922,7 +954,7 @@
 											placeholder="commit message — defaults to the thread name"
 											style="background: {PANEL}; border: 0; box-shadow: inset 0 0 0 1px rgba(242,238,231,0.08); border-radius: 10px; padding: 9px 12px; font-family: {MONO}; font-size: 12px; color: {INK}; outline: none;"
 										/>
-										<div style="display: flex; gap: 10px; align-items: center;">
+										<div class="v-verdict" style="display: flex; gap: 10px; align-items: center;">
 											<button class="vcta" onclick={approve} disabled={busy}
 												>Approve & commit {treeFiles.length} {treeFiles.length === 1 ? 'file' : 'files'}</button
 											>
@@ -1271,7 +1303,17 @@
 	}
 	/* the phone layout: one pane at a time. The list is home; a picked
 	   thread, the door, or the plan flow takes the screen; ← in the
-	   header walks back. Media-query only — desktop never enters here. */
+	   header walks back. Media-query only — desktop never enters here.
+	   The v-ask pill, row chevrons/times, and the owner·state subline
+	   are the Vera Mobile design's phone-only elements — hidden on
+	   desktop, where the header button and the pane itself carry the
+	   same meaning. */
+	.v-ask,
+	.v-chev,
+	.v-mtime,
+	.v-sub {
+		display: none;
+	}
 	.v-back {
 		display: none;
 		border: 0;
@@ -1324,6 +1366,82 @@
 		}
 		.v-composer {
 			padding: 10px 12px 14px !important;
+		}
+		/* home: the door is a docked pill, not a header button */
+		.v-give {
+			display: none !important;
+		}
+		.v-ask {
+			display: flex;
+			align-items: center;
+			gap: 11px;
+			margin: 2px 2px 0;
+			padding: 14px 16px;
+			background: #131722;
+			border: 0;
+			border-radius: 16px;
+			box-shadow: inset 0 0 0 1px rgba(242, 238, 231, 0.07);
+			font: inherit;
+			font-size: 15px;
+			color: #5c6375;
+			cursor: pointer;
+			text-align: left;
+		}
+		/* thread rows grow to thumb size */
+		.vrow {
+			padding: 13px 14px !important;
+			border-radius: 14px !important;
+		}
+		.v-rdot {
+			width: 8px !important;
+			height: 8px !important;
+		}
+		.v-rname {
+			font-size: 15.5px !important;
+			font-weight: 600 !important;
+		}
+		.v-rsub {
+			font-size: 13px !important;
+			padding-left: 18px !important;
+		}
+		.v-chev {
+			display: inline;
+			flex: none;
+			font-size: 15px;
+			color: rgba(146, 153, 170, 0.6);
+		}
+		.v-mtime {
+			display: inline;
+			flex: none;
+			font-size: 11.5px;
+			color: rgba(146, 153, 170, 0.55);
+		}
+		/* the thread header: compact title over an owner·state subline */
+		.v-thread-head h2 {
+			font-size: 17.5px !important;
+			flex: 1 1 auto;
+			min-width: 0;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.v-sub {
+			display: block;
+			font-size: 12px;
+			margin-top: 2px;
+		}
+		/* review: the verdict stacks, the commit CTA takes the width */
+		.v-verdict {
+			flex-direction: column !important;
+			align-items: stretch !important;
+		}
+		.v-verdict .vcta {
+			padding: 13px;
+			font-size: 15px;
+			border-radius: 13px;
+		}
+		.v-verdict .vghost {
+			text-align: center;
 		}
 	}
 </style>
