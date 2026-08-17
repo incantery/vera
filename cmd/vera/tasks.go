@@ -607,15 +607,26 @@ func overlay(tasks []task, fleet map[string]*transcript.Session) {
 		if live == nil {
 			continue
 		}
-		l := &taskLive{Dir: filepath.Base(live.Cwd), State: string(live.State)}
-		if live.ToolName != "" && (live.State == transcript.StateWorking || live.State == transcript.StateBlocked) {
-			l.Now = live.ToolName
-			if live.ToolDetail != "" {
-				l.Now += " — " + live.ToolDetail
-			}
-		}
-		t.Live = l
+		t.Live = liveOverlay(live)
 	}
+}
+
+// liveOverlay is the assigned agent's present, as the board and the
+// work view both read it. One function because two surfaces disagreeing
+// about what a worker is doing right now is exactly the kind of drift
+// nobody notices until it is confusing.
+func liveOverlay(live *transcript.Session) *taskLive {
+	if live == nil {
+		return nil
+	}
+	l := &taskLive{Dir: filepath.Base(live.Cwd), State: string(live.State)}
+	if live.ToolName != "" && (live.State == transcript.StateWorking || live.State == transcript.StateBlocked) {
+		l.Now = live.ToolName
+		if live.ToolDetail != "" {
+			l.Now += " — " + live.ToolDetail
+		}
+	}
+	return l
 }
 
 // ---- the routes ----

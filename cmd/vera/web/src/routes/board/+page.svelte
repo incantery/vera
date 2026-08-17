@@ -5,6 +5,7 @@
 	// WatchBoard stream, same poll fallback.
 	import { app, startPolling, watchBoard, boardFrame } from '$lib/state.svelte.js';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import Board from '$lib/Board.svelte';
 
 	let board = $state(null);
@@ -50,5 +51,5 @@
 	class="nk"
 	style="height: 100dvh; display: flex; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body);"
 >
-	<Board data={board} onexplore={() => goto('/?explore=1')} />
+	<Board data={board} select={page.url.searchParams.get('task')} onexplore={() => goto('/?explore=1')} />
 </div>

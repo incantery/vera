@@ -1,2 +1,4 @@
-# the compiled binary — `go build` output, not source
-vera
+# the compiled binary — `go build` output, not source.
+# Anchored: a bare "vera" would match every cmd/vera, gen/vera and
+# proto/vera directory too, and silently swallow new source files.
+/vera

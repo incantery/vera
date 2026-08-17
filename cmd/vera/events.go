@@ -106,13 +106,25 @@ func defaultEventPath() string { return statePath("vera-events.jsonl") }
 
 func newEventLog(path string, h *hub) *eventLog {
 	l := &eventLog{path: path, limit: 512, hub: h}
-	// Replay for the sequence only: a restart that renumbers from 1
-	// would make two different events share an id, and every client
-	// holding a cursor would silently re-read the past as the present.
+	// Replay the tail into the ring, not just the sequence. The story is
+	// half the work view, and a restart that kept only the counter would
+	// blank every goal's history in the UI while the journal on disk
+	// still held it — the work would look like it had never happened.
+	//
+	// The sequence matters for its own reason: renumbering from 1 would
+	// make two different events share an id, and every client holding a
+	// cursor would silently re-read the past as the present.
 	eachLine(path, func(b []byte) {
 		var e event
-		if json.Unmarshal(b, &e) == nil && e.Seq > l.seq {
+		if json.Unmarshal(b, &e) != nil || e.Kind == "" {
+			return
+		}
+		if e.Seq > l.seq {
 			l.seq = e.Seq
+		}
+		l.ring = append(l.ring, e)
+		if len(l.ring) > l.limit {
+			l.ring = l.ring[len(l.ring)-l.limit:]
 		}
 	})
 	return l

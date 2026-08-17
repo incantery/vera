@@ -12,10 +12,22 @@
 	// feeds itself from the REST list — same shapes, slower truth.
 	// onexplore: the explorer is the left panel's mode, not the
 	// board's — the button only asks the page to switch to it.
-	let { data = null, onexplore = null } = $props();
+	// select: a card to open on arrival, so a card can be linked to from
+	// outside — the work view names a node and expects the board to show
+	// it. Applied once per value: after that the selection is the user's,
+	// and a frame arriving must not yank the pane back.
+	let { data = null, onexplore = null, select = null } = $props();
 	let polled = $state(null); // {tasks, inflight, spend, fleet, notice}
 	const board = $derived(data ?? polled);
 	let selId = $state(null);
+	let applied = $state(null);
+	$effect(() => {
+		if (select && select !== applied) {
+			applied = select;
+			selId = select;
+			paneOpen = true;
+		}
+	});
 	// On a phone the detail pane is a full-screen slide-over: tapping a
 	// card opens it, ✕ closes it. Desktop ignores the flag — the media
 	// query is the only reader.
@@ -610,6 +622,18 @@
 							>{sel.id}</span
 						>
 						<span class="tag tag-outline" style="font-size: 10.5px;">{sel.state}</span>
+						{#if sel.root}
+							<!-- This card is a node in a graph, so it can be read as
+							     choreography instead of as a row: the work view shows
+							     the whole goal's shape and the story of what moved. -->
+							<a
+								href="/goal/{sel.root}"
+								style="font-size: 11px; color: var(--color-accent-300); text-decoration: none;"
+								title="the whole goal — its shape, and what has moved"
+							>
+								work view →
+							</a>
+						{/if}
 						{#if sel.agent}
 							<a
 								href="/agent/{sel.agent}"

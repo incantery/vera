@@ -406,6 +406,7 @@ func protoTask(t task) *verav1.BoardTask {
 		AutoStart: t.AutoStart, BudgetUsd: t.BudgetUSD, CostUsd: t.CostUSD,
 		Workspace: t.Workspace, ScratchName: t.ScratchName, Mode: t.Mode,
 		Cadence: t.Cadence, Deadline: t.Deadline,
+		Kind: t.Kind, Root: t.Root,
 		CreatedUnixMs: t.CreatedAt.UnixMilli(), UpdatedUnixMs: t.UpdatedAt.UnixMilli(),
 	}
 	for _, r := range t.Runs {
@@ -576,4 +577,37 @@ func msgHash(m wireMsg) uint64 {
 		}
 	}
 	return h.Sum64()
+}
+
+// WatchGoal streams one goal's present. Same discipline as WatchBoard:
+// whole frames, sent only when something the frame carries has moved,
+// with the hub's poke as the fast path and a slow tick as the safety
+// net.
+func (r *veraRPC) WatchGoal(ctx context.Context, req *connect.Request[verav1.WatchGoalRequest], stream *connect.ServerStream[verav1.WatchGoalResponse]) error {
+	id := req.Msg.Id
+	if !fileID(id) {
+		return connectErr(&sayErr{400, "name the goal"})
+	}
+	poke, cancel := r.s.hub.subscribe()
+	defer cancel()
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
+
+	var prev uint64
+	first := true
+	for {
+		resp, sum := r.s.goalView(id)
+		if first || sum != prev {
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
+			prev, first = sum, false
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-poke:
+		case <-tick.C:
+		}
+	}
 }

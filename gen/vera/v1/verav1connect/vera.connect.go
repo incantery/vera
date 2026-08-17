@@ -68,6 +68,8 @@ const (
 	VeraServiceBirthProcedure = "/vera.v1.VeraService/Birth"
 	// VeraServiceSetBookmarkProcedure is the fully-qualified name of the VeraService's SetBookmark RPC.
 	VeraServiceSetBookmarkProcedure = "/vera.v1.VeraService/SetBookmark"
+	// VeraServiceWatchGoalProcedure is the fully-qualified name of the VeraService's WatchGoal RPC.
+	VeraServiceWatchGoalProcedure = "/vera.v1.VeraService/WatchGoal"
 )
 
 // VeraServiceClient is a client for the vera.v1.VeraService service.
@@ -86,6 +88,9 @@ type VeraServiceClient interface {
 	StartSession(context.Context, *connect.Request[v1.StartSessionRequest]) (*connect.Response[v1.StartSessionResponse], error)
 	Birth(context.Context, *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error)
 	SetBookmark(context.Context, *connect.Request[v1.BookmarkRequest]) (*connect.Response[v1.BookmarkResponse], error)
+	// WatchGoal is the work view's rail: one goal's whole present, as
+	// choreography rather than a table.
+	WatchGoal(context.Context, *connect.Request[v1.WatchGoalRequest]) (*connect.ServerStreamForClient[v1.WatchGoalResponse], error)
 }
 
 // NewVeraServiceClient constructs a client for the vera.v1.VeraService service. By default, it uses
@@ -183,6 +188,12 @@ func NewVeraServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(veraServiceMethods.ByName("SetBookmark")),
 			connect.WithClientOptions(opts...),
 		),
+		watchGoal: connect.NewClient[v1.WatchGoalRequest, v1.WatchGoalResponse](
+			httpClient,
+			baseURL+VeraServiceWatchGoalProcedure,
+			connect.WithSchema(veraServiceMethods.ByName("WatchGoal")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -202,6 +213,7 @@ type veraServiceClient struct {
 	startSession *connect.Client[v1.StartSessionRequest, v1.StartSessionResponse]
 	birth        *connect.Client[v1.BirthRequest, v1.BirthResponse]
 	setBookmark  *connect.Client[v1.BookmarkRequest, v1.BookmarkResponse]
+	watchGoal    *connect.Client[v1.WatchGoalRequest, v1.WatchGoalResponse]
 }
 
 // WatchAgent calls vera.v1.VeraService.WatchAgent.
@@ -274,6 +286,11 @@ func (c *veraServiceClient) SetBookmark(ctx context.Context, req *connect.Reques
 	return c.setBookmark.CallUnary(ctx, req)
 }
 
+// WatchGoal calls vera.v1.VeraService.WatchGoal.
+func (c *veraServiceClient) WatchGoal(ctx context.Context, req *connect.Request[v1.WatchGoalRequest]) (*connect.ServerStreamForClient[v1.WatchGoalResponse], error) {
+	return c.watchGoal.CallServerStream(ctx, req)
+}
+
 // VeraServiceHandler is an implementation of the vera.v1.VeraService service.
 type VeraServiceHandler interface {
 	WatchAgent(context.Context, *connect.Request[v1.WatchAgentRequest], *connect.ServerStream[v1.WatchAgentResponse]) error
@@ -290,6 +307,9 @@ type VeraServiceHandler interface {
 	StartSession(context.Context, *connect.Request[v1.StartSessionRequest]) (*connect.Response[v1.StartSessionResponse], error)
 	Birth(context.Context, *connect.Request[v1.BirthRequest]) (*connect.Response[v1.BirthResponse], error)
 	SetBookmark(context.Context, *connect.Request[v1.BookmarkRequest]) (*connect.Response[v1.BookmarkResponse], error)
+	// WatchGoal is the work view's rail: one goal's whole present, as
+	// choreography rather than a table.
+	WatchGoal(context.Context, *connect.Request[v1.WatchGoalRequest], *connect.ServerStream[v1.WatchGoalResponse]) error
 }
 
 // NewVeraServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -383,6 +403,12 @@ func NewVeraServiceHandler(svc VeraServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(veraServiceMethods.ByName("SetBookmark")),
 		connect.WithHandlerOptions(opts...),
 	)
+	veraServiceWatchGoalHandler := connect.NewServerStreamHandler(
+		VeraServiceWatchGoalProcedure,
+		svc.WatchGoal,
+		connect.WithSchema(veraServiceMethods.ByName("WatchGoal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/vera.v1.VeraService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case VeraServiceWatchAgentProcedure:
@@ -413,6 +439,8 @@ func NewVeraServiceHandler(svc VeraServiceHandler, opts ...connect.HandlerOption
 			veraServiceBirthHandler.ServeHTTP(w, r)
 		case VeraServiceSetBookmarkProcedure:
 			veraServiceSetBookmarkHandler.ServeHTTP(w, r)
+		case VeraServiceWatchGoalProcedure:
+			veraServiceWatchGoalHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -476,4 +504,8 @@ func (UnimplementedVeraServiceHandler) Birth(context.Context, *connect.Request[v
 
 func (UnimplementedVeraServiceHandler) SetBookmark(context.Context, *connect.Request[v1.BookmarkRequest]) (*connect.Response[v1.BookmarkResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.SetBookmark is not implemented"))
+}
+
+func (UnimplementedVeraServiceHandler) WatchGoal(context.Context, *connect.Request[v1.WatchGoalRequest], *connect.ServerStream[v1.WatchGoalResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("vera.v1.VeraService.WatchGoal is not implemented"))
 }

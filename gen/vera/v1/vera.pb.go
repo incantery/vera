@@ -1787,7 +1787,12 @@ type BoardTask struct {
 	Deadline      string                 `protobuf:"bytes,26,opt,name=deadline,proto3" json:"deadline,omitempty"` // YYYY-MM-DD, only if the ask named one
 	// The drafted reply a "reply" proposal carries — shown verbatim
 	// before the tap; a send button without this text is a lie.
-	ProposalText  string  `protobuf:"bytes,27,opt,name=proposal_text,json=proposalText,proto3" json:"proposal_text,omitempty"`
+	ProposalText string `protobuf:"bytes,27,opt,name=proposal_text,json=proposalText,proto3" json:"proposal_text,omitempty"`
+	// The graph, when the card is a node in one. Root is what makes the
+	// work view reachable from the board: a card that belongs to a goal
+	// can be opened as choreography instead of read as a row.
+	Kind          string  `protobuf:"bytes,30,opt,name=kind,proto3" json:"kind,omitempty"`
+	Root          string  `protobuf:"bytes,31,opt,name=root,proto3" json:"root,omitempty"`
 	AutoStart     string  `protobuf:"bytes,28,opt,name=auto_start,json=autoStart,proto3" json:"auto_start,omitempty"`   // "read" when the steward queued a self-start; the veto card reads it
 	BudgetUsd     float64 `protobuf:"fixed64,29,opt,name=budget_usd,json=budgetUsd,proto3" json:"budget_usd,omitempty"` // the autopilot authorization; 0 = not a marathon card
 	unknownFields protoimpl.UnknownFields
@@ -2009,6 +2014,20 @@ func (x *BoardTask) GetDeadline() string {
 func (x *BoardTask) GetProposalText() string {
 	if x != nil {
 		return x.ProposalText
+	}
+	return ""
+}
+
+func (x *BoardTask) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *BoardTask) GetRoot() string {
+	if x != nil {
+		return x.Root
 	}
 	return ""
 }
@@ -3721,6 +3740,479 @@ func (x *BirthResponse) GetErr() string {
 	return ""
 }
 
+// WatchGoal streams one goal's present: the nodes it decomposed into,
+// and the story of what has moved. Frames are whole — a goal is a
+// handful of nodes and a few dozen events, so there is nothing to gain
+// from deltas and a whole frame can never be stale in part.
+type WatchGoalRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // the root card's id
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchGoalRequest) Reset() {
+	*x = WatchGoalRequest{}
+	mi := &file_vera_v1_vera_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchGoalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchGoalRequest) ProtoMessage() {}
+
+func (x *WatchGoalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchGoalRequest.ProtoReflect.Descriptor instead.
+func (*WatchGoalRequest) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *WatchGoalRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type WatchGoalResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	// State is the semantic line: "Building", "Reviewing", "Needs you",
+	// "Ready". Derived server-side so the phone and the web agree, and
+	// never a percentage — agentic work is not deterministic enough for a
+	// number to mean anything.
+	State         string       `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	Face          string       `protobuf:"bytes,4,opt,name=face,proto3" json:"face,omitempty"` // one sentence under the state
+	Nodes         []*GoalNode  `protobuf:"bytes,5,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	Events        []*GoalEvent `protobuf:"bytes,6,rep,name=events,proto3" json:"events,omitempty"`
+	Spend         float64      `protobuf:"fixed64,7,opt,name=spend,proto3" json:"spend,omitempty"`
+	Cursor        int64        `protobuf:"varint,8,opt,name=cursor,proto3" json:"cursor,omitempty"` // the newest event sequence in this frame
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchGoalResponse) Reset() {
+	*x = WatchGoalResponse{}
+	mi := &file_vera_v1_vera_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchGoalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchGoalResponse) ProtoMessage() {}
+
+func (x *WatchGoalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchGoalResponse.ProtoReflect.Descriptor instead.
+func (*WatchGoalResponse) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *WatchGoalResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *WatchGoalResponse) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *WatchGoalResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *WatchGoalResponse) GetFace() string {
+	if x != nil {
+		return x.Face
+	}
+	return ""
+}
+
+func (x *WatchGoalResponse) GetNodes() []*GoalNode {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+func (x *WatchGoalResponse) GetEvents() []*GoalEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *WatchGoalResponse) GetSpend() float64 {
+	if x != nil {
+		return x.Spend
+	}
+	return 0
+}
+
+func (x *WatchGoalResponse) GetCursor() int64 {
+	if x != nil {
+		return x.Cursor
+	}
+	return 0
+}
+
+// GoalNode is one card seen as a piece of the graph.
+type GoalNode struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title     string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	Kind      string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`   // implement | investigate | review | verify | reconcile
+	Col       string                 `protobuf:"bytes,4,opt,name=col,proto3" json:"col,omitempty"`     // inbox | progress | waiting | done | dropped
+	State     string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"` // the human line under the column
+	Face      string                 `protobuf:"bytes,6,opt,name=face,proto3" json:"face,omitempty"`
+	Deps      []string               `protobuf:"bytes,7,rep,name=deps,proto3" json:"deps,omitempty"`
+	BlockedBy []string               `protobuf:"bytes,8,rep,name=blocked_by,json=blockedBy,proto3" json:"blocked_by,omitempty"` // deps not yet cleared, computed at read time
+	Model     string                 `protobuf:"bytes,9,opt,name=model,proto3" json:"model,omitempty"`                          // what routing reached for; "" = the CLI default
+	Tier      string                 `protobuf:"bytes,10,opt,name=tier,proto3" json:"tier,omitempty"`                           // cheap | mid | strong; "" when unrouted
+	CostUsd   float64                `protobuf:"fixed64,11,opt,name=cost_usd,json=costUsd,proto3" json:"cost_usd,omitempty"`
+	ReadOnly  bool                   `protobuf:"varint,12,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"` // vera may open it herself
+	Ask       string                 `protobuf:"bytes,13,opt,name=ask,proto3" json:"ask,omitempty"`                            // set when it is waiting on the owner
+	// The live overlay, when a worker is on it right now.
+	LiveState     string `protobuf:"bytes,14,opt,name=live_state,json=liveState,proto3" json:"live_state,omitempty"`
+	LiveNow       string `protobuf:"bytes,15,opt,name=live_now,json=liveNow,proto3" json:"live_now,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GoalNode) Reset() {
+	*x = GoalNode{}
+	mi := &file_vera_v1_vera_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GoalNode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GoalNode) ProtoMessage() {}
+
+func (x *GoalNode) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GoalNode.ProtoReflect.Descriptor instead.
+func (*GoalNode) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *GoalNode) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *GoalNode) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *GoalNode) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *GoalNode) GetCol() string {
+	if x != nil {
+		return x.Col
+	}
+	return ""
+}
+
+func (x *GoalNode) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *GoalNode) GetFace() string {
+	if x != nil {
+		return x.Face
+	}
+	return ""
+}
+
+func (x *GoalNode) GetDeps() []string {
+	if x != nil {
+		return x.Deps
+	}
+	return nil
+}
+
+func (x *GoalNode) GetBlockedBy() []string {
+	if x != nil {
+		return x.BlockedBy
+	}
+	return nil
+}
+
+func (x *GoalNode) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *GoalNode) GetTier() string {
+	if x != nil {
+		return x.Tier
+	}
+	return ""
+}
+
+func (x *GoalNode) GetCostUsd() float64 {
+	if x != nil {
+		return x.CostUsd
+	}
+	return 0
+}
+
+func (x *GoalNode) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
+}
+
+func (x *GoalNode) GetAsk() string {
+	if x != nil {
+		return x.Ask
+	}
+	return ""
+}
+
+func (x *GoalNode) GetLiveState() string {
+	if x != nil {
+		return x.LiveState
+	}
+	return ""
+}
+
+func (x *GoalNode) GetLiveNow() string {
+	if x != nil {
+		return x.LiveNow
+	}
+	return ""
+}
+
+// GoalEvent is one line of the story, with the artifact it was read
+// from. Src is what makes the view a projection rather than a
+// narration: every claim can be opened.
+type GoalEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Seq           int64                  `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
+	AtUnixMs      int64                  `protobuf:"varint,2,opt,name=at_unix_ms,json=atUnixMs,proto3" json:"at_unix_ms,omitempty"`
+	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	Node          string                 `protobuf:"bytes,4,opt,name=node,proto3" json:"node,omitempty"`
+	Text          string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	Src           *EventSource           `protobuf:"bytes,6,opt,name=src,proto3" json:"src,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GoalEvent) Reset() {
+	*x = GoalEvent{}
+	mi := &file_vera_v1_vera_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GoalEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GoalEvent) ProtoMessage() {}
+
+func (x *GoalEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GoalEvent.ProtoReflect.Descriptor instead.
+func (*GoalEvent) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *GoalEvent) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *GoalEvent) GetAtUnixMs() int64 {
+	if x != nil {
+		return x.AtUnixMs
+	}
+	return 0
+}
+
+func (x *GoalEvent) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *GoalEvent) GetNode() string {
+	if x != nil {
+		return x.Node
+	}
+	return ""
+}
+
+func (x *GoalEvent) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *GoalEvent) GetSrc() *EventSource {
+	if x != nil {
+		return x.Src
+	}
+	return nil
+}
+
+type EventSource struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Task          string                 `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	Run           string                 `protobuf:"bytes,2,opt,name=run,proto3" json:"run,omitempty"`
+	Fork          string                 `protobuf:"bytes,3,opt,name=fork,proto3" json:"fork,omitempty"` // the claude session id — resumable
+	Msg           int32                  `protobuf:"varint,4,opt,name=msg,proto3" json:"msg,omitempty"`
+	File          string                 `protobuf:"bytes,5,opt,name=file,proto3" json:"file,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EventSource) Reset() {
+	*x = EventSource{}
+	mi := &file_vera_v1_vera_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EventSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventSource) ProtoMessage() {}
+
+func (x *EventSource) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EventSource.ProtoReflect.Descriptor instead.
+func (*EventSource) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *EventSource) GetTask() string {
+	if x != nil {
+		return x.Task
+	}
+	return ""
+}
+
+func (x *EventSource) GetRun() string {
+	if x != nil {
+		return x.Run
+	}
+	return ""
+}
+
+func (x *EventSource) GetFork() string {
+	if x != nil {
+		return x.Fork
+	}
+	return ""
+}
+
+func (x *EventSource) GetMsg() int32 {
+	if x != nil {
+		return x.Msg
+	}
+	return 0
+}
+
+func (x *EventSource) GetFile() string {
+	if x != nil {
+		return x.File
+	}
+	return ""
+}
+
 var File_vera_v1_vera_proto protoreflect.FileDescriptor
 
 const file_vera_v1_vera_proto_rawDesc = "" +
@@ -3873,7 +4365,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x0fweek_all_resets\x18\x05 \x01(\tR\rweekAllResets\x12&\n" +
 	"\x0fweek_model_name\x18\x06 \x01(\tR\rweekModelName\x12$\n" +
 	"\x0eweek_model_pct\x18\a \x01(\x05R\fweekModelPct\x12*\n" +
-	"\x11week_model_resets\x18\b \x01(\tR\x0fweekModelResets\"\xd9\x06\n" +
+	"\x11week_model_resets\x18\b \x01(\tR\x0fweekModelResets\"\x81\a\n" +
 	"\tBoardTask\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x16\n" +
@@ -3903,7 +4395,9 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x04live\x18\x18 \x01(\v2\x11.vera.v1.TaskLiveR\x04live\x12\x18\n" +
 	"\acadence\x18\x19 \x01(\tR\acadence\x12\x1a\n" +
 	"\bdeadline\x18\x1a \x01(\tR\bdeadline\x12#\n" +
-	"\rproposal_text\x18\x1b \x01(\tR\fproposalText\x12\x1d\n" +
+	"\rproposal_text\x18\x1b \x01(\tR\fproposalText\x12\x12\n" +
+	"\x04kind\x18\x1e \x01(\tR\x04kind\x12\x12\n" +
+	"\x04root\x18\x1f \x01(\tR\x04root\x12\x1d\n" +
 	"\n" +
 	"auto_start\x18\x1c \x01(\tR\tautoStart\x12\x1d\n" +
 	"\n" +
@@ -4016,7 +4510,51 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\rBirthResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x12\n" +
 	"\x04root\x18\x02 \x01(\tR\x04root\x12\x10\n" +
-	"\x03err\x18\x03 \x01(\tR\x03err2\x8a\a\n" +
+	"\x03err\x18\x03 \x01(\tR\x03err\"\"\n" +
+	"\x10WatchGoalRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xe6\x01\n" +
+	"\x11WatchGoalResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x12\n" +
+	"\x04face\x18\x04 \x01(\tR\x04face\x12'\n" +
+	"\x05nodes\x18\x05 \x03(\v2\x11.vera.v1.GoalNodeR\x05nodes\x12*\n" +
+	"\x06events\x18\x06 \x03(\v2\x12.vera.v1.GoalEventR\x06events\x12\x14\n" +
+	"\x05spend\x18\a \x01(\x01R\x05spend\x12\x16\n" +
+	"\x06cursor\x18\b \x01(\x03R\x06cursor\"\xe1\x02\n" +
+	"\bGoalNode\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x10\n" +
+	"\x03col\x18\x04 \x01(\tR\x03col\x12\x14\n" +
+	"\x05state\x18\x05 \x01(\tR\x05state\x12\x12\n" +
+	"\x04face\x18\x06 \x01(\tR\x04face\x12\x12\n" +
+	"\x04deps\x18\a \x03(\tR\x04deps\x12\x1d\n" +
+	"\n" +
+	"blocked_by\x18\b \x03(\tR\tblockedBy\x12\x14\n" +
+	"\x05model\x18\t \x01(\tR\x05model\x12\x12\n" +
+	"\x04tier\x18\n" +
+	" \x01(\tR\x04tier\x12\x19\n" +
+	"\bcost_usd\x18\v \x01(\x01R\acostUsd\x12\x1b\n" +
+	"\tread_only\x18\f \x01(\bR\breadOnly\x12\x10\n" +
+	"\x03ask\x18\r \x01(\tR\x03ask\x12\x1d\n" +
+	"\n" +
+	"live_state\x18\x0e \x01(\tR\tliveState\x12\x19\n" +
+	"\blive_now\x18\x0f \x01(\tR\aliveNow\"\x9f\x01\n" +
+	"\tGoalEvent\x12\x10\n" +
+	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x1c\n" +
+	"\n" +
+	"at_unix_ms\x18\x02 \x01(\x03R\batUnixMs\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x12\n" +
+	"\x04node\x18\x04 \x01(\tR\x04node\x12\x12\n" +
+	"\x04text\x18\x05 \x01(\tR\x04text\x12&\n" +
+	"\x03src\x18\x06 \x01(\v2\x14.vera.v1.EventSourceR\x03src\"m\n" +
+	"\vEventSource\x12\x12\n" +
+	"\x04task\x18\x01 \x01(\tR\x04task\x12\x10\n" +
+	"\x03run\x18\x02 \x01(\tR\x03run\x12\x12\n" +
+	"\x04fork\x18\x03 \x01(\tR\x04fork\x12\x10\n" +
+	"\x03msg\x18\x04 \x01(\x05R\x03msg\x12\x12\n" +
+	"\x04file\x18\x05 \x01(\tR\x04file2\xd0\a\n" +
 	"\vVeraService\x12G\n" +
 	"\n" +
 	"WatchAgent\x12\x1a.vera.v1.WatchAgentRequest\x1a\x1b.vera.v1.WatchAgentResponse0\x01\x120\n" +
@@ -4033,7 +4571,8 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x06Browse\x12\x16.vera.v1.BrowseRequest\x1a\x17.vera.v1.BrowseResponse\x12K\n" +
 	"\fStartSession\x12\x1c.vera.v1.StartSessionRequest\x1a\x1d.vera.v1.StartSessionResponse\x126\n" +
 	"\x05Birth\x12\x15.vera.v1.BirthRequest\x1a\x16.vera.v1.BirthResponse\x12B\n" +
-	"\vSetBookmark\x12\x18.vera.v1.BookmarkRequest\x1a\x19.vera.v1.BookmarkResponseB.Z,github.com/incantery/vera/gen/vera/v1;verav1b\x06proto3"
+	"\vSetBookmark\x12\x18.vera.v1.BookmarkRequest\x1a\x19.vera.v1.BookmarkResponse\x12D\n" +
+	"\tWatchGoal\x12\x19.vera.v1.WatchGoalRequest\x1a\x1a.vera.v1.WatchGoalResponse0\x01B.Z,github.com/incantery/vera/gen/vera/v1;verav1b\x06proto3"
 
 var (
 	file_vera_v1_vera_proto_rawDescOnce sync.Once
@@ -4047,7 +4586,7 @@ func file_vera_v1_vera_proto_rawDescGZIP() []byte {
 	return file_vera_v1_vera_proto_rawDescData
 }
 
-var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
+var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 57)
 var file_vera_v1_vera_proto_goTypes = []any{
 	(*WatchAgentRequest)(nil),    // 0: vera.v1.WatchAgentRequest
 	(*WatchAgentResponse)(nil),   // 1: vera.v1.WatchAgentResponse
@@ -4101,6 +4640,11 @@ var file_vera_v1_vera_proto_goTypes = []any{
 	(*StartSessionResponse)(nil), // 49: vera.v1.StartSessionResponse
 	(*BirthRequest)(nil),         // 50: vera.v1.BirthRequest
 	(*BirthResponse)(nil),        // 51: vera.v1.BirthResponse
+	(*WatchGoalRequest)(nil),     // 52: vera.v1.WatchGoalRequest
+	(*WatchGoalResponse)(nil),    // 53: vera.v1.WatchGoalResponse
+	(*GoalNode)(nil),             // 54: vera.v1.GoalNode
+	(*GoalEvent)(nil),            // 55: vera.v1.GoalEvent
+	(*EventSource)(nil),          // 56: vera.v1.EventSource
 }
 var file_vera_v1_vera_proto_depIdxs = []int32{
 	2,  // 0: vera.v1.WatchAgentResponse.agent:type_name -> vera.v1.Agent
@@ -4129,39 +4673,44 @@ var file_vera_v1_vera_proto_depIdxs = []int32{
 	43, // 23: vera.v1.BrowseResponse.dirs:type_name -> vera.v1.DirEntry
 	45, // 24: vera.v1.BrowseResponse.bookmarks:type_name -> vera.v1.Bookmark
 	45, // 25: vera.v1.BookmarkRequest.bookmark:type_name -> vera.v1.Bookmark
-	0,  // 26: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
-	12, // 27: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
-	14, // 28: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
-	16, // 29: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
-	27, // 30: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
-	30, // 31: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
-	32, // 32: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
-	34, // 33: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
-	36, // 34: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
-	40, // 35: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
-	42, // 36: vera.v1.VeraService.Browse:input_type -> vera.v1.BrowseRequest
-	48, // 37: vera.v1.VeraService.StartSession:input_type -> vera.v1.StartSessionRequest
-	50, // 38: vera.v1.VeraService.Birth:input_type -> vera.v1.BirthRequest
-	46, // 39: vera.v1.VeraService.SetBookmark:input_type -> vera.v1.BookmarkRequest
-	1,  // 40: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
-	13, // 41: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
-	15, // 42: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
-	17, // 43: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
-	29, // 44: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
-	31, // 45: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
-	33, // 46: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
-	35, // 47: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
-	39, // 48: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
-	41, // 49: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
-	44, // 50: vera.v1.VeraService.Browse:output_type -> vera.v1.BrowseResponse
-	49, // 51: vera.v1.VeraService.StartSession:output_type -> vera.v1.StartSessionResponse
-	51, // 52: vera.v1.VeraService.Birth:output_type -> vera.v1.BirthResponse
-	47, // 53: vera.v1.VeraService.SetBookmark:output_type -> vera.v1.BookmarkResponse
-	40, // [40:54] is the sub-list for method output_type
-	26, // [26:40] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	54, // 26: vera.v1.WatchGoalResponse.nodes:type_name -> vera.v1.GoalNode
+	55, // 27: vera.v1.WatchGoalResponse.events:type_name -> vera.v1.GoalEvent
+	56, // 28: vera.v1.GoalEvent.src:type_name -> vera.v1.EventSource
+	0,  // 29: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
+	12, // 30: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
+	14, // 31: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
+	16, // 32: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
+	27, // 33: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
+	30, // 34: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
+	32, // 35: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
+	34, // 36: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
+	36, // 37: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
+	40, // 38: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
+	42, // 39: vera.v1.VeraService.Browse:input_type -> vera.v1.BrowseRequest
+	48, // 40: vera.v1.VeraService.StartSession:input_type -> vera.v1.StartSessionRequest
+	50, // 41: vera.v1.VeraService.Birth:input_type -> vera.v1.BirthRequest
+	46, // 42: vera.v1.VeraService.SetBookmark:input_type -> vera.v1.BookmarkRequest
+	52, // 43: vera.v1.VeraService.WatchGoal:input_type -> vera.v1.WatchGoalRequest
+	1,  // 44: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
+	13, // 45: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
+	15, // 46: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
+	17, // 47: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
+	29, // 48: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
+	31, // 49: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
+	33, // 50: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
+	35, // 51: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
+	39, // 52: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
+	41, // 53: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
+	44, // 54: vera.v1.VeraService.Browse:output_type -> vera.v1.BrowseResponse
+	49, // 55: vera.v1.VeraService.StartSession:output_type -> vera.v1.StartSessionResponse
+	51, // 56: vera.v1.VeraService.Birth:output_type -> vera.v1.BirthResponse
+	47, // 57: vera.v1.VeraService.SetBookmark:output_type -> vera.v1.BookmarkResponse
+	53, // 58: vera.v1.VeraService.WatchGoal:output_type -> vera.v1.WatchGoalResponse
+	44, // [44:59] is the sub-list for method output_type
+	29, // [29:44] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_vera_v1_vera_proto_init() }
@@ -4175,7 +4724,7 @@ func file_vera_v1_vera_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vera_v1_vera_proto_rawDesc), len(file_vera_v1_vera_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   52,
+			NumMessages:   57,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

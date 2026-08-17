@@ -272,6 +272,9 @@ export function boardFrame(f) {
 			workspace: t.workspace || undefined, scratchName: t.scratchName || undefined,
 			mode: t.mode || undefined,
 			cadence: t.cadence || undefined, deadline: t.deadline || undefined,
+			// The graph, when this card is a node in one — what lets the
+			// board offer the work view instead of only a row.
+			kind: t.kind || undefined, root: t.root || undefined,
 			log: (t.log ?? []).map((e) => ({ at: iso(e.atUnixMs), actor: e.actor, text: e.text })),
 			exchanges: t.exchanges?.length ? t.exchanges.map((x) => ({ prompt: x.prompt, reply: x.reply })) : undefined,
 			createdAt: iso(t.createdUnixMs), updatedAt: iso(t.updatedUnixMs),
@@ -319,6 +322,85 @@ export function watchBoard(onFrame, onDone) {
 		}
 	})();
 	return () => ac.abort();
+}
+
+// ---- the work view ----
+// watchGoal opens one goal's stream. Frames are whole, so the page
+// replaces rather than merges — a goal is a handful of nodes and a few
+// dozen events, and a whole frame can never be stale in part.
+export function watchGoal(id, onFrame, onDone) {
+	const ac = new AbortController();
+	(async () => {
+		try {
+			for await (const frame of veraClient.watchGoal({ id }, { signal: ac.signal })) {
+				onFrame(goalFrame(frame));
+			}
+			onDone?.(null);
+		} catch (err) {
+			if (!ac.signal.aborted) onDone?.(err);
+		}
+	})();
+	return () => ac.abort();
+}
+
+// goalFrame flattens the wire into what the view reads. Nothing is
+// computed here that the server already decided — the semantic state
+// is the server's word, so the phone and the web cannot disagree about
+// what "Reviewing" means.
+export function goalFrame(f) {
+	return {
+		id: f.id,
+		title: f.title,
+		state: f.state,
+		face: f.face,
+		spend: f.spend ?? 0,
+		cursor: Number(f.cursor ?? 0),
+		nodes: (f.nodes ?? []).map((n) => ({
+			id: n.id,
+			title: n.title,
+			kind: n.kind,
+			col: n.col,
+			state: n.state,
+			face: n.face,
+			deps: n.deps ?? [],
+			blockedBy: n.blockedBy ?? [],
+			model: n.model,
+			tier: n.tier,
+			costUsd: n.costUsd ?? 0,
+			readOnly: n.readOnly,
+			ask: n.ask,
+			live: n.liveState ? { state: n.liveState, now: n.liveNow } : null
+		})),
+		events: (f.events ?? []).map((e) => ({
+			seq: Number(e.seq ?? 0),
+			at: Number(e.atUnixMs ?? 0),
+			kind: e.kind,
+			node: e.node,
+			text: e.text,
+			src: e.src
+				? { task: e.src.task, run: e.src.run, fork: e.src.fork, msg: e.src.msg, file: e.src.file }
+				: null
+		}))
+	};
+}
+
+// The last sequence this browser has seen for a goal. Stored so that
+// leaving for ten minutes and coming back shows what changed rather
+// than an undifferentiated wall — which is the whole point of the view.
+export function seenCursor(id) {
+	try {
+		return Number(localStorage.getItem(`vera-seen-${id}`) ?? 0);
+	} catch {
+		return 0;
+	}
+}
+
+export function markSeen(id, cursor) {
+	try {
+		localStorage.setItem(`vera-seen-${id}`, String(cursor));
+	} catch {
+		/* storage refused — the marks are a nicety, not the record */
+	}
 }
 
 export async function startDrive(sessionId, goal) {

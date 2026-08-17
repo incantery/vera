@@ -97,6 +97,33 @@ func TestSequenceSurvivesARestart(t *testing.T) {
 	}
 }
 
+// The story is half the work view. A restart that kept only the counter
+// would blank every goal's history in the UI while the journal on disk
+// still held it — the work would look like it had never happened.
+func TestTheStorySurvivesARestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.jsonl")
+	first := newEventLog(path, nil)
+	first.emit(evPlanDrawn, "T-100", "T-100", "drew a 3-node graph")
+	first.claim(evFindingRaised, "T-100", "T-101", "the journal API leaks a lifetime",
+		sourceRef{Task: "T-101", Fork: "abc123", Msg: 47})
+	first.emit(evNodeOpened, "T-200", "T-200", "a different goal")
+
+	second := newEventLog(path, nil)
+	story := second.forGoal("T-100")
+	if len(story) != 2 {
+		t.Fatalf("the goal's whole story comes back: %+v", story)
+	}
+	// Including the citations — a story that survived without its
+	// sources would be exactly the unverifiable narration the log exists
+	// to prevent.
+	if story[1].Src.Fork != "abc123" || story[1].Src.Msg != 47 {
+		t.Fatalf("the source survives with it: %+v", story[1].Src)
+	}
+	if len(second.forGoal("T-200")) != 1 {
+		t.Fatal("and every other goal's too")
+	}
+}
+
 // A fixture need not carry a log to exercise the code that emits —
 // the same courtesy the hub extends.
 func TestANilLogIsSafe(t *testing.T) {

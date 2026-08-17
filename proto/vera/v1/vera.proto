@@ -243,6 +243,11 @@ message BoardTask {
   // The drafted reply a "reply" proposal carries — shown verbatim
   // before the tap; a send button without this text is a lie.
   string proposal_text = 27;
+  // The graph, when the card is a node in one. Root is what makes the
+  // work view reachable from the board: a card that belongs to a goal
+  // can be opened as choreography instead of read as a row.
+  string kind = 30;
+  string root = 31;
   string auto_start = 28;  // "read" when the steward queued a self-start; the veto card reads it
   double budget_usd = 29;  // the autopilot authorization; 0 = not a marathon card
 }
@@ -451,4 +456,70 @@ service VeraService {
   rpc StartSession(StartSessionRequest) returns (StartSessionResponse);
   rpc Birth(BirthRequest) returns (BirthResponse);
   rpc SetBookmark(BookmarkRequest) returns (BookmarkResponse);
+  // WatchGoal is the work view's rail: one goal's whole present, as
+  // choreography rather than a table.
+  rpc WatchGoal(WatchGoalRequest) returns (stream WatchGoalResponse);
+}
+
+// WatchGoal streams one goal's present: the nodes it decomposed into,
+// and the story of what has moved. Frames are whole — a goal is a
+// handful of nodes and a few dozen events, so there is nothing to gain
+// from deltas and a whole frame can never be stale in part.
+message WatchGoalRequest {
+  string id = 1;  // the root card's id
+}
+
+message WatchGoalResponse {
+  string id = 1;
+  string title = 2;
+  // State is the semantic line: "Building", "Reviewing", "Needs you",
+  // "Ready". Derived server-side so the phone and the web agree, and
+  // never a percentage — agentic work is not deterministic enough for a
+  // number to mean anything.
+  string state = 3;
+  string face = 4;  // one sentence under the state
+  repeated GoalNode nodes = 5;
+  repeated GoalEvent events = 6;
+  double spend = 7;
+  int64 cursor = 8;  // the newest event sequence in this frame
+}
+
+// GoalNode is one card seen as a piece of the graph.
+message GoalNode {
+  string id = 1;
+  string title = 2;
+  string kind = 3;   // implement | investigate | review | verify | reconcile
+  string col = 4;    // inbox | progress | waiting | done | dropped
+  string state = 5;  // the human line under the column
+  string face = 6;
+  repeated string deps = 7;
+  repeated string blocked_by = 8;  // deps not yet cleared, computed at read time
+  string model = 9;                // what routing reached for; "" = the CLI default
+  string tier = 10;                // cheap | mid | strong; "" when unrouted
+  double cost_usd = 11;
+  bool read_only = 12;  // vera may open it herself
+  string ask = 13;      // set when it is waiting on the owner
+  // The live overlay, when a worker is on it right now.
+  string live_state = 14;
+  string live_now = 15;
+}
+
+// GoalEvent is one line of the story, with the artifact it was read
+// from. Src is what makes the view a projection rather than a
+// narration: every claim can be opened.
+message GoalEvent {
+  int64 seq = 1;
+  int64 at_unix_ms = 2;
+  string kind = 3;
+  string node = 4;
+  string text = 5;
+  EventSource src = 6;
+}
+
+message EventSource {
+  string task = 1;
+  string run = 2;
+  string fork = 3;  // the claude session id — resumable
+  int32 msg = 4;
+  string file = 5;
 }
