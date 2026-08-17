@@ -27,5 +27,6 @@ struct RootView: View {
         }
         .sheet(isPresented: $store.showingWalkthrough) { WalkthroughSheet() }
         .sheet(isPresented: $store.showingUnderTheHood) { UnderTheHoodView() }
+        .sheet(isPresented: $store.showingConnections) { ConnectionsView() }
     }
 }

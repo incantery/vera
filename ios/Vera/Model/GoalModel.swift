@@ -309,6 +309,19 @@ struct Goal: Identifiable, Hashable {
     /// of the work. Everything else stays quiet on purpose.
     var changedSinceYouLooked: Bool = false
 
+    // — where it lives —
+    //
+    // A goal that came off the wire remembers which machine it came
+    // from, because the machine is part of what Vera says about it:
+    // "one waits on your work Mac" is a sentence about a goal *and* a
+    // sentence about a laptop that went to sleep.
+
+    /// The card id on its machine. Nil for goals that only exist here.
+    var remoteID: String?
+    var machine: UUID?
+    var machineName: String?
+    var isRemote: Bool { remoteID != nil }
+
     init(
         id: UUID = UUID(),
         title: String,

@@ -173,15 +173,26 @@ extension HomeSelection {
         guard askCount > 0 else { return loadSentence }
 
         var parts: [String] = []
-        if let blocked = card?.stakes?.blocked, !blocked.isEmpty {
-            parts.append(card?.digest ?? "One is blocking work")
-        } else if let digest = card?.digest, !digest.isEmpty {
+        // The card carries the goal's own sentence when it has no
+        // options to offer, so repeating it here would say the same
+        // thing twice. In that case the subhead describes the *shape*
+        // of what is waiting instead, which is what 4a's does.
+        if card?.decision != nil, let digest = card?.digest, !digest.isEmpty {
             parts.append(digest)
+        } else if card?.stakes?.blocked != nil {
+            parts.append("One is blocking work")
+        } else if !lesserAsks.isEmpty {
+            parts.append("One can wait — work continues around it")
         }
+
         if heldAsks > 0 {
             parts.append(heldAsks == 1
                 ? "another question is waiting quietly inside its goal"
                 : "\(Self.spelled(heldAsks)) more are waiting quietly inside their goals")
+        }
+
+        if parts.isEmpty, withVeraCount > 0 {
+            parts.append("Everything else is moving.")
         }
         return parts.joined(separator: " · ")
     }

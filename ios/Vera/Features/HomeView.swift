@@ -10,6 +10,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(VeraStore.self) private var store
+    @Environment(Fleet.self) private var fleet
 
     var body: some View {
         @Bindable var store = store
@@ -17,8 +18,13 @@ struct HomeView: View {
         Screen {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    StatusHeader { store.showingWalkthrough = true }
-                        .padding(.bottom, 20)
+                    StatusHeader(
+                        locality: fleet.localityLine,
+                        isLive: fleet.isConnected || !fleet.hasConnections,
+                        onWordmarkLongPress: { store.showingWalkthrough = true },
+                        onLocalityTap: { store.showingConnections = true }
+                    )
+                    .padding(.bottom, 20)
 
                     switch store.homeState {
                     case .needsYou(let selection):
@@ -30,11 +36,25 @@ struct HomeView: View {
                     case .silence:
                         SilenceBody()
                     }
+
+                    // A machine out of reach is work news, not an
+                    // alert: 4i tells you the Mac went to sleep and
+                    // that one pursuit paused, in Vera's own voice.
+                    if let away = fleet.awayLine {
+                        Text(away)
+                            .font(VeraFont.body(12))
+                            .leading(12, 1.6)
+                            .foregroundStyle(Nocturne.dim)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 22)
+                            .padding(.horizontal, 18)
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .onDisappear { fleet.stoppedLooking() }
         } bottom: {
             Composer(
                 text: $store.draft,
@@ -115,6 +135,17 @@ private struct AskCard: View {
                         .foregroundStyle(Nocturne.body)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 5)
+                } else {
+                    // A goal off the wire has no options attached — the
+                    // board says *that* it needs you and why, not what
+                    // the choices are. Showing Vera's own sentence is
+                    // better than showing a title and a button.
+                    Text(goal.stance)
+                        .font(VeraFont.heading(14.5))
+                        .leading(14.5, 1.5)
+                        .foregroundStyle(Nocturne.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 6)
                 }
 
                 HStack(spacing: 6) {
@@ -258,8 +289,11 @@ private struct WithVeraSection: View {
 
 /// A goal, led by what Vera believes about it. The name is a kicker.
 private struct GoalRow: View {
+    @Environment(Fleet.self) private var fleet
     let goal: Goal
     let onOpen: () -> Void
+
+    private var showsMachine: Bool { fleet.connections.count > 1 }
 
     var body: some View {
         Button(action: onOpen) {
@@ -288,6 +322,16 @@ private struct GoalRow: View {
                         .font(VeraFont.body(11.5))
                         .foregroundStyle(Nocturne.dim)
                         .padding(.top, 5)
+                }
+
+                // Which machine, but only when there is more than one
+                // to distinguish between. On a single-Mac setup the
+                // answer is never interesting.
+                if showsMachine, let machine = goal.machineName {
+                    Text(machine)
+                        .font(VeraFont.body(11))
+                        .foregroundStyle(Nocturne.dim)
+                        .padding(.top, 4)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

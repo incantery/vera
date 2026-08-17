@@ -1,12 +1,17 @@
 # Vera for iOS
 
-Native SwiftUI, iOS 18+, no dependencies. Two things live here:
+Native SwiftUI, iOS 18+, no dependencies. It connects to one or more
+Macs running vera on the local network, and holds the design's own
+grammar over what they report. Three things live here:
 
 - **the goal page** — passes 2–4, the grammar for work whose
   understanding changes;
 - **the conversation surface** — pass 5, where Vera rather than the goal
   is the primary interaction object, and *conversation is fluid;
-  consequences become structure*.
+  consequences become structure*;
+- **the connection to vera itself** — `WatchBoard` feeding Home,
+  `WatchGoal` feeding a goal page, across as many machines as you point
+  it at.
 
 Pass 5 changed nothing about the goal page. It added the layer above it,
 so an ordinary sentence can reach the whole grammar without a form.
@@ -71,6 +76,57 @@ two set things aside without ruling anything out.
 The ledger renames itself accordingly: **Ruled out** (diagnostic) ·
 **Set aside** (creative) · **Deferred on purpose** (adaptive).
 
+## Connecting to vera
+
+The phone holds **several machines at once**. That is not a power
+feature bolted on: the design has named the machine since pass 2 ("Local
+· Nik's MacBook Pro"), and the whole of 4i is a work Mac going offline
+and Vera reporting it as *work* — "one pursuit paused, nothing else
+cares" — rather than as an error. So machines are part of the world Vera
+talks about, and they behave that way here:
+
+- the header pill names the fleet and is the door to managing it;
+- a goal remembers which machine it came from, shown on the row only
+  once there is more than one machine to distinguish between;
+- a machine out of reach gets a sentence under the headline, not a red
+  banner. It reconnects on a backoff and says nothing while it does.
+
+**Pairing is one paste.** Run vera with `--addr :4770` and it mints a
+key and prints the whole URL with the key in it; paste that line. On the
+same Mac, `localhost` is enough — vera serves loopback unkeyed and says
+so. Keys go in the Keychain, not `UserDefaults`.
+
+### The wire
+
+`ConnectClient` speaks connectrpc over `URLSession` and nothing else —
+no gRPC stack, no generated client, no dependency added to an app that
+has none. Unary is a JSON POST; server streaming is a POST whose
+response is a series of envelopes (one flag byte, a big-endian uint32
+length, then the payload). `WatchBoard` feeds Home; `WatchGoal` fills in
+the pursuits when a goal page opens.
+
+Two things worth knowing:
+
+- **Board frames are ~250KB** — mostly `tasks`, `sessions` and `usage`,
+  which the phone doesn't read. `URLSession.bytes` hands those over one
+  `UInt8` at a time, so the client uses a `URLSessionDataDelegate` and
+  parses real chunks instead.
+- **protojson sends 64-bit integers as strings**, which is why
+  `updatedUnixMs` decodes as `String`.
+
+### What the wire does not carry
+
+The two vocabularies are not the same size, and the mapping fills in
+what exists rather than inventing the rest. A remote goal has **no
+strata** (no stance history is transmitted at all), **no marks**, **no
+outcome**, and **no `Stakes`** — so Home can say *that* something needs
+you, and Vera's own sentence about why, but it cannot rank one ask above
+another the way it does for local ones. `GoalEvent` also doesn't
+distinguish a development that moved the stance from activity that
+didn't, so events are not turned into developments. Those are proto
+additions, not client work; guessing them here would put the phone in
+the business of deciding what counts as a finding.
+
 ## Home — selection, not inventory
 
 Home reads the same `goals` array the goal page does. It shows about
@@ -120,7 +176,11 @@ checks by driving both and comparing the resulting goal.
 Vera/
   Design/       Nocturne.swift        tokens, transcribed from the design system's styles.css
                 Components.swift      shared grammar: composer, crowned block, veil, ticks
-  Model/        Model.swift           conversation vocabulary — turns, consequences, structure
+  Model/        Connection.swift      a machine running vera; pairing, and the Keychain
+                ConnectClient.swift   connectrpc over URLSession — unary and server streams
+                VeraWire.swift        what vera sends, and how it becomes what the phone draws
+                Fleet.swift           several machines, one merged picture
+                Model.swift           conversation vocabulary — turns, consequences, structure
                 GoalModel.swift       the five primitives and the eight transformations
                 Specimens.swift       three kinds of work, as transformation sequences
                 HomeSelection.swift   the five-level attention policy; what Home shows and why
@@ -180,6 +240,9 @@ draws (5f, 5j, 5l, 5u). `VeraTests` checks each one.
 - On a specimen (`2g`, `3d`, `3e`) a dashed beat rail appears above the
   composer for stepping through the transformations.
 - `-scene 3d -beat 4` as launch arguments drops straight into one.
+- `-connect "http://host:4770/?key=…,localhost"` pairs machines at
+  launch, and `-sheet connections` opens the machines sheet, so the
+  connected states can be driven without tapping.
 
 None of it is product surface.
 
@@ -198,3 +261,20 @@ Nocturne is drawn in Inter. If `Inter*.ttf` is present in the target,
 `VeraFont` uses it; otherwise SF stands in at the same sizes and
 weights. Adding the font files is the only step to upgrade fidelity — no
 code changes.
+
+## Not done
+
+The connection is read-only. Answering an ask changes the goal on the
+phone and sends nothing back to vera — that wants an RPC, and the
+`Decision` the phone draws doesn't exist on the wire to answer.
+
+The conversation is local. `Say`/`WatchAgent` are per-agent-session,
+and there is no endpoint that takes "what's on your mind" and returns a
+classified consequence, so 5h's classifier runs here.
+
+There is no discovery: machines are added by paste. Browsing would need
+the Go side to advertise `_vera._tcp`, which it does not.
+
+With no machines paired the app falls back to its seeded world. That is
+a demo, not a cache — connect one and its board takes over, because a
+demo world sitting underneath live work would make Home lie.

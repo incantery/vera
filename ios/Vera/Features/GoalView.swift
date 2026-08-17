@@ -83,10 +83,18 @@ struct GoalView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear {
+            // A board row is a summary. Opening it asks the machine it
+            // came from for the pursuits underneath, and keeps asking
+            // for as long as the page is up.
+            let goal = goal
+            if goal.isRemote { store.openRemote(goal) }
+        }
         .onDisappear {
             store.veilRaised = false
             store.currentGoal = nil
             store.walkingSpecimen = nil
+            store.closeRemote()
         }
     }
 

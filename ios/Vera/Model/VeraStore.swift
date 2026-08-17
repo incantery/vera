@@ -21,6 +21,7 @@ final class VeraStore {
     /// Reached by long-pressing the wordmark.
     var showingWalkthrough = false
     var showingUnderTheHood = false
+    var showingConnections = false
 
     // MARK: - The conversation
 
@@ -49,10 +50,29 @@ final class VeraStore {
 
     // MARK: - Home
 
+    /// The machines vera is running on. Nil until the app hands one
+    /// over, which keeps the store testable without a network.
+    var fleet: Fleet?
+
+    /// Everything Vera is holding, from every machine plus whatever was
+    /// taken on here. Once a real machine is connected its board is the
+    /// truth and the seeded world steps aside — a demo world sitting
+    /// underneath live work would make Home lie.
+    var goalsInView: [Goal] {
+        guard let fleet, fleet.hasConnections else { return goals }
+        return fleet.goals + goals.filter { !$0.isRemote && $0.lifecycle != .done && $0.remoteID == nil && isTakenHere($0) }
+    }
+
+    /// Goals created in conversation on the phone, which have no machine
+    /// behind them yet.
+    private func isTakenHere(_ goal: Goal) -> Bool {
+        goal.machine == nil && !Seed.goals.contains { $0.title == goal.title }
+    }
+
     /// Home reads the same goals every other surface reads. It shows
     /// five of them; the selection policy decides which, and Vera is
     /// accountable for the ones she chose not to show.
-    var selection: HomeSelection { HomeSelection(goals: goals) }
+    var selection: HomeSelection { HomeSelection(goals: goalsInView) }
 
     /// The one ask worth a container, if there is one.
     var attention: Goal? { selection.card }
@@ -241,7 +261,27 @@ final class VeraStore {
         if let specimen = walkingSpecimen.flatMap(Specimen.named) {
             return specimen.state(at: beat)
         }
-        return goals.first { $0.id == id }
+        if let detailed = remoteDetail, detailed.id == id { return detailed }
+        return goalsInView.first { $0.id == id }
+    }
+
+    /// A remote goal, filled in by WatchGoal while its page is open.
+    /// The board row said what it knows; this says the rest.
+    private(set) var remoteDetail: Goal?
+    private var goalWatcher: Task<Void, Never>?
+
+    func openRemote(_ goal: Goal) {
+        goalWatcher?.cancel()
+        remoteDetail = goal
+        goalWatcher = fleet?.watchGoal(goal) { [weak self] filled in
+            self?.remoteDetail = filled
+        }
+    }
+
+    func closeRemote() {
+        goalWatcher?.cancel()
+        goalWatcher = nil
+        remoteDetail = nil
     }
 
     /// Answering at the judgment boundary. The buttons and the composer
@@ -371,6 +411,9 @@ final class VeraStore {
         // `-scene 5j` on the launch arguments drops straight into a
         // walkthrough state. Review scaffold; harmless in a shipped
         // build because nothing sets the default.
+        if UserDefaults.standard.string(forKey: "sheet") == "connections" {
+            showingConnections = true
+        }
         if let raw = UserDefaults.standard.string(forKey: "scene"),
            let entry = WalkthroughEntry(rawValue: raw) {
             enter(entry)

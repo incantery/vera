@@ -57,10 +57,16 @@ struct SectionLabel: View {
 // MARK: - Status header
 
 /// "Vera" plus where she is running. The dot glows because local is the
-/// default and worth being quietly proud of.
+/// default and worth being quietly proud of — and because the design has
+/// named the machine since pass 2 ("Local · Nik's MacBook Pro"), this is
+/// also the door to the machines she is running on.
 struct StatusHeader: View {
     var locality: String = "Local"
+    /// Hollow when nothing is answering: the dot is a claim about
+    /// reachability, so it stops making it when it can't.
+    var isLive: Bool = true
     var onWordmarkLongPress: (() -> Void)?
+    var onLocalityTap: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -72,19 +78,31 @@ struct StatusHeader: View {
 
             Spacer(minLength: 12)
 
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(Nocturne.accent)
+            Button { onLocalityTap?() } label: {
+                HStack(spacing: 7) {
+                    Group {
+                        if isLive {
+                            Circle()
+                                .fill(Nocturne.accent)
+                                .shadow(color: Nocturne.accent, radius: 4)
+                        } else {
+                            Circle().strokeBorder(Nocturne.dim, lineWidth: 1)
+                        }
+                    }
                     .frame(width: 6, height: 6)
-                    .shadow(color: Nocturne.accent, radius: 4)
-                Text(locality)
-                    .font(VeraFont.body(11.5))
-                    .foregroundStyle(Nocturne.soft)
+
+                    Text(locality)
+                        .font(VeraFont.body(11.5))
+                        .foregroundStyle(isLive ? Nocturne.soft : Nocturne.dim)
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .background(Nocturne.surface, in: Capsule())
+                .overlay(Capsule().strokeBorder(Nocturne.neutral800, lineWidth: 1))
+                .contentShape(Capsule())
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 5)
-            .background(Nocturne.surface, in: Capsule())
-            .overlay(Capsule().strokeBorder(Nocturne.neutral800, lineWidth: 1))
+            .buttonStyle(.plain)
+            .disabled(onLocalityTap == nil)
         }
     }
 }

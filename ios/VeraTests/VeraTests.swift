@@ -446,6 +446,211 @@ struct Specimens {
     }
 }
 
+// MARK: - The wire
+//
+// Everything here is a place the app could be silently wrong: a frame
+// split across reads, a 64-bit field that arrives as a string, an id
+// that changes on every launch, a stance invented out of nothing.
+
+@Suite("Connect envelopes")
+struct Envelopes {
+    private func bytes(_ payloads: [String], endWith end: Bool = false) -> [UInt8] {
+        var out = Data()
+        for p in payloads { out.append(ConnectEnvelope.wrap(Data(p.utf8))) }
+        if end { out.append(ConnectEnvelope.wrap(Data("{}".utf8), flags: 0x02)) }
+        return [UInt8](out)
+    }
+
+    @Test("A frame is recovered whole")
+    func roundTrip() {
+        let (frames, consumed) = ConnectEnvelope.drain(bytes([#"{"a":1}"#]))
+        #expect(frames.count == 1)
+        #expect(String(data: frames[0].payload, encoding: .utf8) == #"{"a":1}"#)
+        #expect(consumed == 12)
+    }
+
+    @Test("Several frames in one read all come out")
+    func manyInOneChunk() {
+        let (frames, _) = ConnectEnvelope.drain(bytes(["one", "two", "three"]))
+        #expect(frames.map { String(data: $0.payload, encoding: .utf8) } == ["one", "two", "three"])
+    }
+
+    @Test("A frame split across reads waits for the rest")
+    func splitAcrossChunks() {
+        let whole = bytes([#"{"goals":[]}"#])
+        for cut in 1..<whole.count {
+            let (frames, consumed) = ConnectEnvelope.drain(Array(whole.prefix(cut)))
+            #expect(frames.isEmpty, "a partial frame must not be handed over")
+            #expect(consumed == 0, "and must not be consumed")
+        }
+        let (frames, consumed) = ConnectEnvelope.drain(whole)
+        #expect(frames.count == 1)
+        #expect(consumed == whole.count)
+    }
+
+    @Test("The end-of-stream flag is recognised")
+    func endOfStream() {
+        let (frames, _) = ConnectEnvelope.drain(bytes(["hello"], endWith: true))
+        #expect(frames.count == 2)
+        #expect(frames[0].isEndOfStream == false)
+        #expect(frames[1].isEndOfStream)
+    }
+
+    @Test("A trailing partial frame leaves the finished ones alone")
+    func partialTail() {
+        var buffer = bytes(["done"])
+        buffer.append(contentsOf: [0, 0, 0, 0, 90, 1, 2])  // a frame that hasn't landed
+        let (frames, consumed) = ConnectEnvelope.drain(buffer)
+        #expect(frames.count == 1)
+        #expect(consumed == 9, "only the complete frame is consumed")
+    }
+}
+
+@Suite("Pairing")
+struct Pairing {
+    @Test("The line vera prints is the whole pairing flow")
+    func printedURL() throws {
+        let parsed = try #require(Connection.parse("vera:   http://192.168.1.20:4770/?key=8f2adead"))
+        #expect(parsed.connection.host == "192.168.1.20")
+        #expect(parsed.connection.port == 4770)
+        #expect(parsed.key == "8f2adead")
+    }
+
+    @Test("A bare host is enough for the loopback case that needs no key")
+    func bareHost() throws {
+        let parsed = try #require(Connection.parse("localhost"))
+        #expect(parsed.connection.host == "localhost")
+        #expect(parsed.connection.port == 4770)
+        #expect(parsed.key == nil)
+        #expect(parsed.connection.isLoopback)
+    }
+
+    @Test("A Bonjour hostname becomes a name Vera could say in a sentence")
+    func bonjourName() throws {
+        let parsed = try #require(Connection.parse("niks-macbook-pro.local:4770"))
+        #expect(parsed.connection.name == "Niks Macbook Pro")
+        #expect(!parsed.connection.isLoopback)
+    }
+
+    @Test("Junk is refused rather than turned into a half-address")
+    func junk() {
+        #expect(Connection.parse("") == nil)
+        #expect(Connection.parse("   ") == nil)
+    }
+}
+
+@Suite("Reading the board")
+struct BoardMapping {
+    private func card(
+        id: String = "g1",
+        title: String = "Harden pairing key storage",
+        state: String = "Building",
+        owner: String = "vera",
+        face: String = "A sentence Vera wrote.",
+        active: Int = 1,
+        updated: String? = nil
+    ) throws -> GoalCardWire {
+        let json = """
+        {"id":"\(id)","title":"\(title)","state":"\(state)","owner":"\(owner)",
+         "face":"\(face)","nodes":4,"active":\(active),"landed":2,"spend":1.5
+         \(updated.map { ",\"updatedUnixMs\":\"\($0)\"" } ?? "")}
+        """
+        return try JSONDecoder().decode(GoalCardWire.self, from: Data(json.utf8))
+    }
+
+    private let machine = Connection(name: "Work Mac", host: "10.0.0.5")
+
+    @Test("protojson sends 64-bit fields as strings, and they still become a date")
+    func int64AsString() throws {
+        let wire = try card(updated: "1734000000000")
+        let at = try #require(wire.updatedAt)
+        #expect(abs(at.timeIntervalSince1970 - 1_734_000_000) < 1)
+    }
+
+    @Test("Owner decides who holds the next decision")
+    func lifecycleFromOwner() throws {
+        #expect(try card(owner: "you").asGoal(origin: machine, changed: false).lifecycle == .needsYou)
+        #expect(try card(owner: "vera").asGoal(origin: machine, changed: false).lifecycle == .withVera)
+        #expect(try card(owner: "done").asGoal(origin: machine, changed: false).lifecycle == .done)
+    }
+
+    @Test("Vera's own sentence leads; the goal's name demotes to a kicker")
+    func faceLeads() throws {
+        let goal = try card().asGoal(origin: machine, changed: true)
+        #expect(goal.stance == "A sentence Vera wrote.")
+        #expect(goal.title == "Harden pairing key storage")
+        #expect(goal.digest == "A sentence Vera wrote.")
+        #expect(goal.machineName == "Work Mac")
+        #expect(goal.isRemote)
+    }
+
+    @Test("What the wire does not carry is left empty rather than invented")
+    func inventsNothing() throws {
+        let goal = try card(owner: "you").asGoal(origin: machine, changed: false)
+        #expect(goal.strata.isEmpty, "no stance history is transmitted")
+        #expect(goal.marks.isEmpty, "no constraints are transmitted")
+        #expect(goal.outcome == nil)
+        #expect(goal.decision == nil, "the board says that it needs you, not what the options are")
+        // An ask exists, but nothing is claimed about what waiting costs.
+        #expect(goal.stakes != nil)
+        #expect(goal.stakes?.blocked == nil)
+        #expect(goal.stakes?.compounds == false)
+    }
+
+    @Test("A board that says only “waiting” is not made to say “waiting on you”")
+    func waitingIsNotAttributed() throws {
+        let goal = try card(state: "Waiting", owner: "vera", active: 0).asGoal(origin: machine, changed: false)
+        guard case .waiting(let on) = goal.standing else {
+            Issue.record("expected a waiting standing"); return
+        }
+        #expect(on != "your call")
+    }
+
+    @Test("Counts and spend land in the footnote, because activity is not progress")
+    func activityStaysAFootnote() throws {
+        let goal = try card().asGoal(origin: machine, changed: false)
+        #expect(goal.activity.contains("4 nodes"))
+        #expect(goal.activity.contains("$1.50"))
+        #expect(!goal.stance.contains("$"), "money never reaches the stance")
+    }
+
+    @Test("Ids are stable across launches and distinct across machines")
+    func stableIdentity() {
+        let other = Connection(name: "Home Mac", host: "10.0.0.9")
+        let a = GoalCardWire.stableID(machine: machine.id, remote: "g1")
+        let b = GoalCardWire.stableID(machine: machine.id, remote: "g1")
+        let c = GoalCardWire.stableID(machine: other.id, remote: "g1")
+        let d = GoalCardWire.stableID(machine: machine.id, remote: "g2")
+
+        #expect(a == b, "the same goal keeps its id — Hasher would not, it is seeded per process")
+        #expect(a != c, "two machines using the same card id stay distinct")
+        #expect(a != d)
+    }
+
+    @Test("Nodes become pursuits, carrying what they are blocked on")
+    func nodesBecomePursuits() throws {
+        let json = """
+        {"id":"g1","title":"Fix it","state":"Reviewing","face":"A stance.","nodes":[
+          {"id":"n1","title":"Tracing","col":"progress","liveState":"working","face":"on it"},
+          {"id":"n2","title":"Socket theory","col":"dropped","state":"ruled out"},
+          {"id":"n3","title":"Recovery path","col":"waiting","blockedBy":["n1"],"face":"2 files"},
+          {"id":"n4","title":"Verification","col":"done","state":"40 of 40"}]}
+        """
+        let frame = try JSONDecoder().decode(GoalFrame.self, from: Data(json.utf8))
+        var goal = try card().asGoal(origin: machine, changed: false)
+        frame.apply(to: &goal)
+
+        #expect(goal.stance == "A stance.")
+        #expect(goal.pursuits.count == 4)
+        #expect(goal.pursuits[0].state == .lead, "a worker is on it right now")
+        #expect(goal.pursuits[1].state == .out)
+        #expect(goal.pursuits[2].state == .waiting)
+        #expect(goal.pursuits[2].note?.contains("blocked on 1") == true)
+        #expect(goal.pursuits[3].state == .done)
+        #expect(goal.setAside == ["Socket theory"])
+    }
+}
+
 // MARK: - Home at scale
 //
 // Pass 4's finding: three goals were hierarchy, fifteen would be a feed.
