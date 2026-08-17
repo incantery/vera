@@ -1258,16 +1258,20 @@ func (*WatchBoardRequest) Descriptor() ([]byte, []int) {
 }
 
 type WatchBoardResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tasks         []*BoardTask           `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`
-	Inflight      int32                  `protobuf:"varint,2,opt,name=inflight,proto3" json:"inflight,omitempty"` // drives running right now
-	Spend         float64                `protobuf:"fixed64,3,opt,name=spend,proto3" json:"spend,omitempty"`      // everything this process has spent, rolled up
-	Fleet         *Fleet                 `protobuf:"bytes,4,opt,name=fleet,proto3" json:"fleet,omitempty"`
-	Repos         []*Repo                `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"`
-	Notice        string                 `protobuf:"bytes,6,opt,name=notice,proto3" json:"notice,omitempty"`
-	Sessions      []*Session             `protobuf:"bytes,7,rep,name=sessions,proto3" json:"sessions,omitempty"` // the rail: one row per lineage
-	Current       string                 `protobuf:"bytes,8,opt,name=current,proto3" json:"current,omitempty"`   // the agent with the freshest activity
-	Usage         *Usage                 `protobuf:"bytes,9,opt,name=usage,proto3" json:"usage,omitempty"`       // absent until the collector has answered
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Tasks    []*BoardTask           `protobuf:"bytes,1,rep,name=tasks,proto3" json:"tasks,omitempty"`
+	Inflight int32                  `protobuf:"varint,2,opt,name=inflight,proto3" json:"inflight,omitempty"` // drives running right now
+	Spend    float64                `protobuf:"fixed64,3,opt,name=spend,proto3" json:"spend,omitempty"`      // everything this process has spent, rolled up
+	Fleet    *Fleet                 `protobuf:"bytes,4,opt,name=fleet,proto3" json:"fleet,omitempty"`
+	Repos    []*Repo                `protobuf:"bytes,5,rep,name=repos,proto3" json:"repos,omitempty"`
+	Notice   string                 `protobuf:"bytes,6,opt,name=notice,proto3" json:"notice,omitempty"`
+	Sessions []*Session             `protobuf:"bytes,7,rep,name=sessions,proto3" json:"sessions,omitempty"` // the rail: one row per lineage
+	Current  string                 `protobuf:"bytes,8,opt,name=current,proto3" json:"current,omitempty"`   // the agent with the freshest activity
+	Usage    *Usage                 `protobuf:"bytes,9,opt,name=usage,proto3" json:"usage,omitempty"`       // absent until the collector has answered
+	// The graphs on the board, one row each. Home is goal-shaped: a
+	// four-node graph is one row saying what is happening to the work,
+	// not four rows each saying a quarter of it.
+	Goals         []*GoalCard `protobuf:"bytes,10,rep,name=goals,proto3" json:"goals,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1365,6 +1369,131 @@ func (x *WatchBoardResponse) GetUsage() *Usage {
 	return nil
 }
 
+func (x *WatchBoardResponse) GetGoals() []*GoalCard {
+	if x != nil {
+		return x.Goals
+	}
+	return nil
+}
+
+// GoalCard is one graph as home reads it — the derived state, who owns
+// the next decision, and enough numbers to say it in a line.
+type GoalCard struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title         string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
+	State         string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"` // Building | Reviewing | Needs you | Ready for you | Ready | ...
+	Face          string                 `protobuf:"bytes,4,opt,name=face,proto3" json:"face,omitempty"`
+	Owner         string                 `protobuf:"bytes,5,opt,name=owner,proto3" json:"owner,omitempty"` // you | vera | done — who owns the next decision
+	Nodes         int32                  `protobuf:"varint,6,opt,name=nodes,proto3" json:"nodes,omitempty"`
+	Active        int32                  `protobuf:"varint,7,opt,name=active,proto3" json:"active,omitempty"` // nodes with a worker on them right now
+	Landed        int32                  `protobuf:"varint,8,opt,name=landed,proto3" json:"landed,omitempty"` // nodes the owner has accepted
+	Spend         float64                `protobuf:"fixed64,9,opt,name=spend,proto3" json:"spend,omitempty"`
+	UpdatedUnixMs int64                  `protobuf:"varint,10,opt,name=updated_unix_ms,json=updatedUnixMs,proto3" json:"updated_unix_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GoalCard) Reset() {
+	*x = GoalCard{}
+	mi := &file_vera_v1_vera_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GoalCard) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GoalCard) ProtoMessage() {}
+
+func (x *GoalCard) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GoalCard.ProtoReflect.Descriptor instead.
+func (*GoalCard) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GoalCard) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *GoalCard) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *GoalCard) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *GoalCard) GetFace() string {
+	if x != nil {
+		return x.Face
+	}
+	return ""
+}
+
+func (x *GoalCard) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *GoalCard) GetNodes() int32 {
+	if x != nil {
+		return x.Nodes
+	}
+	return 0
+}
+
+func (x *GoalCard) GetActive() int32 {
+	if x != nil {
+		return x.Active
+	}
+	return 0
+}
+
+func (x *GoalCard) GetLanded() int32 {
+	if x != nil {
+		return x.Landed
+	}
+	return 0
+}
+
+func (x *GoalCard) GetSpend() float64 {
+	if x != nil {
+		return x.Spend
+	}
+	return 0
+}
+
+func (x *GoalCard) GetUpdatedUnixMs() int64 {
+	if x != nil {
+		return x.UpdatedUnixMs
+	}
+	return 0
+}
+
 type Fleet struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Agents        int32                  `protobuf:"varint,1,opt,name=agents,proto3" json:"agents,omitempty"`
@@ -1375,7 +1504,7 @@ type Fleet struct {
 
 func (x *Fleet) Reset() {
 	*x = Fleet{}
-	mi := &file_vera_v1_vera_proto_msgTypes[18]
+	mi := &file_vera_v1_vera_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1387,7 +1516,7 @@ func (x *Fleet) String() string {
 func (*Fleet) ProtoMessage() {}
 
 func (x *Fleet) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[18]
+	mi := &file_vera_v1_vera_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1400,7 +1529,7 @@ func (x *Fleet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Fleet.ProtoReflect.Descriptor instead.
 func (*Fleet) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{18}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *Fleet) GetAgents() int32 {
@@ -1431,7 +1560,7 @@ type Repo struct {
 
 func (x *Repo) Reset() {
 	*x = Repo{}
-	mi := &file_vera_v1_vera_proto_msgTypes[19]
+	mi := &file_vera_v1_vera_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1443,7 +1572,7 @@ func (x *Repo) String() string {
 func (*Repo) ProtoMessage() {}
 
 func (x *Repo) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[19]
+	mi := &file_vera_v1_vera_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1456,7 +1585,7 @@ func (x *Repo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Repo.ProtoReflect.Descriptor instead.
 func (*Repo) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{19}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Repo) GetDir() string {
@@ -1513,7 +1642,7 @@ type Session struct {
 
 func (x *Session) Reset() {
 	*x = Session{}
-	mi := &file_vera_v1_vera_proto_msgTypes[20]
+	mi := &file_vera_v1_vera_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1525,7 +1654,7 @@ func (x *Session) String() string {
 func (*Session) ProtoMessage() {}
 
 func (x *Session) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[20]
+	mi := &file_vera_v1_vera_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1538,7 +1667,7 @@ func (x *Session) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Session.ProtoReflect.Descriptor instead.
 func (*Session) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{20}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Session) GetId() string {
@@ -1671,7 +1800,7 @@ type Usage struct {
 
 func (x *Usage) Reset() {
 	*x = Usage{}
-	mi := &file_vera_v1_vera_proto_msgTypes[21]
+	mi := &file_vera_v1_vera_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1683,7 +1812,7 @@ func (x *Usage) String() string {
 func (*Usage) ProtoMessage() {}
 
 func (x *Usage) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[21]
+	mi := &file_vera_v1_vera_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1696,7 +1825,7 @@ func (x *Usage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Usage.ProtoReflect.Descriptor instead.
 func (*Usage) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{21}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Usage) GetMode() string {
@@ -1801,7 +1930,7 @@ type BoardTask struct {
 
 func (x *BoardTask) Reset() {
 	*x = BoardTask{}
-	mi := &file_vera_v1_vera_proto_msgTypes[22]
+	mi := &file_vera_v1_vera_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1813,7 +1942,7 @@ func (x *BoardTask) String() string {
 func (*BoardTask) ProtoMessage() {}
 
 func (x *BoardTask) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[22]
+	mi := &file_vera_v1_vera_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1826,7 +1955,7 @@ func (x *BoardTask) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardTask.ProtoReflect.Descriptor instead.
 func (*BoardTask) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{22}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *BoardTask) GetId() string {
@@ -2057,7 +2186,7 @@ type TaskRun struct {
 
 func (x *TaskRun) Reset() {
 	*x = TaskRun{}
-	mi := &file_vera_v1_vera_proto_msgTypes[23]
+	mi := &file_vera_v1_vera_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2069,7 +2198,7 @@ func (x *TaskRun) String() string {
 func (*TaskRun) ProtoMessage() {}
 
 func (x *TaskRun) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[23]
+	mi := &file_vera_v1_vera_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2082,7 +2211,7 @@ func (x *TaskRun) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskRun.ProtoReflect.Descriptor instead.
 func (*TaskRun) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{23}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *TaskRun) GetKind() string {
@@ -2117,7 +2246,7 @@ type TaskEvent struct {
 
 func (x *TaskEvent) Reset() {
 	*x = TaskEvent{}
-	mi := &file_vera_v1_vera_proto_msgTypes[24]
+	mi := &file_vera_v1_vera_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2129,7 +2258,7 @@ func (x *TaskEvent) String() string {
 func (*TaskEvent) ProtoMessage() {}
 
 func (x *TaskEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[24]
+	mi := &file_vera_v1_vera_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2142,7 +2271,7 @@ func (x *TaskEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskEvent.ProtoReflect.Descriptor instead.
 func (*TaskEvent) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{24}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *TaskEvent) GetAtUnixMs() int64 {
@@ -2176,7 +2305,7 @@ type Exchange struct {
 
 func (x *Exchange) Reset() {
 	*x = Exchange{}
-	mi := &file_vera_v1_vera_proto_msgTypes[25]
+	mi := &file_vera_v1_vera_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2188,7 +2317,7 @@ func (x *Exchange) String() string {
 func (*Exchange) ProtoMessage() {}
 
 func (x *Exchange) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[25]
+	mi := &file_vera_v1_vera_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2201,7 +2330,7 @@ func (x *Exchange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Exchange.ProtoReflect.Descriptor instead.
 func (*Exchange) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{25}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *Exchange) GetPrompt() string {
@@ -2229,7 +2358,7 @@ type TaskLive struct {
 
 func (x *TaskLive) Reset() {
 	*x = TaskLive{}
-	mi := &file_vera_v1_vera_proto_msgTypes[26]
+	mi := &file_vera_v1_vera_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2241,7 +2370,7 @@ func (x *TaskLive) String() string {
 func (*TaskLive) ProtoMessage() {}
 
 func (x *TaskLive) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[26]
+	mi := &file_vera_v1_vera_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2254,7 +2383,7 @@ func (x *TaskLive) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskLive.ProtoReflect.Descriptor instead.
 func (*TaskLive) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{26}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *TaskLive) GetDir() string {
@@ -2290,7 +2419,7 @@ type ReviewRequest struct {
 
 func (x *ReviewRequest) Reset() {
 	*x = ReviewRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[27]
+	mi := &file_vera_v1_vera_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2302,7 +2431,7 @@ func (x *ReviewRequest) String() string {
 func (*ReviewRequest) ProtoMessage() {}
 
 func (x *ReviewRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[27]
+	mi := &file_vera_v1_vera_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2315,7 +2444,7 @@ func (x *ReviewRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewRequest.ProtoReflect.Descriptor instead.
 func (*ReviewRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{27}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ReviewRequest) GetId() string {
@@ -2340,7 +2469,7 @@ type ReviewFile struct {
 
 func (x *ReviewFile) Reset() {
 	*x = ReviewFile{}
-	mi := &file_vera_v1_vera_proto_msgTypes[28]
+	mi := &file_vera_v1_vera_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2352,7 +2481,7 @@ func (x *ReviewFile) String() string {
 func (*ReviewFile) ProtoMessage() {}
 
 func (x *ReviewFile) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[28]
+	mi := &file_vera_v1_vera_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2365,7 +2494,7 @@ func (x *ReviewFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewFile.ProtoReflect.Descriptor instead.
 func (*ReviewFile) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{28}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ReviewFile) GetPath() string {
@@ -2428,7 +2557,7 @@ type ReviewResponse struct {
 
 func (x *ReviewResponse) Reset() {
 	*x = ReviewResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[29]
+	mi := &file_vera_v1_vera_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2440,7 +2569,7 @@ func (x *ReviewResponse) String() string {
 func (*ReviewResponse) ProtoMessage() {}
 
 func (x *ReviewResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[29]
+	mi := &file_vera_v1_vera_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2453,7 +2582,7 @@ func (x *ReviewResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReviewResponse.ProtoReflect.Descriptor instead.
 func (*ReviewResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{29}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ReviewResponse) GetDir() string {
@@ -2487,7 +2616,7 @@ type CommitRequest struct {
 
 func (x *CommitRequest) Reset() {
 	*x = CommitRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[30]
+	mi := &file_vera_v1_vera_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2499,7 +2628,7 @@ func (x *CommitRequest) String() string {
 func (*CommitRequest) ProtoMessage() {}
 
 func (x *CommitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[30]
+	mi := &file_vera_v1_vera_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2512,7 +2641,7 @@ func (x *CommitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitRequest.ProtoReflect.Descriptor instead.
 func (*CommitRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{30}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *CommitRequest) GetId() string {
@@ -2538,7 +2667,7 @@ type CommitResponse struct {
 
 func (x *CommitResponse) Reset() {
 	*x = CommitResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[31]
+	mi := &file_vera_v1_vera_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2550,7 +2679,7 @@ func (x *CommitResponse) String() string {
 func (*CommitResponse) ProtoMessage() {}
 
 func (x *CommitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[31]
+	mi := &file_vera_v1_vera_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2563,7 +2692,7 @@ func (x *CommitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommitResponse.ProtoReflect.Descriptor instead.
 func (*CommitResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{31}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *CommitResponse) GetCommit() string {
@@ -2584,7 +2713,7 @@ type DiscardRequest struct {
 
 func (x *DiscardRequest) Reset() {
 	*x = DiscardRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[32]
+	mi := &file_vera_v1_vera_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2596,7 +2725,7 @@ func (x *DiscardRequest) String() string {
 func (*DiscardRequest) ProtoMessage() {}
 
 func (x *DiscardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[32]
+	mi := &file_vera_v1_vera_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2609,7 +2738,7 @@ func (x *DiscardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscardRequest.ProtoReflect.Descriptor instead.
 func (*DiscardRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{32}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *DiscardRequest) GetId() string {
@@ -2641,7 +2770,7 @@ type DiscardResponse struct {
 
 func (x *DiscardResponse) Reset() {
 	*x = DiscardResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[33]
+	mi := &file_vera_v1_vera_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2653,7 +2782,7 @@ func (x *DiscardResponse) String() string {
 func (*DiscardResponse) ProtoMessage() {}
 
 func (x *DiscardResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[33]
+	mi := &file_vera_v1_vera_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2666,7 +2795,7 @@ func (x *DiscardResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscardResponse.ProtoReflect.Descriptor instead.
 func (*DiscardResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{33}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{34}
 }
 
 // Suggest is the vera agent's bid on the human's next move: it reads
@@ -2682,7 +2811,7 @@ type SuggestRequest struct {
 
 func (x *SuggestRequest) Reset() {
 	*x = SuggestRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[34]
+	mi := &file_vera_v1_vera_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2694,7 +2823,7 @@ func (x *SuggestRequest) String() string {
 func (*SuggestRequest) ProtoMessage() {}
 
 func (x *SuggestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[34]
+	mi := &file_vera_v1_vera_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2707,7 +2836,7 @@ func (x *SuggestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestRequest.ProtoReflect.Descriptor instead.
 func (*SuggestRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{34}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SuggestRequest) GetId() string {
@@ -2728,7 +2857,7 @@ type SuggestResponse struct {
 
 func (x *SuggestResponse) Reset() {
 	*x = SuggestResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[35]
+	mi := &file_vera_v1_vera_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2740,7 +2869,7 @@ func (x *SuggestResponse) String() string {
 func (*SuggestResponse) ProtoMessage() {}
 
 func (x *SuggestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[35]
+	mi := &file_vera_v1_vera_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2753,7 +2882,7 @@ func (x *SuggestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestResponse.ProtoReflect.Descriptor instead.
 func (*SuggestResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{35}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SuggestResponse) GetHappened() string {
@@ -2790,7 +2919,7 @@ type PlanRequest struct {
 
 func (x *PlanRequest) Reset() {
 	*x = PlanRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[36]
+	mi := &file_vera_v1_vera_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2802,7 +2931,7 @@ func (x *PlanRequest) String() string {
 func (*PlanRequest) ProtoMessage() {}
 
 func (x *PlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[36]
+	mi := &file_vera_v1_vera_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2815,7 +2944,7 @@ func (x *PlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanRequest.ProtoReflect.Descriptor instead.
 func (*PlanRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{36}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *PlanRequest) GetText() string {
@@ -2848,7 +2977,7 @@ type PlanShape struct {
 
 func (x *PlanShape) Reset() {
 	*x = PlanShape{}
-	mi := &file_vera_v1_vera_proto_msgTypes[37]
+	mi := &file_vera_v1_vera_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2860,7 +2989,7 @@ func (x *PlanShape) String() string {
 func (*PlanShape) ProtoMessage() {}
 
 func (x *PlanShape) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[37]
+	mi := &file_vera_v1_vera_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2873,7 +3002,7 @@ func (x *PlanShape) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanShape.ProtoReflect.Descriptor instead.
 func (*PlanShape) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{37}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *PlanShape) GetKind() string {
@@ -2960,7 +3089,7 @@ type PlanNode struct {
 
 func (x *PlanNode) Reset() {
 	*x = PlanNode{}
-	mi := &file_vera_v1_vera_proto_msgTypes[38]
+	mi := &file_vera_v1_vera_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2972,7 +3101,7 @@ func (x *PlanNode) String() string {
 func (*PlanNode) ProtoMessage() {}
 
 func (x *PlanNode) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[38]
+	mi := &file_vera_v1_vera_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2985,7 +3114,7 @@ func (x *PlanNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanNode.ProtoReflect.Descriptor instead.
 func (*PlanNode) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{38}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PlanNode) GetKind() string {
@@ -3019,7 +3148,7 @@ type PlanResponse struct {
 
 func (x *PlanResponse) Reset() {
 	*x = PlanResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[39]
+	mi := &file_vera_v1_vera_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3031,7 +3160,7 @@ func (x *PlanResponse) String() string {
 func (*PlanResponse) ProtoMessage() {}
 
 func (x *PlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[39]
+	mi := &file_vera_v1_vera_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3044,7 +3173,7 @@ func (x *PlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanResponse.ProtoReflect.Descriptor instead.
 func (*PlanResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{39}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *PlanResponse) GetId() string {
@@ -3072,7 +3201,7 @@ type ExecutePlanRequest struct {
 
 func (x *ExecutePlanRequest) Reset() {
 	*x = ExecutePlanRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[40]
+	mi := &file_vera_v1_vera_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3084,7 +3213,7 @@ func (x *ExecutePlanRequest) String() string {
 func (*ExecutePlanRequest) ProtoMessage() {}
 
 func (x *ExecutePlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[40]
+	mi := &file_vera_v1_vera_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3097,7 +3226,7 @@ func (x *ExecutePlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutePlanRequest.ProtoReflect.Descriptor instead.
 func (*ExecutePlanRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{40}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ExecutePlanRequest) GetId() string {
@@ -3131,7 +3260,7 @@ type ExecutePlanResponse struct {
 
 func (x *ExecutePlanResponse) Reset() {
 	*x = ExecutePlanResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[41]
+	mi := &file_vera_v1_vera_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3143,7 +3272,7 @@ func (x *ExecutePlanResponse) String() string {
 func (*ExecutePlanResponse) ProtoMessage() {}
 
 func (x *ExecutePlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[41]
+	mi := &file_vera_v1_vera_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3156,7 +3285,7 @@ func (x *ExecutePlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutePlanResponse.ProtoReflect.Descriptor instead.
 func (*ExecutePlanResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{41}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ExecutePlanResponse) GetTaskId() string {
@@ -3186,7 +3315,7 @@ type BrowseRequest struct {
 
 func (x *BrowseRequest) Reset() {
 	*x = BrowseRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[42]
+	mi := &file_vera_v1_vera_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3198,7 +3327,7 @@ func (x *BrowseRequest) String() string {
 func (*BrowseRequest) ProtoMessage() {}
 
 func (x *BrowseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[42]
+	mi := &file_vera_v1_vera_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3211,7 +3340,7 @@ func (x *BrowseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrowseRequest.ProtoReflect.Descriptor instead.
 func (*BrowseRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{42}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *BrowseRequest) GetPath() string {
@@ -3233,7 +3362,7 @@ type DirEntry struct {
 
 func (x *DirEntry) Reset() {
 	*x = DirEntry{}
-	mi := &file_vera_v1_vera_proto_msgTypes[43]
+	mi := &file_vera_v1_vera_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3245,7 +3374,7 @@ func (x *DirEntry) String() string {
 func (*DirEntry) ProtoMessage() {}
 
 func (x *DirEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[43]
+	mi := &file_vera_v1_vera_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3258,7 +3387,7 @@ func (x *DirEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirEntry.ProtoReflect.Descriptor instead.
 func (*DirEntry) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{43}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *DirEntry) GetName() string {
@@ -3304,7 +3433,7 @@ type BrowseResponse struct {
 
 func (x *BrowseResponse) Reset() {
 	*x = BrowseResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[44]
+	mi := &file_vera_v1_vera_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3316,7 +3445,7 @@ func (x *BrowseResponse) String() string {
 func (*BrowseResponse) ProtoMessage() {}
 
 func (x *BrowseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[44]
+	mi := &file_vera_v1_vera_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3329,7 +3458,7 @@ func (x *BrowseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrowseResponse.ProtoReflect.Descriptor instead.
 func (*BrowseResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{44}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *BrowseResponse) GetRoot() string {
@@ -3395,7 +3524,7 @@ type Bookmark struct {
 
 func (x *Bookmark) Reset() {
 	*x = Bookmark{}
-	mi := &file_vera_v1_vera_proto_msgTypes[45]
+	mi := &file_vera_v1_vera_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3407,7 +3536,7 @@ func (x *Bookmark) String() string {
 func (*Bookmark) ProtoMessage() {}
 
 func (x *Bookmark) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[45]
+	mi := &file_vera_v1_vera_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3420,7 +3549,7 @@ func (x *Bookmark) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Bookmark.ProtoReflect.Descriptor instead.
 func (*Bookmark) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{45}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *Bookmark) GetName() string {
@@ -3454,7 +3583,7 @@ type BookmarkRequest struct {
 
 func (x *BookmarkRequest) Reset() {
 	*x = BookmarkRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[46]
+	mi := &file_vera_v1_vera_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3466,7 +3595,7 @@ func (x *BookmarkRequest) String() string {
 func (*BookmarkRequest) ProtoMessage() {}
 
 func (x *BookmarkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[46]
+	mi := &file_vera_v1_vera_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3479,7 +3608,7 @@ func (x *BookmarkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BookmarkRequest.ProtoReflect.Descriptor instead.
 func (*BookmarkRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{46}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *BookmarkRequest) GetBookmark() *Bookmark {
@@ -3504,7 +3633,7 @@ type BookmarkResponse struct {
 
 func (x *BookmarkResponse) Reset() {
 	*x = BookmarkResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[47]
+	mi := &file_vera_v1_vera_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3516,7 +3645,7 @@ func (x *BookmarkResponse) String() string {
 func (*BookmarkResponse) ProtoMessage() {}
 
 func (x *BookmarkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[47]
+	mi := &file_vera_v1_vera_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3529,7 +3658,7 @@ func (x *BookmarkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BookmarkResponse.ProtoReflect.Descriptor instead.
 func (*BookmarkResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{47}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{48}
 }
 
 type StartSessionRequest struct {
@@ -3543,7 +3672,7 @@ type StartSessionRequest struct {
 
 func (x *StartSessionRequest) Reset() {
 	*x = StartSessionRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[48]
+	mi := &file_vera_v1_vera_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3555,7 +3684,7 @@ func (x *StartSessionRequest) String() string {
 func (*StartSessionRequest) ProtoMessage() {}
 
 func (x *StartSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[48]
+	mi := &file_vera_v1_vera_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3568,7 +3697,7 @@ func (x *StartSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSessionRequest.ProtoReflect.Descriptor instead.
 func (*StartSessionRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{48}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *StartSessionRequest) GetCwd() string {
@@ -3601,7 +3730,7 @@ type StartSessionResponse struct {
 
 func (x *StartSessionResponse) Reset() {
 	*x = StartSessionResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[49]
+	mi := &file_vera_v1_vera_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3613,7 +3742,7 @@ func (x *StartSessionResponse) String() string {
 func (*StartSessionResponse) ProtoMessage() {}
 
 func (x *StartSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[49]
+	mi := &file_vera_v1_vera_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3626,7 +3755,7 @@ func (x *StartSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSessionResponse.ProtoReflect.Descriptor instead.
 func (*StartSessionResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{49}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *StartSessionResponse) GetBirthId() string {
@@ -3645,7 +3774,7 @@ type BirthRequest struct {
 
 func (x *BirthRequest) Reset() {
 	*x = BirthRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[50]
+	mi := &file_vera_v1_vera_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3657,7 +3786,7 @@ func (x *BirthRequest) String() string {
 func (*BirthRequest) ProtoMessage() {}
 
 func (x *BirthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[50]
+	mi := &file_vera_v1_vera_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3670,7 +3799,7 @@ func (x *BirthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BirthRequest.ProtoReflect.Descriptor instead.
 func (*BirthRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{50}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *BirthRequest) GetId() string {
@@ -3691,7 +3820,7 @@ type BirthResponse struct {
 
 func (x *BirthResponse) Reset() {
 	*x = BirthResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[51]
+	mi := &file_vera_v1_vera_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3703,7 +3832,7 @@ func (x *BirthResponse) String() string {
 func (*BirthResponse) ProtoMessage() {}
 
 func (x *BirthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[51]
+	mi := &file_vera_v1_vera_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3716,7 +3845,7 @@ func (x *BirthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BirthResponse.ProtoReflect.Descriptor instead.
 func (*BirthResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{51}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *BirthResponse) GetStatus() string {
@@ -3753,7 +3882,7 @@ type WatchGoalRequest struct {
 
 func (x *WatchGoalRequest) Reset() {
 	*x = WatchGoalRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[52]
+	mi := &file_vera_v1_vera_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3765,7 +3894,7 @@ func (x *WatchGoalRequest) String() string {
 func (*WatchGoalRequest) ProtoMessage() {}
 
 func (x *WatchGoalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[52]
+	mi := &file_vera_v1_vera_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3778,7 +3907,7 @@ func (x *WatchGoalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchGoalRequest.ProtoReflect.Descriptor instead.
 func (*WatchGoalRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{52}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *WatchGoalRequest) GetId() string {
@@ -3808,7 +3937,7 @@ type WatchGoalResponse struct {
 
 func (x *WatchGoalResponse) Reset() {
 	*x = WatchGoalResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[53]
+	mi := &file_vera_v1_vera_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3820,7 +3949,7 @@ func (x *WatchGoalResponse) String() string {
 func (*WatchGoalResponse) ProtoMessage() {}
 
 func (x *WatchGoalResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[53]
+	mi := &file_vera_v1_vera_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3833,7 +3962,7 @@ func (x *WatchGoalResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchGoalResponse.ProtoReflect.Descriptor instead.
 func (*WatchGoalResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{53}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *WatchGoalResponse) GetId() string {
@@ -3917,7 +4046,7 @@ type GoalNode struct {
 
 func (x *GoalNode) Reset() {
 	*x = GoalNode{}
-	mi := &file_vera_v1_vera_proto_msgTypes[54]
+	mi := &file_vera_v1_vera_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3929,7 +4058,7 @@ func (x *GoalNode) String() string {
 func (*GoalNode) ProtoMessage() {}
 
 func (x *GoalNode) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[54]
+	mi := &file_vera_v1_vera_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3942,7 +4071,7 @@ func (x *GoalNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GoalNode.ProtoReflect.Descriptor instead.
 func (*GoalNode) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{54}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GoalNode) GetId() string {
@@ -4067,7 +4196,7 @@ type GoalEvent struct {
 
 func (x *GoalEvent) Reset() {
 	*x = GoalEvent{}
-	mi := &file_vera_v1_vera_proto_msgTypes[55]
+	mi := &file_vera_v1_vera_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4079,7 +4208,7 @@ func (x *GoalEvent) String() string {
 func (*GoalEvent) ProtoMessage() {}
 
 func (x *GoalEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[55]
+	mi := &file_vera_v1_vera_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4092,7 +4221,7 @@ func (x *GoalEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GoalEvent.ProtoReflect.Descriptor instead.
 func (*GoalEvent) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{55}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *GoalEvent) GetSeq() int64 {
@@ -4150,7 +4279,7 @@ type EventSource struct {
 
 func (x *EventSource) Reset() {
 	*x = EventSource{}
-	mi := &file_vera_v1_vera_proto_msgTypes[56]
+	mi := &file_vera_v1_vera_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4162,7 +4291,7 @@ func (x *EventSource) String() string {
 func (*EventSource) ProtoMessage() {}
 
 func (x *EventSource) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[56]
+	mi := &file_vera_v1_vera_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4175,7 +4304,7 @@ func (x *EventSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EventSource.ProtoReflect.Descriptor instead.
 func (*EventSource) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{56}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *EventSource) GetTask() string {
@@ -4317,7 +4446,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x10InterruptRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x13\n" +
 	"\x11InterruptResponse\"\x13\n" +
-	"\x11WatchBoardRequest\"\xc1\x02\n" +
+	"\x11WatchBoardRequest\"\xea\x02\n" +
 	"\x12WatchBoardResponse\x12(\n" +
 	"\x05tasks\x18\x01 \x03(\v2\x12.vera.v1.BoardTaskR\x05tasks\x12\x1a\n" +
 	"\binflight\x18\x02 \x01(\x05R\binflight\x12\x14\n" +
@@ -4327,7 +4456,21 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x06notice\x18\x06 \x01(\tR\x06notice\x12,\n" +
 	"\bsessions\x18\a \x03(\v2\x10.vera.v1.SessionR\bsessions\x12\x18\n" +
 	"\acurrent\x18\b \x01(\tR\acurrent\x12$\n" +
-	"\x05usage\x18\t \x01(\v2\x0e.vera.v1.UsageR\x05usage\"9\n" +
+	"\x05usage\x18\t \x01(\v2\x0e.vera.v1.UsageR\x05usage\x12'\n" +
+	"\x05goals\x18\n" +
+	" \x03(\v2\x11.vera.v1.GoalCardR\x05goals\"\xf4\x01\n" +
+	"\bGoalCard\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x12\n" +
+	"\x04face\x18\x04 \x01(\tR\x04face\x12\x14\n" +
+	"\x05owner\x18\x05 \x01(\tR\x05owner\x12\x14\n" +
+	"\x05nodes\x18\x06 \x01(\x05R\x05nodes\x12\x16\n" +
+	"\x06active\x18\a \x01(\x05R\x06active\x12\x16\n" +
+	"\x06landed\x18\b \x01(\x05R\x06landed\x12\x14\n" +
+	"\x05spend\x18\t \x01(\x01R\x05spend\x12&\n" +
+	"\x0fupdated_unix_ms\x18\n" +
+	" \x01(\x03R\rupdatedUnixMs\"9\n" +
 	"\x05Fleet\x12\x16\n" +
 	"\x06agents\x18\x01 \x01(\x05R\x06agents\x12\x18\n" +
 	"\aworking\x18\x02 \x01(\x05R\aworking\"`\n" +
@@ -4586,7 +4729,7 @@ func file_vera_v1_vera_proto_rawDescGZIP() []byte {
 	return file_vera_v1_vera_proto_rawDescData
 }
 
-var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 57)
+var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 58)
 var file_vera_v1_vera_proto_goTypes = []any{
 	(*WatchAgentRequest)(nil),    // 0: vera.v1.WatchAgentRequest
 	(*WatchAgentResponse)(nil),   // 1: vera.v1.WatchAgentResponse
@@ -4606,45 +4749,46 @@ var file_vera_v1_vera_proto_goTypes = []any{
 	(*InterruptResponse)(nil),    // 15: vera.v1.InterruptResponse
 	(*WatchBoardRequest)(nil),    // 16: vera.v1.WatchBoardRequest
 	(*WatchBoardResponse)(nil),   // 17: vera.v1.WatchBoardResponse
-	(*Fleet)(nil),                // 18: vera.v1.Fleet
-	(*Repo)(nil),                 // 19: vera.v1.Repo
-	(*Session)(nil),              // 20: vera.v1.Session
-	(*Usage)(nil),                // 21: vera.v1.Usage
-	(*BoardTask)(nil),            // 22: vera.v1.BoardTask
-	(*TaskRun)(nil),              // 23: vera.v1.TaskRun
-	(*TaskEvent)(nil),            // 24: vera.v1.TaskEvent
-	(*Exchange)(nil),             // 25: vera.v1.Exchange
-	(*TaskLive)(nil),             // 26: vera.v1.TaskLive
-	(*ReviewRequest)(nil),        // 27: vera.v1.ReviewRequest
-	(*ReviewFile)(nil),           // 28: vera.v1.ReviewFile
-	(*ReviewResponse)(nil),       // 29: vera.v1.ReviewResponse
-	(*CommitRequest)(nil),        // 30: vera.v1.CommitRequest
-	(*CommitResponse)(nil),       // 31: vera.v1.CommitResponse
-	(*DiscardRequest)(nil),       // 32: vera.v1.DiscardRequest
-	(*DiscardResponse)(nil),      // 33: vera.v1.DiscardResponse
-	(*SuggestRequest)(nil),       // 34: vera.v1.SuggestRequest
-	(*SuggestResponse)(nil),      // 35: vera.v1.SuggestResponse
-	(*PlanRequest)(nil),          // 36: vera.v1.PlanRequest
-	(*PlanShape)(nil),            // 37: vera.v1.PlanShape
-	(*PlanNode)(nil),             // 38: vera.v1.PlanNode
-	(*PlanResponse)(nil),         // 39: vera.v1.PlanResponse
-	(*ExecutePlanRequest)(nil),   // 40: vera.v1.ExecutePlanRequest
-	(*ExecutePlanResponse)(nil),  // 41: vera.v1.ExecutePlanResponse
-	(*BrowseRequest)(nil),        // 42: vera.v1.BrowseRequest
-	(*DirEntry)(nil),             // 43: vera.v1.DirEntry
-	(*BrowseResponse)(nil),       // 44: vera.v1.BrowseResponse
-	(*Bookmark)(nil),             // 45: vera.v1.Bookmark
-	(*BookmarkRequest)(nil),      // 46: vera.v1.BookmarkRequest
-	(*BookmarkResponse)(nil),     // 47: vera.v1.BookmarkResponse
-	(*StartSessionRequest)(nil),  // 48: vera.v1.StartSessionRequest
-	(*StartSessionResponse)(nil), // 49: vera.v1.StartSessionResponse
-	(*BirthRequest)(nil),         // 50: vera.v1.BirthRequest
-	(*BirthResponse)(nil),        // 51: vera.v1.BirthResponse
-	(*WatchGoalRequest)(nil),     // 52: vera.v1.WatchGoalRequest
-	(*WatchGoalResponse)(nil),    // 53: vera.v1.WatchGoalResponse
-	(*GoalNode)(nil),             // 54: vera.v1.GoalNode
-	(*GoalEvent)(nil),            // 55: vera.v1.GoalEvent
-	(*EventSource)(nil),          // 56: vera.v1.EventSource
+	(*GoalCard)(nil),             // 18: vera.v1.GoalCard
+	(*Fleet)(nil),                // 19: vera.v1.Fleet
+	(*Repo)(nil),                 // 20: vera.v1.Repo
+	(*Session)(nil),              // 21: vera.v1.Session
+	(*Usage)(nil),                // 22: vera.v1.Usage
+	(*BoardTask)(nil),            // 23: vera.v1.BoardTask
+	(*TaskRun)(nil),              // 24: vera.v1.TaskRun
+	(*TaskEvent)(nil),            // 25: vera.v1.TaskEvent
+	(*Exchange)(nil),             // 26: vera.v1.Exchange
+	(*TaskLive)(nil),             // 27: vera.v1.TaskLive
+	(*ReviewRequest)(nil),        // 28: vera.v1.ReviewRequest
+	(*ReviewFile)(nil),           // 29: vera.v1.ReviewFile
+	(*ReviewResponse)(nil),       // 30: vera.v1.ReviewResponse
+	(*CommitRequest)(nil),        // 31: vera.v1.CommitRequest
+	(*CommitResponse)(nil),       // 32: vera.v1.CommitResponse
+	(*DiscardRequest)(nil),       // 33: vera.v1.DiscardRequest
+	(*DiscardResponse)(nil),      // 34: vera.v1.DiscardResponse
+	(*SuggestRequest)(nil),       // 35: vera.v1.SuggestRequest
+	(*SuggestResponse)(nil),      // 36: vera.v1.SuggestResponse
+	(*PlanRequest)(nil),          // 37: vera.v1.PlanRequest
+	(*PlanShape)(nil),            // 38: vera.v1.PlanShape
+	(*PlanNode)(nil),             // 39: vera.v1.PlanNode
+	(*PlanResponse)(nil),         // 40: vera.v1.PlanResponse
+	(*ExecutePlanRequest)(nil),   // 41: vera.v1.ExecutePlanRequest
+	(*ExecutePlanResponse)(nil),  // 42: vera.v1.ExecutePlanResponse
+	(*BrowseRequest)(nil),        // 43: vera.v1.BrowseRequest
+	(*DirEntry)(nil),             // 44: vera.v1.DirEntry
+	(*BrowseResponse)(nil),       // 45: vera.v1.BrowseResponse
+	(*Bookmark)(nil),             // 46: vera.v1.Bookmark
+	(*BookmarkRequest)(nil),      // 47: vera.v1.BookmarkRequest
+	(*BookmarkResponse)(nil),     // 48: vera.v1.BookmarkResponse
+	(*StartSessionRequest)(nil),  // 49: vera.v1.StartSessionRequest
+	(*StartSessionResponse)(nil), // 50: vera.v1.StartSessionResponse
+	(*BirthRequest)(nil),         // 51: vera.v1.BirthRequest
+	(*BirthResponse)(nil),        // 52: vera.v1.BirthResponse
+	(*WatchGoalRequest)(nil),     // 53: vera.v1.WatchGoalRequest
+	(*WatchGoalResponse)(nil),    // 54: vera.v1.WatchGoalResponse
+	(*GoalNode)(nil),             // 55: vera.v1.GoalNode
+	(*GoalEvent)(nil),            // 56: vera.v1.GoalEvent
+	(*EventSource)(nil),          // 57: vera.v1.EventSource
 }
 var file_vera_v1_vera_proto_depIdxs = []int32{
 	2,  // 0: vera.v1.WatchAgentResponse.agent:type_name -> vera.v1.Agent
@@ -4657,60 +4801,61 @@ var file_vera_v1_vera_proto_depIdxs = []int32{
 	4,  // 7: vera.v1.Msg.steps:type_name -> vera.v1.Step
 	6,  // 8: vera.v1.Msg.digest:type_name -> vera.v1.Digest
 	5,  // 9: vera.v1.Step.diff:type_name -> vera.v1.Diff
-	22, // 10: vera.v1.WatchBoardResponse.tasks:type_name -> vera.v1.BoardTask
-	18, // 11: vera.v1.WatchBoardResponse.fleet:type_name -> vera.v1.Fleet
-	19, // 12: vera.v1.WatchBoardResponse.repos:type_name -> vera.v1.Repo
-	20, // 13: vera.v1.WatchBoardResponse.sessions:type_name -> vera.v1.Session
-	21, // 14: vera.v1.WatchBoardResponse.usage:type_name -> vera.v1.Usage
-	23, // 15: vera.v1.BoardTask.runs:type_name -> vera.v1.TaskRun
-	24, // 16: vera.v1.BoardTask.log:type_name -> vera.v1.TaskEvent
-	25, // 17: vera.v1.BoardTask.exchanges:type_name -> vera.v1.Exchange
-	26, // 18: vera.v1.BoardTask.live:type_name -> vera.v1.TaskLive
-	28, // 19: vera.v1.ReviewResponse.files:type_name -> vera.v1.ReviewFile
-	38, // 20: vera.v1.PlanShape.nodes:type_name -> vera.v1.PlanNode
-	37, // 21: vera.v1.PlanResponse.plan:type_name -> vera.v1.PlanShape
-	37, // 22: vera.v1.ExecutePlanRequest.plan:type_name -> vera.v1.PlanShape
-	43, // 23: vera.v1.BrowseResponse.dirs:type_name -> vera.v1.DirEntry
-	45, // 24: vera.v1.BrowseResponse.bookmarks:type_name -> vera.v1.Bookmark
-	45, // 25: vera.v1.BookmarkRequest.bookmark:type_name -> vera.v1.Bookmark
-	54, // 26: vera.v1.WatchGoalResponse.nodes:type_name -> vera.v1.GoalNode
-	55, // 27: vera.v1.WatchGoalResponse.events:type_name -> vera.v1.GoalEvent
-	56, // 28: vera.v1.GoalEvent.src:type_name -> vera.v1.EventSource
-	0,  // 29: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
-	12, // 30: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
-	14, // 31: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
-	16, // 32: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
-	27, // 33: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
-	30, // 34: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
-	32, // 35: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
-	34, // 36: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
-	36, // 37: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
-	40, // 38: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
-	42, // 39: vera.v1.VeraService.Browse:input_type -> vera.v1.BrowseRequest
-	48, // 40: vera.v1.VeraService.StartSession:input_type -> vera.v1.StartSessionRequest
-	50, // 41: vera.v1.VeraService.Birth:input_type -> vera.v1.BirthRequest
-	46, // 42: vera.v1.VeraService.SetBookmark:input_type -> vera.v1.BookmarkRequest
-	52, // 43: vera.v1.VeraService.WatchGoal:input_type -> vera.v1.WatchGoalRequest
-	1,  // 44: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
-	13, // 45: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
-	15, // 46: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
-	17, // 47: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
-	29, // 48: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
-	31, // 49: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
-	33, // 50: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
-	35, // 51: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
-	39, // 52: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
-	41, // 53: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
-	44, // 54: vera.v1.VeraService.Browse:output_type -> vera.v1.BrowseResponse
-	49, // 55: vera.v1.VeraService.StartSession:output_type -> vera.v1.StartSessionResponse
-	51, // 56: vera.v1.VeraService.Birth:output_type -> vera.v1.BirthResponse
-	47, // 57: vera.v1.VeraService.SetBookmark:output_type -> vera.v1.BookmarkResponse
-	53, // 58: vera.v1.VeraService.WatchGoal:output_type -> vera.v1.WatchGoalResponse
-	44, // [44:59] is the sub-list for method output_type
-	29, // [29:44] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	23, // 10: vera.v1.WatchBoardResponse.tasks:type_name -> vera.v1.BoardTask
+	19, // 11: vera.v1.WatchBoardResponse.fleet:type_name -> vera.v1.Fleet
+	20, // 12: vera.v1.WatchBoardResponse.repos:type_name -> vera.v1.Repo
+	21, // 13: vera.v1.WatchBoardResponse.sessions:type_name -> vera.v1.Session
+	22, // 14: vera.v1.WatchBoardResponse.usage:type_name -> vera.v1.Usage
+	18, // 15: vera.v1.WatchBoardResponse.goals:type_name -> vera.v1.GoalCard
+	24, // 16: vera.v1.BoardTask.runs:type_name -> vera.v1.TaskRun
+	25, // 17: vera.v1.BoardTask.log:type_name -> vera.v1.TaskEvent
+	26, // 18: vera.v1.BoardTask.exchanges:type_name -> vera.v1.Exchange
+	27, // 19: vera.v1.BoardTask.live:type_name -> vera.v1.TaskLive
+	29, // 20: vera.v1.ReviewResponse.files:type_name -> vera.v1.ReviewFile
+	39, // 21: vera.v1.PlanShape.nodes:type_name -> vera.v1.PlanNode
+	38, // 22: vera.v1.PlanResponse.plan:type_name -> vera.v1.PlanShape
+	38, // 23: vera.v1.ExecutePlanRequest.plan:type_name -> vera.v1.PlanShape
+	44, // 24: vera.v1.BrowseResponse.dirs:type_name -> vera.v1.DirEntry
+	46, // 25: vera.v1.BrowseResponse.bookmarks:type_name -> vera.v1.Bookmark
+	46, // 26: vera.v1.BookmarkRequest.bookmark:type_name -> vera.v1.Bookmark
+	55, // 27: vera.v1.WatchGoalResponse.nodes:type_name -> vera.v1.GoalNode
+	56, // 28: vera.v1.WatchGoalResponse.events:type_name -> vera.v1.GoalEvent
+	57, // 29: vera.v1.GoalEvent.src:type_name -> vera.v1.EventSource
+	0,  // 30: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
+	12, // 31: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
+	14, // 32: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
+	16, // 33: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
+	28, // 34: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
+	31, // 35: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
+	33, // 36: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
+	35, // 37: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
+	37, // 38: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
+	41, // 39: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
+	43, // 40: vera.v1.VeraService.Browse:input_type -> vera.v1.BrowseRequest
+	49, // 41: vera.v1.VeraService.StartSession:input_type -> vera.v1.StartSessionRequest
+	51, // 42: vera.v1.VeraService.Birth:input_type -> vera.v1.BirthRequest
+	47, // 43: vera.v1.VeraService.SetBookmark:input_type -> vera.v1.BookmarkRequest
+	53, // 44: vera.v1.VeraService.WatchGoal:input_type -> vera.v1.WatchGoalRequest
+	1,  // 45: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
+	13, // 46: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
+	15, // 47: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
+	17, // 48: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
+	30, // 49: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
+	32, // 50: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
+	34, // 51: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
+	36, // 52: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
+	40, // 53: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
+	42, // 54: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
+	45, // 55: vera.v1.VeraService.Browse:output_type -> vera.v1.BrowseResponse
+	50, // 56: vera.v1.VeraService.StartSession:output_type -> vera.v1.StartSessionResponse
+	52, // 57: vera.v1.VeraService.Birth:output_type -> vera.v1.BirthResponse
+	48, // 58: vera.v1.VeraService.SetBookmark:output_type -> vera.v1.BookmarkResponse
+	54, // 59: vera.v1.VeraService.WatchGoal:output_type -> vera.v1.WatchGoalResponse
+	45, // [45:60] is the sub-list for method output_type
+	30, // [30:45] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_vera_v1_vera_proto_init() }
@@ -4724,7 +4869,7 @@ func file_vera_v1_vera_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vera_v1_vera_proto_rawDesc), len(file_vera_v1_vera_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   57,
+			NumMessages:   58,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

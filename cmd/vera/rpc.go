@@ -333,6 +333,7 @@ func (s *server) boardView() (*verav1.WatchBoardResponse, uint64) {
 	for _, t := range b.tasks {
 		resp.Tasks = append(resp.Tasks, protoTask(t))
 	}
+	resp.Goals = goalCards(b.tasks)
 	for _, rp := range b.repos {
 		resp.Repos = append(resp.Repos, &verav1.Repo{Dir: rp["dir"], Cwd: rp["cwd"], Scratch: rp["scratch"] == "yes", Bookmark: rp["bookmark"] == "yes"})
 	}
@@ -386,6 +387,11 @@ func (s *server) boardView() (*verav1.WatchBoardResponse, uint64) {
 	for _, rp := range resp.Repos {
 		h.Write([]byte(rp.Dir + rp.Cwd))
 		putI64(buf[:], boolBit(rp.Scratch)<<1|boolBit(rp.Bookmark))
+		h.Write(buf[:])
+	}
+	for _, g := range resp.Goals {
+		h.Write([]byte(g.Id + g.Title + g.State + g.Face + g.Owner))
+		putI64(buf[:], int64(g.Nodes)<<32|int64(g.Active)<<16|int64(g.Landed))
 		h.Write(buf[:])
 	}
 	if resp.Usage != nil {

@@ -281,6 +281,15 @@ export function boardFrame(f) {
 			live: t.live ? { dir: t.live.dir, state: t.live.state, now: t.live.now || undefined } : undefined
 		})),
 		inflight: f.inflight, spend: f.spend, notice: f.notice,
+		// The graphs, one row each. Home is goal-shaped: a four-node
+		// graph is one row saying what is happening to the work, not four
+		// rows each saying a quarter of it.
+		goals: (f.goals ?? []).map((g) => ({
+			id: g.id, title: g.title, state: g.state, face: g.face,
+			owner: g.owner, nodes: g.nodes ?? 0, active: g.active ?? 0,
+			landed: g.landed ?? 0, spend: g.spend ?? 0,
+			updatedAt: Number(g.updatedUnixMs ?? 0)
+		})),
 		fleet: { agents: f.fleet?.agents ?? 0, working: f.fleet?.working ?? 0 },
 		repos: (f.repos ?? []).map((r) => ({
 			dir: r.dir, cwd: r.cwd,

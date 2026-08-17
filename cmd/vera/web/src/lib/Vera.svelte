@@ -234,33 +234,55 @@
 		}
 	}
 
+	// ── goals: the graphs, one row each ───────────────────────────
+	// A plan that laid down four nodes was four rows here, each saying a
+	// quarter of the thing. One row says what is happening to the WORK,
+	// and the work view says the rest. The server decides both the state
+	// and who owns the next decision, so home and the work view cannot
+	// drift apart about what "Reviewing" means.
+	const goals = $derived(board?.goals ?? []);
+	// Every card that belongs to a graph stands down: its goal row
+	// already speaks for it, and two rows saying overlapping halves of
+	// one story is the thing this replaces.
+	const goalNodeIds = $derived(new Set(goals.flatMap((g) => tasks.filter((t) => t.root === g.id).map((t) => t.id))));
+	const goalsFor = (owner) => goals.filter((g) => g.owner === owner);
+
 	const RANK = { ask: 0, proposal: 1, attention: 2, inbox: 3 };
 	// A card with a pending intention lives in the agenda above; its
 	// thread row would say the same thing twice, so it stands down.
 	const agendaIds = $derived(new Set(agenda.map((i) => i.t.id)));
+	const loose = $derived(threads.filter((t) => !(t.task && goalNodeIds.has(t.task.id))));
 	const youRows = $derived(
-		threads
+		loose
 			.filter((t) => t.owner === 'you' && !(t.task && agendaIds.has(t.task.id)))
 			.sort((a, b) => (RANK[a.state] ?? 9) - (RANK[b.state] ?? 9))
 	);
-	const veraRows = $derived(threads.filter((t) => t.owner === 'vera'));
-	const doneRows = $derived(threads.filter((t) => t.owner === 'done'));
+	const veraRows = $derived(loose.filter((t) => t.owner === 'vera'));
+	const doneRows = $derived(loose.filter((t) => t.owner === 'done'));
 
 
 	// ── header presence ────────────────────────────────────────────
-	const nDecisions = $derived(youRows.filter((t) => ['ask', 'proposal'].includes(t.state)).length);
+	// Counted over BOTH shapes. A board whose work all lives in graphs
+	// has no loose vera rows at all, and a header reading only those
+	// would say "available" while four workers were running.
+	const nVera = $derived(veraRows.length + goalsFor('vera').length);
+	const nYou = $derived(youRows.length + goalsFor('you').length);
+	const nDecisions = $derived(
+		youRows.filter((t) => ['ask', 'proposal'].includes(t.state)).length +
+			goalsFor('you').length
+	);
 	const statusLine = $derived(
 		agenda.length
 			? 'Vera wants to move ' + agenda.length + (agenda.length === 1 ? ' thing' : ' things')
-			: veraRows.length
-				? 'Vera is working' + (youRows.length ? ' · ' + youRows.length + ' with you' : '')
+			: nVera
+				? 'Vera is working' + (nYou ? ' · ' + nYou + ' with you' : '')
 				: nDecisions
 					? 'Vera needs you · ' + nDecisions + (nDecisions === 1 ? ' decision' : ' decisions')
-					: youRows.length
-						? 'Vera is waiting · ' + youRows.length + ' with you'
+					: nYou
+						? 'Vera is waiting · ' + nYou + ' with you'
 						: 'Vera is available'
 	);
-	const topMode = $derived(veraRows.length ? 'vera' : youRows.length ? 'you' : 'idle');
+	const topMode = $derived(nVera ? 'vera' : nYou ? 'you' : 'idle');
 
 	// ── selection + the selected thread's agent, live ──────────────
 	let selId = $state(null);
@@ -742,6 +764,37 @@
 	</div>
 {/snippet}
 
+{#snippet goalRow(g)}
+	<!-- A graph, as one row. The count is the honest summary of a shape
+	     a single line cannot draw; the work view draws it. -->
+	<a
+		class="vrow"
+		href="/goal/{g.id}"
+		style="display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 10px; text-decoration: none; color: inherit; margin-bottom: 2px;"
+	>
+		<div style="display: flex; align-items: center; gap: 9px;">
+			<span
+				class="v-rdot"
+				style="width: 7px; height: 7px; border-radius: 50%; flex: none; background: {g.owner === 'you' ? AMBER : g.owner === 'vera' ? '#A78BFA' : 'rgba(146,153,170,0.5)'};"
+			></span>
+			<span
+				class="v-rname"
+				style="flex: 1; min-width: 0; font-size: 14.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; {g.owner === 'done' ? 'opacity: 0.62;' : ''}">{g.title}</span
+			>
+			<span style="font-size: 10.5px; font-family: {MONO}; color: rgba(146,153,170,0.55); flex: none;">
+				{g.nodes} nodes
+			</span>
+			{#if g.owner === 'you'}<span class="v-chev" aria-hidden="true">›</span>{/if}
+		</div>
+		<div
+			class="v-rsub"
+			style="font-size: 12.5px; padding-left: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: {g.owner === 'you' ? AMBER : 'rgba(146,153,170,0.85)'};"
+		>
+			{g.state}{g.face ? ' — ' + g.face : ''}
+		</div>
+	</a>
+{/snippet}
+
 {#snippet fileList(files, compact)}
 	{#each files as f, i (f.path)}
 		<button
@@ -953,19 +1006,22 @@
 						</div>
 					{/each}
 				{/if}
-				{#if youRows.length}
+				{#if youRows.length || goalsFor('you').length}
 					<div style="{KICKER} color: rgba(232,187,105,0.85); padding: 12px 10px 6px;">With you</div>
+					{#each goalsFor('you') as g (g.id)}{@render goalRow(g)}{/each}
 					{#each youRows as th (th.id)}{@render threadRow(th)}{/each}
 				{/if}
-				{#if veraRows.length}
+				{#if veraRows.length || goalsFor('vera').length}
 					<div style="{KICKER} color: rgba(167,139,250,0.8); padding: 16px 10px 6px;">With Vera</div>
+					{#each goalsFor('vera') as g (g.id)}{@render goalRow(g)}{/each}
 					{#each veraRows as th (th.id)}{@render threadRow(th)}{/each}
 				{/if}
-				{#if doneRows.length}
+				{#if doneRows.length || goalsFor('done').length}
 					<div style="{KICKER} color: rgba(146,153,170,0.65); padding: 16px 10px 6px;">Done</div>
+					{#each goalsFor('done') as g (g.id)}{@render goalRow(g)}{/each}
 					{#each doneRows as th (th.id)}{@render threadRow(th)}{/each}
 				{/if}
-				{#if !threads.length && board}
+				{#if !threads.length && !goals.length && board}
 					<div style="padding: 16px 10px; font-size: 13px; color: {MUT}; line-height: 1.55;">
 						Nothing yet — give Vera work and threads land here.
 					</div>

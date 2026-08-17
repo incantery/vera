@@ -19,6 +19,7 @@ package main
 
 import (
 	"hash/fnv"
+	"sort"
 	"strconv"
 	"time"
 
@@ -97,6 +98,87 @@ func plural(n int, word string) string {
 		return "1 " + word
 	}
 	return strconv.Itoa(n) + " " + word + "s"
+}
+
+// goalOwner answers the question the home screen is actually asking:
+// who owns the next decision? Most of the time that is vera, and the
+// row should say so and otherwise stay out of the way. Occasionally she
+// has reached a boundary she should not cross, and then the row is the
+// most important thing on the screen.
+//
+// Derived from the state rather than recomputed, so there is exactly
+// one place that decides what "Reviewing" means and exactly one that
+// decides who it belongs to.
+func goalOwner(state string) string {
+	switch state {
+	case "Needs you", "Ready for you":
+		return "you"
+	case "Ready", "Closed", "Gone":
+		return "done"
+	default:
+		return "vera"
+	}
+}
+
+// goalCards summarizes every GRAPH on the board — a goal whose plan
+// laid down more than one node. Single cards are left alone: home
+// already renders those well, and a goal row that spoke for exactly one
+// card would say the same thing twice.
+//
+// This is what makes home goal-shaped rather than node-shaped. A
+// four-node graph was four rows saying four partial things; it is one
+// row saying what is happening to the work.
+func goalCards(tasks []task) []*verav1.GoalCard {
+	roots := map[string][]task{}
+	for _, t := range tasks {
+		if t.Root == "" {
+			continue
+		}
+		roots[t.Root] = append(roots[t.Root], t)
+	}
+	var out []*verav1.GoalCard
+	for id, nodes := range roots {
+		if len(nodes) < 2 {
+			continue // not a graph; the board's own row is the better one
+		}
+		state, face := goalState(nodes)
+		card := &verav1.GoalCard{
+			Id: id, State: state, Face: face, Owner: goalOwner(state),
+			Nodes: int32(len(nodes)),
+		}
+		var newest time.Time
+		for _, n := range nodes {
+			card.Spend += n.CostUSD
+			if n.ID == id {
+				card.Title = n.Title
+			}
+			if n.Col == "progress" {
+				card.Active++
+			}
+			if n.Col == "done" {
+				card.Landed++
+			}
+			if n.UpdatedAt.After(newest) {
+				newest = n.UpdatedAt
+			}
+		}
+		if card.Title == "" {
+			card.Title = nodes[0].Title
+		}
+		card.UpdatedUnixMs = newest.UnixMilli()
+		out = append(out, card)
+	}
+	// Whoever the owner must answer first, then freshest. A stable order
+	// matters more than a clever one: a list that reshuffles under the
+	// thumb is a list nobody trusts to tap.
+	rank := map[string]int{"you": 0, "vera": 1, "done": 2}
+	sort.SliceStable(out, func(i, j int) bool {
+		if a, b := rank[out[i].Owner], rank[out[j].Owner]; a != b {
+			return a < b
+		}
+		return out[i].UpdatedUnixMs > out[j].UpdatedUnixMs
+	})
+	return out
 }
 
 // goalView assembles one frame and its change hash. The hash covers

@@ -161,6 +161,25 @@ message WatchBoardResponse {
   repeated Session sessions = 7;  // the rail: one row per lineage
   string current = 8;             // the agent with the freshest activity
   Usage usage = 9;                // absent until the collector has answered
+  // The graphs on the board, one row each. Home is goal-shaped: a
+  // four-node graph is one row saying what is happening to the work,
+  // not four rows each saying a quarter of it.
+  repeated GoalCard goals = 10;
+}
+
+// GoalCard is one graph as home reads it — the derived state, who owns
+// the next decision, and enough numbers to say it in a line.
+message GoalCard {
+  string id = 1;
+  string title = 2;
+  string state = 3;  // Building | Reviewing | Needs you | Ready for you | Ready | ...
+  string face = 4;
+  string owner = 5;  // you | vera | done — who owns the next decision
+  int32 nodes = 6;
+  int32 active = 7;  // nodes with a worker on them right now
+  int32 landed = 8;  // nodes the owner has accepted
+  double spend = 9;
+  int64 updated_unix_ms = 10;
 }
 
 message Fleet {

@@ -209,3 +209,80 @@ func TestTheHashCoversWhatTheFrameShows(t *testing.T) {
 		t.Fatal("a new event must produce a new frame")
 	}
 }
+
+// Home's question is not "what state is this in" but "who owns the next
+// decision". Most of the time that is vera; the row should say so and
+// otherwise stay out of the way.
+func TestOwnershipFollowsTheState(t *testing.T) {
+	for state, want := range map[string]string{
+		"Needs you":     "you",
+		"Ready for you": "you",
+		"Building":      "vera",
+		"Reviewing":     "vera",
+		"Verifying":     "vera",
+		"Waiting":       "vera",
+		"Ready":         "done",
+		"Closed":        "done",
+	} {
+		if got := goalOwner(state); got != want {
+			t.Errorf("%q belongs to %q, got %q", state, want, got)
+		}
+	}
+}
+
+func mkn(id, root, kind, col string) task {
+	return task{ID: id, Title: id, Root: root, Kind: kind, Col: col,
+		CreatedAt: time.Unix(1, 0), UpdatedAt: time.Unix(1, 0)}
+}
+
+func TestGoalCardsSummarizeGraphsAndLeaveLoneCardsAlone(t *testing.T) {
+	tasks := []task{
+		// A graph: four nodes under one root.
+		mkn("T-100", "T-100", kindImplement, "waiting"),
+		mkn("T-101", "T-100", kindReview, "progress"),
+		mkn("T-102", "T-100", kindVerify, "progress"),
+		mkn("T-103", "T-100", kindReconcile, "inbox"),
+		// A lone card that happens to carry its own root.
+		mkn("T-200", "T-200", kindImplement, "progress"),
+		// A card outside any plan at all.
+		{ID: "T-300", Col: "inbox"},
+	}
+	cards := goalCards(tasks)
+	if len(cards) != 1 {
+		t.Fatalf("only the graph earns a row — a one-node goal would say the same thing twice: %+v", cards)
+	}
+	g := cards[0]
+	if g.Id != "T-100" || g.Nodes != 4 || g.Active != 2 {
+		t.Fatalf("the row counts the whole graph: %+v", g)
+	}
+	if g.State != "Reviewing" || g.Owner != "vera" {
+		t.Fatalf("and derives its state and its owner: %+v", g)
+	}
+}
+
+// Whoever the owner must answer comes first. A list that reshuffles
+// under the thumb is a list nobody trusts to tap.
+func TestGoalCardsPutWhatNeedsYouFirst(t *testing.T) {
+	mine := mkn("T-200", "T-200", kindImplement, "waiting")
+	mine.Ask = "which approach?"
+	cards := goalCards([]task{
+		mkn("T-100", "T-100", kindImplement, "progress"),
+		mkn("T-101", "T-100", kindReview, "progress"),
+		mine,
+		mkn("T-201", "T-200", kindReview, "inbox"),
+		mkn("T-300", "T-300", kindImplement, "done"),
+		mkn("T-301", "T-300", kindReview, "done"),
+	})
+	if len(cards) != 3 {
+		t.Fatalf("three graphs: %d", len(cards))
+	}
+	if cards[0].Owner != "you" || cards[1].Owner != "vera" || cards[2].Owner != "done" {
+		t.Fatalf("you, then vera, then done: %v %v %v",
+			cards[0].Owner, cards[1].Owner, cards[2].Owner)
+	}
+	// The one that needs a human carries the question itself, so it can
+	// be answered without opening anything.
+	if cards[0].Face != "which approach?" {
+		t.Fatalf("the face is the question: %q", cards[0].Face)
+	}
+}
