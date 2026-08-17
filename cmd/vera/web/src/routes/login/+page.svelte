@@ -21,11 +21,14 @@
 		if (busy) return;
 		busy = true;
 		error = '';
-		setKey(pass.trim());
-		const v = await checkAuth();
+		// try before stashing — a typo must not destroy a working key
+		const k = pass.trim();
+		const v = await checkAuth(k);
 		busy = false;
-		if (v === 'ok') goto(dest());
-		else if (v === 'denied') error = 'that is not the key';
+		if (v === 'ok') {
+			setKey(k);
+			goto(dest());
+		} else if (v === 'denied') error = 'that is not the key';
 		else error = 'vera is not answering — is the binary still running?';
 	}
 </script>

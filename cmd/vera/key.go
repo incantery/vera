@@ -13,9 +13,11 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,10 +84,48 @@ func requireKey(next http.Handler, key string) http.Handler {
 }
 
 func authOK(r *http.Request, key string) bool {
-	if h := r.Header.Get("Authorization"); strings.TrimPrefix(h, "Bearer ") == key && h != "" {
+	// Constant-time both ways: a timing oracle on the key is a door
+	// that picks its own lock.
+	if h := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); h != "" &&
+		subtle.ConstantTimeCompare([]byte(h), []byte(key)) == 1 {
 		return true
 	}
-	return r.URL.Query().Get("key") == key
+	q := r.URL.Query().Get("key")
+	return q != "" && subtle.ConstantTimeCompare([]byte(q), []byte(key)) == 1
+}
+
+// guardMutations is the cross-site door: browsers volunteer where a
+// request came from (Origin on cross-origin sends, Sec-Fetch-Site on
+// everything modern), and a mutation whose provenance is another site
+// is refused — even on loopback, where there is no key. Without this,
+// any web page the user visits can POST tools into their sessions:
+// localhost is inside the house, but the browser brings visitors.
+// Non-browser clients (curl, scripts) send neither header and pass.
+func guardMutations(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mutating := r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions
+		guarded := strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/vera.")
+		if mutating && guarded && !sameOriginish(r) {
+			httpErr(w, 403, "cross-site mutations are refused")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func sameOriginish(r *http.Request) bool {
+	if o := r.Header.Get("Origin"); o != "" && o != "null" {
+		u, err := url.Parse(o)
+		return err == nil && u.Host == r.Host
+	}
+	if o := r.Header.Get("Origin"); o == "null" {
+		return false // sandboxed iframes and data: pages are not the house
+	}
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "", "same-origin", "none":
+		return true // no browser fingerprint, same page, or typed URL
+	}
+	return false
 }
 
 // lanURLs names every address the page answers on: concrete IPv4s

@@ -192,7 +192,17 @@ func (r *veraRPC) ExecutePlan(ctx context.Context, req *connect.Request[verav1.E
 	p := drive.Plan{
 		Kind: sh.Kind, Where: sh.Where, Home: sh.Home, Name: sh.Name,
 		Cadence: sh.Cadence, Deadline: sh.Deadline, Goal: sh.Goal, Why: sh.Why,
-		Question: sh.Question, Steps: sh.Steps,
+		Question: sh.Question,
+	}
+	for _, n := range sh.Nodes {
+		if n == nil {
+			continue
+		}
+		pn := drive.PlanNode{Kind: n.Kind, Text: n.Text}
+		for _, d := range n.Deps {
+			pn.Deps = append(pn.Deps, int(d))
+		}
+		p.Nodes = append(p.Nodes, pn)
 	}
 	t, serr := r.s.executePlanCore(p, req.Msg.Id, req.Msg.Mode, time.Now())
 	if serr != nil {
@@ -262,11 +272,19 @@ func (r *veraRPC) Birth(ctx context.Context, req *connect.Request[verav1.BirthRe
 }
 
 func planShape(p drive.Plan) *verav1.PlanShape {
-	return &verav1.PlanShape{
+	sh := &verav1.PlanShape{
 		Kind: p.Kind, Where: p.Where, Home: p.Home, Name: p.Name,
 		Cadence: p.Cadence, Deadline: p.Deadline, Goal: p.Goal, Why: p.Why,
-		Question: p.Question, Steps: p.Steps,
+		Question: p.Question,
 	}
+	for _, n := range p.Nodes {
+		pn := &verav1.PlanNode{Kind: n.Kind, Text: n.Text}
+		for _, d := range n.Deps {
+			pn.Deps = append(pn.Deps, int32(d))
+		}
+		sh.Nodes = append(sh.Nodes, pn)
+	}
+	return sh
 }
 
 // WatchBoard streams the home screen's present: whole frames (the
@@ -316,7 +334,7 @@ func (s *server) boardView() (*verav1.WatchBoardResponse, uint64) {
 		resp.Tasks = append(resp.Tasks, protoTask(t))
 	}
 	for _, rp := range b.repos {
-		resp.Repos = append(resp.Repos, &verav1.Repo{Dir: rp["dir"], Cwd: rp["cwd"], Scratch: rp["scratch"] == "yes"})
+		resp.Repos = append(resp.Repos, &verav1.Repo{Dir: rp["dir"], Cwd: rp["cwd"], Scratch: rp["scratch"] == "yes", Bookmark: rp["bookmark"] == "yes"})
 	}
 	for _, ws := range sessions {
 		resp.Sessions = append(resp.Sessions, &verav1.Session{
@@ -343,18 +361,32 @@ func (s *server) boardView() (*verav1.WatchBoardResponse, uint64) {
 	putF64(buf[:], b.spend)
 	h.Write(buf[:])
 	h.Write([]byte(s.notice + "|" + current))
+	// The hash must cover EVERYTHING the frame renders: a field the
+	// hash skips is a field whose change never ships a frame, and the
+	// page quotes stale truth without knowing it.
 	for _, t := range resp.Tasks {
-		h.Write([]byte(t.Id + t.Col + t.State + t.Face + t.Ask + t.Proposal))
+		h.Write([]byte(t.Id + t.Col + t.State + t.Face + t.Ask + t.Proposal +
+			t.ProposalKind + t.ProposalText + t.AutoStart + t.Goal + t.Agent))
 		putI64(buf[:], t.UpdatedUnixMs)
+		h.Write(buf[:])
+		putF64(buf[:], t.CostUsd+t.BudgetUsd*1e6)
 		h.Write(buf[:])
 		if t.Live != nil {
 			h.Write([]byte(t.Live.State + t.Live.Now))
 		}
-		putI64(buf[:], int64(len(t.Log))<<16|int64(len(t.Exchanges)))
+		putI64(buf[:], int64(len(t.Log))<<32|int64(len(t.Exchanges))<<16|int64(len(t.Runs)))
 		h.Write(buf[:])
 	}
 	for _, ws := range resp.Sessions {
-		h.Write([]byte(ws.Id + ws.State + ws.Age + ws.Tool + ws.ToolDetail + ws.Task + ws.Title))
+		h.Write([]byte(ws.Id + ws.State + ws.Age + ws.Tool + ws.ToolDetail + ws.Task + ws.Title +
+			ws.LastText + ws.Branch + ws.Prompt))
+		putI64(buf[:], int64(ws.CtxPct)<<8|boolBit(ws.Driving)<<1|boolBit(ws.Scratch))
+		h.Write(buf[:])
+	}
+	for _, rp := range resp.Repos {
+		h.Write([]byte(rp.Dir + rp.Cwd))
+		putI64(buf[:], boolBit(rp.Scratch)<<1|boolBit(rp.Bookmark))
+		h.Write(buf[:])
 	}
 	if resp.Usage != nil {
 		putI64(buf[:], int64(resp.Usage.SessionPct)<<32|int64(resp.Usage.WeekAllPct)<<16|int64(resp.Usage.WeekModelPct))
@@ -370,7 +402,8 @@ func protoTask(t task) *verav1.BoardTask {
 		Goal: t.Goal, GoalActor: t.GoalActor,
 		Col: t.Col, State: t.State, Ask: t.Ask, Face: t.Face,
 		Pinned: t.Pinned, Proposal: t.Proposal, ProposalWhy: t.ProposalWhy,
-		ProposalKind: t.ProposalKind, CostUsd: t.CostUSD,
+		ProposalKind: t.ProposalKind, ProposalText: t.ProposalText,
+		AutoStart: t.AutoStart, BudgetUsd: t.BudgetUSD, CostUsd: t.CostUSD,
 		Workspace: t.Workspace, ScratchName: t.ScratchName, Mode: t.Mode,
 		Cadence: t.Cadence, Deadline: t.Deadline,
 		CreatedUnixMs: t.CreatedAt.UnixMilli(), UpdatedUnixMs: t.UpdatedAt.UnixMilli(),
@@ -473,6 +506,13 @@ func (s *server) agentView(id string, raw bool) view {
 		h.Write(b[:])
 	}
 	return view{resp: resp, msgs: msgs, rest: h.Sum64(), cwd: head.Cwd}
+}
+
+func boolBit(v bool) int64 {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func putI64(b []byte, v int64) {

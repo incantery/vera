@@ -9,25 +9,38 @@
 
 	let board = $state(null);
 	$effect(() => {
+		// The stream retries like the agent page's does — the poll is a
+		// bridge while it's down, not a permanent demotion.
 		let stopPoll = null;
-		const stop = watchBoard(
-			(f) => {
-				const b = boardFrame(f);
-				board = b;
-				app.sessions = b.sessions;
-				app.current = b.current;
-				app.usage = b.usage;
-				app.notice = b.notice;
-				app.connected = true;
-				app.loaded = true;
-			},
-			() => {
-				board = null;
-				stopPoll = startPolling();
-			}
-		);
+		let stop = null;
+		let retry = null;
+		let alive = true;
+		const open = () => {
+			stop = watchBoard(
+				(f) => {
+					const b = boardFrame(f);
+					board = b;
+					app.sessions = b.sessions;
+					app.current = b.current;
+					app.usage = b.usage;
+					app.notice = b.notice;
+					app.connected = true;
+					app.loaded = true;
+					stopPoll?.();
+					stopPoll = null;
+				},
+				() => {
+					board = null;
+					stopPoll ??= startPolling();
+					if (alive) retry = setTimeout(open, 5000);
+				}
+			);
+		};
+		open();
 		return () => {
-			stop();
+			alive = false;
+			stop?.();
+			clearTimeout(retry);
 			stopPoll?.();
 		};
 	});

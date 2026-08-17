@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -84,6 +85,22 @@ func writeWorkingTranscript(t *testing.T, dir, proj, id, title string, mtime tim
 	}
 }
 
+// claimGround registers directories as vera's own — the board only
+// sees sessions on ground that opted in (a bookmark, a scratch
+// workspace, vera's own lineage, or an assignment). Written straight
+// through save: test cwds do not exist on disk, and add() checks.
+func claimGround(t *testing.T, s *server, cwds ...string) {
+	t.Helper()
+	m := map[string]bookmark{}
+	for i, c := range cwds {
+		n := fmt.Sprintf("ground-%d", i)
+		m[n] = bookmark{Name: n, Cwd: c}
+	}
+	if err := s.marks.save(m); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func boardOf(t *testing.T, s *server) (tasks []task, fleet map[string]int) {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -104,6 +121,7 @@ func TestBoardAdoptsTheWorkingAgentOnceWithLiveStatus(t *testing.T) {
 	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "Create local CLI alternative to Rook host", now)
 	writeTranscript(t, dir, "-repo-beta", "quiet-1", now.Add(-30*time.Minute)) // needs-you, not adopted
 	s := testServer(t, dir)
+	claimGround(t, s, "/repo/-repo-alpha", "/repo/-repo-beta")
 
 	tasks, fleet := boardOf(t, s)
 	if fleet["working"] != 1 || fleet["agents"] != 2 {
@@ -160,6 +178,7 @@ func TestBoardDoesNotAdoptUntitledProbes(t *testing.T) {
 	now := time.Now()
 	writeUntitledWorkingTranscript(t, dir, "-Users-someone", "probe-1", now)
 	s := testServer(t, dir)
+	claimGround(t, s, "/repo/-Users-someone")
 	tasks, fleet := boardOf(t, s)
 	if fleet["working"] != 1 {
 		t.Fatalf("the probe still counts as a working session: %+v", fleet)
@@ -174,6 +193,7 @@ func TestAdoptedCardClosesWhenTheSessionGoesQuietAndNeverReturns(t *testing.T) {
 	now := time.Now()
 	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now)
 	s := testServer(t, dir)
+	claimGround(t, s, "/repo/-repo-alpha")
 
 	tasks, _ := boardOf(t, s)
 	if len(tasks) != 1 || tasks[0].Col != "progress" || !tasks[0].Adopted {
@@ -206,6 +226,7 @@ func TestAdoptedCardStaysOpenWhileTheSessionNeedsAHuman(t *testing.T) {
 	now := time.Now()
 	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now)
 	s := testServer(t, dir)
+	claimGround(t, s, "/repo/-repo-alpha")
 	tasks, _ := boardOf(t, s)
 	if len(tasks) != 1 {
 		t.Fatalf("adopted card: %+v", tasks)
@@ -243,6 +264,7 @@ func TestBoardBacklogStaysUnassignedBesideTheLiveTask(t *testing.T) {
 	now := time.Now()
 	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now)
 	s := testServer(t, dir)
+	claimGround(t, s, "/repo/-repo-alpha")
 
 	if _, err := s.tasks.capture("persist the digest cache", now); err != nil {
 		t.Fatal(err)
@@ -301,6 +323,7 @@ func TestRepoListOffersFleetDirsButNeverHome(t *testing.T) {
 	// titled-ness gates adoption, not geography.
 	writeUntitledWorkingTranscript(t, dir, "-repo-beta", "quiet-1", now)
 	s := testServer(t, dir)
+	claimGround(t, s, "/repo/-repo-alpha", "/repo/-repo-beta")
 	repos := repoList(s.boardSessions(now), "/repo/-repo-beta", nil, nil)
 	// beta played the role of $HOME here and must be excluded.
 	if len(repos) != 1 || repos[0]["cwd"] != "/repo/-repo-alpha" {
@@ -456,5 +479,48 @@ func TestRepoListOffersScratchWorkspaces(t *testing.T) {
 	// And the offer check accepts it even with no session inside.
 	if s.repoOffered(s.boardSessions(time.Now()), path) == "" {
 		t.Fatal("a scratch workspace is offered before any session exists in it")
+	}
+}
+
+func TestTaskStoreCreateNeverDuplicatesIDs(t *testing.T) {
+	st := &taskStore{dir: t.TempDir()}
+	now := time.Now()
+	var wg sync.WaitGroup
+	ids := make(chan string, 40)
+	for range 40 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			x, err := st.create(task{Title: "x", Intent: "x", Col: "inbox", CreatedAt: now, UpdatedAt: now})
+			if err == nil {
+				ids <- x.ID
+			}
+		}()
+	}
+	wg.Wait()
+	close(ids)
+	seen := map[string]bool{}
+	for id := range ids {
+		if seen[id] {
+			t.Fatalf("duplicate id minted: %s", id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != 40 {
+		t.Fatalf("created %d of 40", len(seen))
+	}
+}
+
+func TestAdoptIsIdempotentPerAgent(t *testing.T) {
+	st := &taskStore{dir: t.TempDir()}
+	now := time.Now()
+	if _, err := st.adopt("root-1", "the work", "repo", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.adopt("root-1", "the work", "repo", now); err == nil {
+		t.Fatal("one agent, one card — the twin must be refused")
+	}
+	if got := st.list(); len(got) != 1 {
+		t.Fatalf("cards: %d", len(got))
 	}
 }

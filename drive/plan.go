@@ -9,6 +9,7 @@ package drive
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 )
 
@@ -21,7 +22,12 @@ If KIND is new: "HOME: " + code or life, then "NAME: " + a short kebab-case dire
 "CADENCE: " + once (a task that ends) or standing (an ongoing need the owner will keep returning to — routines, habits, and practices like meal prep, tracking, or learning are standing even when phrased as one ask).
 If the ask names a date or deadline: "DEADLINE: " + that date as YYYY-MM-DD, computed from today's date.
 "GOAL: " + the instruction to hand the worker: one or two sentences, imperative, concrete, self-contained. For a standing need, the goal is the FIRST pass only.
-If the work is honestly two or more distinct pieces that cannot ride one goal: GOAL carries the first piece, then one "STEP: " line per later piece (at most three), each a self-contained instruction in order. Most asks are one piece — never pad.
+If the work is honestly more than one piece, GOAL carries the first piece and one "NODE: " line follows per later piece (at most four), each shaped exactly:
+"NODE: " + kind + " | " + deps + " | " + the instruction
+kind is one of: implement (writes files) | investigate (reads and reports, writes nothing) | review (reads what an earlier piece produced and reports what is wrong with it) | verify (runs the build or the tests and reports what happened).
+deps is a comma-separated list of the piece numbers this one waits on, or "-" for none. GOAL is piece 1; the NODE lines are pieces 2, 3, 4, 5 in the order written. A piece may wait on several, and two pieces may wait on the same one — that is how independent work runs side by side.
+The instruction is imperative, concrete, and self-contained: the worker running it sees the repository and this sentence, nothing else.
+Reach for review and verify wherever a piece produces something worth checking. They read only — they cannot break anything, they cost little, and vera runs them without waiting for the owner, so a plan that checks its own work is nearly free. Most asks are one piece with nothing after it; never pad.
 "WHY: " + one short sentence the owner reads to judge your plan. If KIND is none, WHY says what this ask actually needs instead.
 Prefer new over repo unless the ask plainly continues that workspace's own work. Never invent facts the ask does not carry.`
 
@@ -37,9 +43,22 @@ type Plan struct {
 	Goal     string `json:"goal,omitempty"`
 	Why      string `json:"why,omitempty"`
 	Question string `json:"question,omitempty"` // kind ask: the one missing fact
-	// Steps are the later pieces when the work is honestly more than
-	// one: Goal is the first piece, each Step a card of its own.
-	Steps []string `json:"steps,omitempty"`
+	// Nodes are the later pieces when the work is honestly more than
+	// one: Goal is piece 1, each Node a card of its own that names what
+	// it waits on. A plan with no Nodes is one piece of work, which is
+	// most plans.
+	Nodes []PlanNode `json:"nodes,omitempty"`
+}
+
+// A PlanNode is one piece of the work graph as the planner drew it.
+// Deps are 1-based piece numbers — piece 1 is always the goal — and
+// are resolved to card ids by whoever lays the plan down, so a
+// hallucinated number is dropped rather than turned into a card
+// waiting on nothing.
+type PlanNode struct {
+	Kind string `json:"kind"`
+	Deps []int  `json:"deps,omitempty"`
+	Text string `json:"text"`
 }
 
 // Plan reads one ask against the offered workspaces and returns the
@@ -94,9 +113,9 @@ func salvagePlan(content string) Plan {
 			}
 		case "ASK":
 			p.Question = rest
-		case "STEP":
-			if len(p.Steps) < 3 && rest != "" {
-				p.Steps = append(p.Steps, rest)
+		case "NODE":
+			if n, ok := salvageNode(rest); ok && len(p.Nodes) < 4 {
+				p.Nodes = append(p.Nodes, n)
 			}
 		case "WHERE":
 			p.Where = rest
@@ -124,4 +143,38 @@ func salvagePlan(content string) Plan {
 		p.Cadence = "once"
 	}
 	return p
+}
+
+// salvageNode reads one "kind | deps | instruction" line. Same
+// discipline as the rest of this file: take what came, normalize what
+// is closed, drop only what cannot be used at all. A node without an
+// instruction is nothing; a node with a garbled kind is an
+// implementation, which is what every piece was before kinds existed.
+func salvageNode(rest string) (PlanNode, bool) {
+	parts := strings.SplitN(rest, "|", 3)
+	if len(parts) < 3 {
+		return PlanNode{}, false
+	}
+	n := PlanNode{
+		Kind: strings.ToLower(strings.TrimSpace(parts[0])),
+		Text: strings.TrimSpace(parts[2]),
+	}
+	if n.Text == "" {
+		return PlanNode{}, false
+	}
+	switch n.Kind {
+	case "implement", "investigate", "review", "verify":
+	default:
+		n.Kind = "implement"
+	}
+	for f := range strings.SplitSeq(parts[1], ",") {
+		f = strings.TrimSpace(f)
+		if f == "" || f == "-" {
+			continue
+		}
+		if d, err := strconv.Atoi(f); err == nil && d > 0 {
+			n.Deps = append(n.Deps, d)
+		}
+	}
+	return n, true
 }

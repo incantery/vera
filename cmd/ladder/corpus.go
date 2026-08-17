@@ -13,11 +13,33 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/incantery/vera/route"
 )
+
+// knownKind is an exact-match check, deliberately NOT route.NormalizeKind
+// — normalizing here would accept a typo and file it under the wrong
+// tier, which is the one error a routing experiment cannot survive.
+func knownKind(kind string) bool {
+	for _, k := range route.Kinds {
+		if kind == k {
+			return true
+		}
+	}
+	return false
+}
 
 type task struct {
 	ID   string `json:"id"`
 	Goal string `json:"goal"`
+	// Kind is the node kind this task stands in for — implement,
+	// investigate, review, verify, reconcile. It is what makes the
+	// corpus able to measure ROUTING rather than merely models: the
+	// routing table claims a kind is worth a tier, and a corpus tagged
+	// by kind is the only way to find out whether that claim survives
+	// contact. Empty means the task says nothing about routing and is
+	// excluded from the routing verdict.
+	Kind string `json:"kind,omitempty"`
 	// Mode picks the tool policy: "work" (edits + build-and-test) or
 	// "read" (print mode's default: gated tools refused). Default work.
 	Mode string `json:"mode,omitempty"`
@@ -89,6 +111,13 @@ func (t *task) validate() error {
 	case "", "work", "read":
 	default:
 		return errors.New("mode must be \"work\" or \"read\", not " + t.Mode)
+	}
+	// A kind is optional, but a MISSPELLED one is not: route.NormalizeKind
+	// silently folds anything unknown to "implement", which would quietly
+	// file a review task under the strongest tier and make the routing
+	// verdict a lie. Refuse it here instead.
+	if t.Kind != "" && !knownKind(t.Kind) {
+		return errors.New("unknown kind " + t.Kind + " (one of: " + strings.Join(route.Kinds, ", ") + ")")
 	}
 	if t.Check == "" && len(t.Expect) == 0 {
 		return errors.New("no bar: a task needs a check command, expected substrings, or both")

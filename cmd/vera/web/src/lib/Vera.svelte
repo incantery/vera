@@ -64,6 +64,24 @@
 		return () => clearInterval(t);
 	});
 
+	// ── the daily report: autonomy's account of itself ─────────────
+	// One small fetch; the report changes once a day, so a slow poll
+	// is plenty and the sidebar never earns a stream for it.
+	let report = $state(null);
+	async function fetchReport() {
+		try {
+			const r = await api('/api/report');
+			if (r.ok) report = await r.json();
+		} catch {
+			// the footer just goes without; the report is a courtesy
+		}
+	}
+	$effect(() => {
+		fetchReport();
+		const t = setInterval(fetchReport, 15 * 60 * 1000);
+		return () => clearInterval(t);
+	});
+
 	async function postJson(path, body) {
 		busy = true;
 		err = '';
@@ -98,7 +116,7 @@
 		const t = th.task;
 		switch (th.state) {
 			case 'ask':
-				return 'Needs your answer';
+				return t?.proposalKind === 'reply' ? 'Needs your answer — Vera drafted one' : 'Needs your answer';
 			case 'proposal':
 				return t.proposalKind === 'start' ? 'Proposes to start — your call' : 'Ready to close — your call';
 			case 'attention':
@@ -153,23 +171,94 @@
 		}
 		return out;
 	});
+	// ── the agenda: vera speaking first ────────────────────────────
+	// "Here's what I want to do" — every pending intention the engine
+	// and the steward have parked, phrased in vera's own voice with a
+	// one-tap yes and a veto. Asks without a draft are not intentions
+	// (vera has nothing to offer but the question) — those stay
+	// threads in the list below.
+	const agenda = $derived.by(() => {
+		const items = [];
+		for (const t of tasks) {
+			if (!['inbox', 'progress', 'waiting'].includes(t.col)) continue;
+			if (t.proposalKind === 'reply' && t.proposalText)
+				items.push({ kind: 'reply', t, say: 'I drafted an answer for', detail: '“' + t.proposalText + '”', yes: 'Send it', no: 'I’ll answer' });
+			else if (t.proposalKind === 'done')
+				items.push({ kind: 'done', t, say: 'I’d call this done:', detail: t.proposalWhy, yes: 'Close it', no: 'Not yet' });
+			else if (t.proposalKind === 'start')
+				items.push({ kind: 'start', t, say: 'I want to start', detail: t.proposalWhy, yes: 'Start it', no: 'Not yet' });
+			else if (t.autoStart)
+				items.push({ kind: 'queued', t, say: 'I’m about to start', detail: 'Read-only analysis, on its own ground — it runs unless you hold it.', yes: null, no: 'Hold' });
+		}
+		const rank = { reply: 0, done: 1, start: 2, queued: 3 };
+		return items.sort((a, b) => rank[a.kind] - rank[b.kind]);
+	});
+	async function agendaYes(item) {
+		if (item.kind === 'start') await acceptProposal(item.t);
+		else await act(item.t.id, 'accept');
+	}
+	async function agendaNo(item) {
+		if (item.kind === 'queued') await act(item.t.id, 'hold');
+		else if (item.kind === 'reply') pickThread('T:' + item.t.id);
+		else await act(item.t.id, 'decline');
+	}
+
+	// ── "go check now": the owner's finger on the steward ──────────
+	// One tap runs a steward pass immediately — no cooldown, no
+	// fingerprint gate — and says honestly what came of it.
+	let looking = $state(false);
+	let lookNote = $state('');
+	let lookErr = $state(false); // the note wears red when it is a failure
+	let lookNoteTimer;
+	async function lookNow() {
+		if (looking) return;
+		looking = true;
+		lookNote = '';
+		lookErr = false;
+		try {
+			const r = await api('/api/steward/look', { method: 'POST', body: '{}' });
+			const out = await r.json();
+			if (!r.ok) throw new Error(out.error ?? 'the look failed');
+			await refresh();
+			lookNote =
+				out.applied > 0
+					? 'Vera moved ' + out.applied + (out.applied === 1 ? ' thing' : ' things')
+					: 'Vera looked — nothing to move right now';
+		} catch (e) {
+			lookNote = e.message;
+			lookErr = true;
+		} finally {
+			looking = false;
+			clearTimeout(lookNoteTimer);
+			lookNoteTimer = setTimeout(() => (lookNote = ''), 6000);
+		}
+	}
+
 	const RANK = { ask: 0, proposal: 1, attention: 2, inbox: 3 };
+	// A card with a pending intention lives in the agenda above; its
+	// thread row would say the same thing twice, so it stands down.
+	const agendaIds = $derived(new Set(agenda.map((i) => i.t.id)));
 	const youRows = $derived(
-		threads.filter((t) => t.owner === 'you').sort((a, b) => (RANK[a.state] ?? 9) - (RANK[b.state] ?? 9))
+		threads
+			.filter((t) => t.owner === 'you' && !(t.task && agendaIds.has(t.task.id)))
+			.sort((a, b) => (RANK[a.state] ?? 9) - (RANK[b.state] ?? 9))
 	);
 	const veraRows = $derived(threads.filter((t) => t.owner === 'vera'));
 	const doneRows = $derived(threads.filter((t) => t.owner === 'done'));
 
+
 	// ── header presence ────────────────────────────────────────────
 	const nDecisions = $derived(youRows.filter((t) => ['ask', 'proposal'].includes(t.state)).length);
 	const statusLine = $derived(
-		veraRows.length
-			? 'Vera is working' + (youRows.length ? ' · ' + youRows.length + ' with you' : '')
-			: nDecisions
-				? 'Vera needs you · ' + nDecisions + (nDecisions === 1 ? ' decision' : ' decisions')
-				: youRows.length
-					? 'Vera is waiting · ' + youRows.length + ' with you'
-					: 'Vera is available'
+		agenda.length
+			? 'Vera wants to move ' + agenda.length + (agenda.length === 1 ? ' thing' : ' things')
+			: veraRows.length
+				? 'Vera is working' + (youRows.length ? ' · ' + youRows.length + ' with you' : '')
+				: nDecisions
+					? 'Vera needs you · ' + nDecisions + (nDecisions === 1 ? ' decision' : ' decisions')
+					: youRows.length
+						? 'Vera is waiting · ' + youRows.length + ' with you'
+						: 'Vera is available'
 	);
 	const topMode = $derived(veraRows.length ? 'vera' : youRows.length ? 'you' : 'idle');
 
@@ -293,7 +382,12 @@
 					: l.startsWith('-')
 						? 'del'
 						: 'ctx';
-			if (k !== 'del') ln++;
+			// the gutter shows the file's real line numbers: each hunk
+			// header re-seats the counter at its own new-file start
+			if (k === 'hunk') {
+				const m = l.match(/\+(\d+)/);
+				if (m) ln = +m[1] - 1;
+			} else if (k !== 'del') ln++;
 			return { id: i, k, ln: k === 'del' ? '−' : k === 'hunk' ? '' : String(ln), t: l || ' ' };
 		});
 	}
@@ -326,19 +420,29 @@
 	async function launch(text) {
 		selId = null;
 		mobileMain = true;
-		planView = { phase: 'thinking', text };
+		// the token: if the human walks away while vera thinks, the
+		// answer that lands later must not resurrect the flow
+		const view = { phase: 'thinking', text };
+		planView = view;
 		try {
 			const r = await api('/api/plan', { method: 'POST', body: JSON.stringify({ text }) });
 			const out = await r.json();
+			if (planView !== view) return;
 			if (r.status === 409) {
+				// planning is off (no key) — capture instead, but say so:
+				// the door promised a plan, and a silent downgrade breaks it
 				const c = await postJson('/api/tasks', { text });
 				planView = null;
-				if (c?.task) selId = 'T:' + c.task.id;
+				if (c?.task) {
+					selId = 'T:' + c.task.id;
+					err = (out.error ? out.error + ' — ' : '') + 'captured to the inbox without a plan';
+				}
 				return;
 			}
 			if (!r.ok) throw new Error(out.error ?? 'vera did not answer');
 			planView = { phase: 'bid', text, id: out.id, plan: out.plan };
 		} catch (e) {
+			if (planView !== view) return;
 			planView = { phase: 'error', text, err: e.message };
 		}
 	}
@@ -375,15 +479,21 @@
 	// ── decisions: proposals, starts, replies ──────────────────────
 	let startIn = $state('');
 	let startMode = $state('read');
+	let startBudget = $state(''); // '' or dollars: the autopilot authorization
 	let newWs = $state(null);
 
 	const act = (tid, action, extra) => postJson(`/api/tasks/${tid}/act`, { action, ...extra });
 	async function startWork(t, mode) {
+		const budget = +startBudget > 0 ? +startBudget : 0;
 		const out = await postJson(`/api/tasks/${t.id}/start`, {
-			mode: mode ?? startMode,
-			...(startIn ? { newIn: startIn } : {})
+			mode: budget > 0 ? 'read' : (mode ?? startMode),
+			...(startIn ? { newIn: startIn } : {}),
+			...(budget > 0 ? { budgetUsd: budget } : {})
 		});
-		if (out) startIn = '';
+		if (out) {
+			startIn = '';
+			startBudget = '';
+		}
 	}
 	async function acceptProposal(t) {
 		if (t.proposalKind === 'start') await startWork(t);
@@ -706,13 +816,35 @@
 		{/if}
 		<select
 			bind:value={startMode}
-			title="read: analysis only. work: edits plus scoped build/test commands."
-			style="font: inherit; font-size: 13px; color: {INK}; background: {PANEL}; border: 0; box-shadow: inset 0 0 0 1px rgba(242,238,231,0.08); border-radius: 10px; padding: 8px 12px;"
+			disabled={startBudget !== '' && +startBudget > 0}
+			title="read: analysis only. work: edits plus scoped build/test commands. (autopilot forces read-only)"
+			style="font: inherit; font-size: 13px; color: {INK}; background: {PANEL}; border: 0; box-shadow: inset 0 0 0 1px rgba(242,238,231,0.08); border-radius: 10px; padding: 8px 12px; opacity: {startBudget !== '' && +startBudget > 0 ? 0.55 : 1};"
 		>
 			<option value="read">read-only</option>
 			<option value="work">can edit & test</option>
 		</select>
+		<label
+			title="autopilot: vera keeps continuing runs by itself — through turn budgets and routine questions — until this many dollars are spent, the judge says done, or the conversation circles. Read-only, always."
+			style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: {MUT}; background: {PANEL}; box-shadow: inset 0 0 0 1px rgba(242,238,231,0.08); border-radius: 10px; padding: 0 12px;"
+		>
+			autopilot $
+			<input
+				bind:value={startBudget}
+				type="number"
+				min="0"
+				max="200"
+				step="1"
+				placeholder="0"
+				style="width: 56px; background: none; border: 0; font: inherit; font-size: 13px; color: {INK}; outline: none;"
+			/>
+		</label>
 	</div>
+	{#if startBudget !== '' && +startBudget > 0}
+		<p style="margin: 8px 0 0; font-size: 12px; color: rgba(167,139,250,0.85); line-height: 1.5;">
+			Autopilot: vera drives this alone — read-only — until ${+startBudget} is spent, the judge
+			says done, or it starts circling. You only hear about it when one of those happens.
+		</p>
+	{/if}
 	{#if newWs !== null}
 		<div style="display: flex; gap: 8px; margin-top: 8px;">
 			<input
@@ -745,7 +877,15 @@
 				title="everything vera has spent this process">${board.spend.toFixed(2)}</span
 			>
 		{/if}
-		<span class="v-status" style="font-size: 13.5px; color: {SUB}; font-variant-numeric: tabular-nums;">{statusLine}</span>
+		<span class="v-status" style="font-size: 13.5px; color: {lookNote && lookErr ? RED : SUB}; font-variant-numeric: tabular-nums;"
+			>{lookNote || statusLine}</span>
+		<button
+			onclick={lookNow}
+			disabled={looking}
+			aria-label="have Vera check the board right now"
+			title="have Vera check the board right now"
+			style="cursor: pointer; flex: none; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; color: {looking ? VIOLET : MUT}; background: none; border: 0; box-shadow: inset 0 0 0 1px rgba(242,238,231,0.14); border-radius: 50%; {looking ? 'animation: vSpin 1s linear infinite;' : ''}"
+			>↻</button>
 		<button class="vbtn v-give" onclick={goNew}>Give Vera work</button>
 	</header>
 
@@ -763,6 +903,56 @@
 			style="width: 296px; flex: none; display: flex; flex-direction: column; min-height: 0; background: linear-gradient(to bottom, transparent, {HAIR} 48px, {HAIR} calc(100% - 48px), transparent) no-repeat right / 1px 100%;"
 		>
 			<div style="flex: 1; overflow-y: auto; min-height: 0; padding: 8px 10px 8px;">
+				{#if agenda.length}
+					<!-- vera speaking first: the engine's parked intentions,
+					     each a one-tap yes and a veto. The threads keep the
+					     full story; this is the "here's what I want to do". -->
+					<div style="{KICKER} color: rgba(167,139,250,0.9); padding: 12px 10px 6px;">Vera wants to</div>
+					{#each agenda as item (item.kind + item.t.id)}
+						<div
+							style="background: {PANEL}; border-radius: 12px; padding: 11px 12px; margin: 0 0 8px; box-shadow: inset 0 0 0 1px rgba(167,139,250,0.22); animation: vEnter 0.3s ease;"
+						>
+							<div
+								role="button"
+								tabindex="0"
+								onclick={() => pickThread('T:' + item.t.id)}
+								onkeydown={(e) => {
+									if (e.key === 'Enter' || e.key === ' ') {
+										e.preventDefault();
+										pickThread('T:' + item.t.id);
+									}
+								}}
+								style="cursor: pointer;"
+							>
+								<div style="font-size: 13.5px; line-height: 1.45; color: {INK};">
+									<span style="color: rgba(167,139,250,0.95);">{item.say}</span>
+									<span style="font-weight: 600;"> {item.t.title}</span>
+								</div>
+								{#if item.detail}
+									<div
+										style="font-size: 12px; line-height: 1.5; color: {MUT}; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;"
+									>
+										{item.detail}
+									</div>
+								{/if}
+							</div>
+							<div style="display: flex; gap: 8px; margin-top: 9px;">
+								{#if item.yes}
+									<button
+										onclick={() => agendaYes(item)}
+										disabled={busy}
+										style="cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; color: {INK}; background: rgba(167,139,250,0.16); border: 0; box-shadow: inset 0 0 0 1px rgba(167,139,250,0.45); border-radius: 99px; padding: 5px 13px; opacity: {busy ? 0.5 : 1};"
+										>{item.yes}</button>
+								{/if}
+								<button
+									onclick={() => agendaNo(item)}
+									disabled={busy}
+									style="cursor: pointer; font: inherit; font-size: 12px; color: {MUT}; background: none; border: 0; box-shadow: inset 0 0 0 1px rgba(242,238,231,0.12); border-radius: 99px; padding: 5px 13px; opacity: {busy ? 0.5 : 1};"
+									>{item.no}</button>
+							</div>
+						</div>
+					{/each}
+				{/if}
 				{#if youRows.length}
 					<div style="{KICKER} color: rgba(232,187,105,0.85); padding: 12px 10px 6px;">With you</div>
 					{#each youRows as th (th.id)}{@render threadRow(th)}{/each}
@@ -792,10 +982,23 @@
 				{#if app.notice}
 					<div style="font-size: 11px; color: {MUT}; line-height: 1.5;">{app.notice}</div>
 				{/if}
+				{#if report?.text}
+					<!-- the engine's daily account: one collapsed line, the
+					     whole report a tap away — same door on the phone -->
+					<details style="font-size: 11px; color: {MUT}; line-height: 1.5;">
+						<summary style="cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 8px; min-width: 0;">
+							<span style="{KICKER} color: rgba(167,139,250,0.7); flex: none;">Today</span>
+							<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;"
+								>{report.text.split('\n')[0]}</span>
+						</summary>
+						<div style="margin-top: 6px; white-space: pre-line;">{report.text}</div>
+					</details>
+				{/if}
 				<UsageBar usage={app.usage} />
 				<div style="display: flex; gap: 14px; font-size: 11.5px;">
 					<a href="/board" style="color: {MUT}; text-decoration: none;" title="the map view — every card by stage">board →</a>
 					<a href="/explore" style="color: {MUT}; text-decoration: none;" title="browse directories · start a session anywhere">explorer →</a>
+					<a href="/schedule" style="color: {MUT}; text-decoration: none;" title="work that starts because its time came">schedule →</a>
 				</div>
 				<!-- the phone's door: the header button steps aside for a
 				     docked ask pill (the Vera Mobile design's home screen) -->
@@ -820,7 +1023,13 @@
 						<p style="margin: 14px 0 0; font-size: 14.5px; line-height: 1.6; color: rgba(242,238,231,0.85);">
 							{planView.text}
 						</p>
-						{#if planView.phase === 'error'}
+						{#if planView.phase === 'thinking'}
+							<!-- the wait has a door: leaving does not stop the
+							     server's call, but the human is never trapped -->
+							<div style="margin-top: 18px;">
+								<button class="vghost" onclick={goNew}>Never mind</button>
+							</div>
+						{:else if planView.phase === 'error'}
 							<p style="margin: 14px 0 0; font-size: 13.5px; color: {RED};">{planView.err}</p>
 							<div style="display: flex; gap: 10px; margin-top: 18px;">
 								<button class="vbtn" onclick={() => launch(planView.text)}>Try again</button>
@@ -909,13 +1118,13 @@
 					{#if sel.task?.intent && !sel.task.intent.toLowerCase().startsWith(sel.name.toLowerCase())}
 						<p style="margin: 6px 0 0; font-size: 13.5px; color: {MUT}; max-width: 76ch; line-height: 1.5;">{sel.task.intent}</p>
 					{/if}
-					<div class="v-tabs" style="display: flex; gap: 22px; margin-top: 20px;">
-						<button style={tabStyle(0)} onclick={() => (tab = 0)}>{tab0Label}</button>
-						<button style={tabStyle(1)} onclick={() => (tab = 1)}
+					<div class="v-tabs" role="tablist" style="display: flex; gap: 22px; margin-top: 20px;">
+						<button role="tab" aria-selected={tab === 0} style={tabStyle(0)} onclick={() => (tab = 0)}>{tab0Label}</button>
+						<button role="tab" aria-selected={tab === 1} style={tabStyle(1)} onclick={() => (tab = 1)}
 							>Changes{treeFiles.length ? ' · ' + treeFiles.length : ''}</button
 						>
-						<button style={tabStyle(2)} onclick={() => (tab = 2)}>Conversation</button>
-						<button style={tabStyle(3)} onclick={() => (tab = 3)}>Activity</button>
+						<button role="tab" aria-selected={tab === 2} style={tabStyle(2)} onclick={() => (tab = 2)}>Conversation</button>
+						<button role="tab" aria-selected={tab === 3} style={tabStyle(3)} onclick={() => (tab = 3)}>Activity</button>
 					</div>
 				</div>
 
@@ -936,6 +1145,24 @@
 										<p style="margin: 10px 0 0; font-size: 14.5px; line-height: 1.6; color: rgba(242,238,231,0.88);">
 											The agent's working tree holds uncommitted changes. Approve them as one commit, or ask for a revision.
 										</p>
+									{/if}
+									{#if sel.task?.proposalKind === 'reply' && sel.task.proposalText}
+										<!-- an ask with a dirty tree still carries its drafted
+										     answer — the one-tap must not hide behind the diff -->
+										<button
+											class="vopt"
+											style="box-shadow: inset 0 0 0 1px rgba(167,139,250,0.35); margin-top: 18px; display: block; width: 100%;"
+											onclick={() => act(sel.task.id, 'accept')}
+											disabled={busy}
+										>
+											<span style="display: flex; align-items: center; gap: 10px;"
+												><span style="font-size: 14.5px; font-weight: 600; color: {INK};">Send Vera's reply</span
+												><span style="{KICKER} letter-spacing: 0.08em; color: {VIOLET};">drafted for you</span></span
+											>
+											<span style="display: block; font-size: 13px; color: rgba(242,238,231,0.8); margin-top: 6px; line-height: 1.55;"
+												>“{sel.task.proposalText}”</span
+											>
+										</button>
 									{/if}
 									{#if sel.task?.runs?.length}
 										<div style="{KICKER} color: rgba(110,223,195,0.9); margin: 24px 0 4px;">Runs</div>
@@ -1015,8 +1242,28 @@
 						{:else if sel.state === 'ask'}
 							<div style="max-width: 620px; animation: vEnter 0.35s ease;">
 								{@render decisionShell('Needs your answer', sel.task.ask || 'The worker needs a word from you.', sel.task.exchanges?.at(-1)?.reply?.slice(0, 360))}
+								{#if sel.task.proposalKind === 'reply' && sel.task.proposalText}
+									<!-- the steward's drafted answer: the exact words, one tap.
+									     Typing your own below still works and outranks it. -->
+									<button
+										class="vopt"
+										style="box-shadow: inset 0 0 0 1px rgba(167,139,250,0.35); margin-top: 18px;"
+										onclick={() => act(sel.task.id, 'accept')}
+										disabled={busy}
+									>
+										<span style="display: flex; align-items: center; gap: 10px;"
+											><span style="font-size: 14.5px; font-weight: 600; color: {INK};">Send Vera's reply</span
+											><span style="{KICKER} letter-spacing: 0.08em; color: {VIOLET};">drafted for you</span></span
+										>
+										<span style="display: block; font-size: 13px; color: rgba(242,238,231,0.8); margin-top: 6px; line-height: 1.55;"
+											>“{sel.task.proposalText}”</span
+										>
+									</button>
+								{/if}
 								<p style="margin: 16px 0 0; font-size: 12.5px; color: rgba(146,153,170,0.75);">
-									Answer below — the same drive continues, seeded with its history.
+									{sel.task.proposalKind === 'reply'
+										? 'Or answer in your own words below — your words outrank the draft.'
+										: 'Answer below — the same drive continues, seeded with its history.'}
 								</p>
 							</div>
 						{:else if sel.state === 'proposal'}

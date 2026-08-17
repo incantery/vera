@@ -260,7 +260,7 @@
 	{#if !direct}
 	<!-- header -->
 	<header class="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-zinc-800 py-3">
-		<a href="/" aria-label="back to the board" class="px-1 text-zinc-500 hover:text-zinc-300">←</a>
+		<a href="/" aria-label="back home" class="px-1 text-zinc-500 hover:text-zinc-300">←</a>
 		{#if data}
 			<span class="font-semibold">{data.agent.title}</span>
 			<span class="text-xs text-zinc-500">
@@ -634,9 +634,11 @@
 				rows="2"
 				placeholder={driveMode
 					? `a goal — the supervisor keeps pushing until it’s met (${data?.turns ?? 4} turns max)`
-					: verbatim
-						? 'your exact words go straight to claude'
-						: 'tell vera what you want — it phrases the message for claude'}
+					: data?.pending?.status === 'thinking'
+						? 'claude is mid-turn — the membrane waits for it to land (direct mode can queue)'
+						: verbatim
+							? 'your exact words go straight to claude'
+							: 'tell vera what you want — it phrases the message for claude'}
 				class="grow resize-none rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-[13px] placeholder:text-zinc-600 focus:border-sky-400 focus:outline-none"
 			></textarea>
 			<div class="flex flex-col items-end gap-1.5">

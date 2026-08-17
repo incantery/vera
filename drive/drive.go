@@ -21,6 +21,23 @@ import (
 	"strings"
 )
 
+// A transient death is the machinery's, not the goal's: the clock ran
+// out, the process was killed, the wire dropped. The goal said nothing
+// — retrying is sane, and the engine's recover system keys off this
+// mark. Anything unmarked is a judgment call and stays terminal.
+type transient struct{ error }
+
+func (t transient) Unwrap() error { return t.error }
+
+// MarkTransient wraps an error as retryable machinery failure.
+func MarkTransient(err error) error { return transient{err} }
+
+// IsTransient answers whether any error in the chain wears the mark.
+func IsTransient(err error) bool {
+	var t transient
+	return errors.As(err, &t)
+}
+
 // A Turner runs one turn of a conversation: prompt in, reply out,
 // plus wherever the conversation now lives.
 type Turner interface {
@@ -64,6 +81,12 @@ type Result struct {
 	Root      string  // the session the drive began as — the agent's identity
 	SessionID string  // the final fork — resume it to take the wheel back
 	CostUSD   float64 // the turns' metered cost, summed
+	// The escalation's shape, structured so callers need not parse the
+	// Reason sentence: a circling conversation should stay stopped
+	// however much budget remains; a spend-capped one may be worth
+	// continuing under a bigger authorization.
+	Circled bool
+	Capped  bool
 }
 
 // A Starter can birth a session: the first turn of a conversation
@@ -127,7 +150,8 @@ func (l *Loop) run(ctx context.Context, sessionID, goal, prompt string, seed []E
 		t, err := l.Turner.RunTurn(ctx, res.SessionID, prompt)
 		res.CostUSD += t.CostUSD
 		if err != nil {
-			return res, errors.New("the turn failed: " + err.Error())
+			// %w keeps the transient mark visible through the wrap.
+			return res, fmt.Errorf("the turn failed: %w", err)
 		}
 		if t.SessionID != "" {
 			res.SessionID = t.SessionID
@@ -137,7 +161,7 @@ func (l *Loop) run(ctx context.Context, sessionID, goal, prompt string, seed []E
 		l.progress("turn %d/%d: judging the reply", turn, total)
 		v, err := l.Judge.Judge(ctx, goal, res.Turns)
 		if err != nil {
-			return res, errors.New("the judge failed: " + err.Error())
+			return res, fmt.Errorf("the judge failed: %w", err)
 		}
 		if l.OnTurn != nil {
 			l.OnTurn(turn, ex, v)
@@ -164,14 +188,14 @@ func (l *Loop) run(ctx context.Context, sessionID, goal, prompt string, seed []E
 		// conversation going nowhere — stop and hand the wheel to a
 		// human rather than bill laps.
 		if fold(v.Prompt) == fold(prompt) || (prevReply != "" && fold(t.Reply) == fold(prevReply)) {
-			res.Escalated = true
+			res.Escalated, res.Circled = true, true
 			res.Ask = "The conversation is circling — the last exchange repeated itself. What should change?"
 			res.Reason = "escalated: circling"
 			return res, nil
 		}
 		// The spend cap: metered money is a budget, not a suggestion.
 		if res.CostUSD >= l.maxUSD() {
-			res.Escalated = true
+			res.Escalated, res.Capped = true, true
 			res.Ask = fmt.Sprintf("The run has spent $%.2f (cap $%.2f) without meeting the goal. Keep going, change course, or drop?", res.CostUSD, l.maxUSD())
 			res.Reason = "escalated: spend cap"
 			return res, nil
@@ -208,7 +232,7 @@ func (l *Loop) RunFresh(ctx context.Context, goal string) (Result, error) {
 	t, err := st.StartTurn(ctx, goal)
 	res.CostUSD += t.CostUSD
 	if err != nil {
-		return res, errors.New("the first turn failed: " + err.Error())
+		return res, fmt.Errorf("the first turn failed: %w", err)
 	}
 	if t.SessionID == "" {
 		return res, errors.New("the first turn came back without a session id")
@@ -219,7 +243,7 @@ func (l *Loop) RunFresh(ctx context.Context, goal string) (Result, error) {
 	l.progress("turn 1/%d: judging the reply", l.maxTurns())
 	v, err := l.Judge.Judge(ctx, goal, res.Turns)
 	if err != nil {
-		return res, errors.New("the judge failed: " + err.Error())
+		return res, fmt.Errorf("the judge failed: %w", err)
 	}
 	if l.OnTurn != nil {
 		l.OnTurn(1, ex, v)

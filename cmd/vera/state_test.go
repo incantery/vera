@@ -51,7 +51,7 @@ func stateOf(t *testing.T, s *server) stateResp {
 
 func testServer(t *testing.T, dir string) *server {
 	t.Helper()
-	return &server{
+	s := &server{
 		sc: &transcript.Scanner{
 			Dir: dir, Window: 48 * time.Hour, Idle: 10 * time.Minute,
 			Quiet: 60 * time.Second, Max: 50,
@@ -71,6 +71,21 @@ func testServer(t *testing.T, dir string) *server {
 		uploads:  t.TempDir(),
 		shelf:    &artifactStore{dir: t.TempDir()},
 	}
+	// A real log with no path: events are recorded in the ring so a
+	// test can read the story back, and nothing touches disk.
+	s.events = newEventLog("", nil)
+	// Drain drive goroutines before the temp dirs they write into are
+	// removed — a run landing mid-teardown is the flake, not a bug.
+	t.Cleanup(func() {
+		done := make(chan struct{})
+		go func() { s.bg.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Log("drive goroutines did not land within 10s")
+		}
+	})
+	return s
 }
 
 func TestStateDiscoversSessionsAndNamesTheCurrent(t *testing.T) {

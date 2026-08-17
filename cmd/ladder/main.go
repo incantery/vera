@@ -10,6 +10,17 @@
 //	  -models claude-sonnet-5,claude-opus-5 -reps 3
 //	go run ./cmd/ladder -world ~/vera-lab -table
 //
+// It answers a second question too, once the corpus tags its tasks with
+// a node kind: does vera's ROUTING table hold? -route runs each task at
+// every tier alias and -by-kind reads the answer back per kind, with the
+// routed tier marked and a verdict that names which way the table should
+// move — or refuses to call it when the runs are too few to mean
+// anything.
+//
+//	go run ./cmd/ladder -corpus cmd/ladder/corpus.routing.json -world ~/vera-lab \
+//	  -route -arms drive -reps 8
+//	go run ./cmd/ladder -world ~/vera-lab -by-kind
+//
 // Reruns skip cells already on the record, so the matrix can be grown
 // (more models, more reps, more tasks) and re-invoked; only the new
 // cells bill. Pass/fail comes from each task's own check command or
@@ -30,6 +41,7 @@ import (
 	"time"
 
 	"github.com/incantery/vera/drive"
+	"github.com/incantery/vera/route"
 )
 
 type cell struct {
@@ -69,8 +81,39 @@ func main() {
 	judgeEffort := flag.String("judge-effort", "low", "judge reasoning effort (empty omits the field)")
 	table := flag.Bool("table", false, "print the results table and exit; runs nothing")
 	byTask := flag.Bool("by-task", false, "table: one row per task × model × arm")
+	// Routing mode: run every kind at every tier so the routing table's
+	// claims become checkable. -models is ignored here on purpose — the
+	// point is to compare the tiers vera actually routes to, not an
+	// arbitrary list.
+	routeMode := flag.Bool("route", false, "measure the routing table: run each task at every tier alias (ignores -models)")
+	// The board is the better instrument. A corpus cheap enough to write
+	// is too well-specified to separate the tiers on implementation; a
+	// real node is several files, an existing repository, and no tests
+	// until someone writes them. This reads vera's outcome journal and
+	// grades it with the same verdict the lab uses.
+	board := flag.String("board", "", "read vera's outcome journal instead of the lab (default ~/.local/state/rook/vera-outcomes.jsonl when bare)")
+	byKind := flag.Bool("by-kind", false, "table: one block per node kind, with the routed tier marked and a verdict")
 	flag.Parse()
 
+	// The board mode reads a journal and runs nothing, so it needs no
+	// lab and no world.
+	if *board != "" || (*byKind && *world == "") {
+		path := *board
+		if path == "" || path == "-" {
+			home, _ := os.UserHomeDir()
+			path = filepath.Join(home, ".local", "state", "rook", "vera-outcomes.jsonl")
+		}
+		obs, err := loadBoardOutcomes(path)
+		if err != nil {
+			fatal(err.Error())
+		}
+		fmt.Printf("%s — %d finished node(s)\n", path, len(obs))
+		route.WriteTable(os.Stdout, obs,
+			"no routing evidence on the board yet — a node contributes when it is\n"+
+				"planned into a graph (so it has a kind), routed (so it has a model),\n"+
+				"and then accepted or dropped by you (so it has a verdict).")
+		return
+	}
 	if *world == "" {
 		fatal("pick a -world directory — the lab needs ground it owns")
 	}
@@ -85,12 +128,16 @@ func main() {
 		timeout:     *timeout,
 	}
 
-	if *table {
+	if *table || *byKind {
 		results, err := loadResults(l.resultsPath)
 		if err != nil {
 			fatal(err.Error())
 		}
-		writeTable(os.Stdout, results, *byTask)
+		if *byKind {
+			writeRoutingTable(os.Stdout, results)
+		} else {
+			writeTable(os.Stdout, results, *byTask)
+		}
 		return
 	}
 
@@ -115,6 +162,27 @@ func main() {
 		}
 	}
 	modelList := splitList(*models)
+	if *routeMode {
+		// The tier aliases, cheapest first, so a comparison walks in the
+		// direction the saving would come from.
+		modelList = nil
+		for _, t := range route.Tiers {
+			modelList = append(modelList, route.WorkerAlias[t])
+		}
+		var untagged []string
+		for _, t := range tasks {
+			if t.Kind == "" {
+				untagged = append(untagged, t.ID)
+			}
+		}
+		if len(untagged) == len(tasks) {
+			fatal("-route needs a corpus tagged with kinds; none of these tasks carry one")
+		}
+		if len(untagged) > 0 {
+			fmt.Printf("note: %d task(s) carry no kind and sit out the routing verdict: %s\n",
+				len(untagged), strings.Join(untagged, ", "))
+		}
+	}
 	if len(modelList) == 0 || len(armList) == 0 {
 		fatal("the matrix needs at least one model and one arm")
 	}
@@ -165,6 +233,9 @@ func main() {
 	fmt.Printf("%d cells to run (%d already on the record) → %s\n", len(cells), skipped, l.resultsPath)
 	if len(cells) == 0 {
 		writeTable(os.Stdout, prior, *byTask)
+		if *routeMode {
+			writeRoutingTable(os.Stdout, prior)
+		}
 		return
 	}
 
@@ -201,6 +272,9 @@ feed:
 	}
 	fmt.Println()
 	writeTable(os.Stdout, results, *byTask)
+	if *routeMode {
+		writeRoutingTable(os.Stdout, results)
+	}
 }
 
 // runCell runs one (task, model, arm, rep) in a fresh directory and
@@ -212,7 +286,7 @@ func (l *lab) runCell(ctx context.Context, c cell) {
 	}
 	r := result{
 		At: time.Now().UTC().Format(time.RFC3339), Task: c.task.ID,
-		Model: c.model, Arm: c.arm, Rep: c.rep,
+		Model: c.model, Arm: c.arm, Rep: c.rep, Kind: c.task.Kind,
 	}
 	dir, err := l.freshDir(c)
 	if err != nil {

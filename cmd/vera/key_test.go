@@ -64,3 +64,45 @@ func TestRequireKeyGuardsTheAPIAndOnlyTheAPI(t *testing.T) {
 		t.Fatal("the shell and its assets carry no data and stay open")
 	}
 }
+
+func TestGuardMutationsRefusesCrossSiteWrites(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	h := guardMutations(inner)
+	try := func(method, path string, hdr map[string]string) int {
+		req := httptest.NewRequest(method, path, nil)
+		req.Host = "localhost:4770"
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	// A browser on another site: refused, key or no key.
+	if try("POST", "/api/agent/x/say", map[string]string{"Origin": "https://evil.example"}) != 403 {
+		t.Fatal("a cross-origin POST must be refused")
+	}
+	if try("POST", "/api/tasks", map[string]string{"Sec-Fetch-Site": "cross-site"}) != 403 {
+		t.Fatal("a cross-site fetch must be refused")
+	}
+	if try("POST", "/api/tasks", map[string]string{"Origin": "null"}) != 403 {
+		t.Fatal("a sandboxed origin must be refused")
+	}
+	// The house's own page, and non-browser clients: welcome.
+	if try("POST", "/api/tasks", map[string]string{"Origin": "http://localhost:4770"}) != 200 {
+		t.Fatal("the same origin must pass")
+	}
+	if try("POST", "/api/tasks", map[string]string{"Sec-Fetch-Site": "same-origin"}) != 200 {
+		t.Fatal("a same-origin fetch must pass")
+	}
+	if try("POST", "/api/tasks", nil) != 200 {
+		t.Fatal("curl sends no browser fingerprint and must pass")
+	}
+	// Reads are not mutations; the SPA shell is not the API.
+	if try("GET", "/api/state", map[string]string{"Origin": "https://evil.example"}) != 200 {
+		t.Fatal("cross-origin reads stay CORS's problem, not ours")
+	}
+	if try("POST", "/not-api", map[string]string{"Origin": "https://evil.example"}) != 200 {
+		t.Fatal("only the api surface is guarded")
+	}
+}

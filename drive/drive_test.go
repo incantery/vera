@@ -3,6 +3,7 @@ package drive
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // scriptTurner hands out replies in order, forking the session id each
@@ -376,5 +378,73 @@ func TestRunFreshEscalatesOnTheFirstTurn(t *testing.T) {
 	}
 	if res.Root != "born-1" {
 		t.Fatalf("the newborn must still be on the record: %q", res.Root)
+	}
+}
+
+// failingTurner dies the same way every turn — the machinery test's
+// worker.
+type failingTurner struct{ err error }
+
+func (f *failingTurner) RunTurn(ctx context.Context, sessionID, prompt string) (Turn, error) {
+	return Turn{}, f.err
+}
+
+func TestHeadlessTimeoutIsHonestAndTransient(t *testing.T) {
+	bin := stubClaude(t, `sleep 5`)
+	h := &Headless{Bin: bin, Dir: t.TempDir(), Timeout: 100 * time.Millisecond}
+	_, err := h.RunTurn(context.Background(), "abc-123", "hi")
+	if err == nil || !strings.Contains(err.Error(), "was killed") {
+		t.Fatalf("the death must name the clock, not say 'signal: killed': %v", err)
+	}
+	if !IsTransient(err) {
+		t.Fatal("a timeout is machinery — it must wear the transient mark")
+	}
+}
+
+func TestLoopWrapKeepsTheTransientMark(t *testing.T) {
+	tr := &failingTurner{err: MarkTransient(errors.New("signal: killed"))}
+	_, err := (&Loop{Turner: tr, Judge: &scriptJudge{}}).Run(context.Background(), "orig", "goal")
+	if err == nil || !IsTransient(err) {
+		t.Fatalf("the loop's wrap must not strip the mark: %v", err)
+	}
+	tr = &failingTurner{err: errors.New("the goal is malformed")}
+	_, err = (&Loop{Turner: tr, Judge: &scriptJudge{}}).Run(context.Background(), "orig", "goal")
+	if err == nil || IsTransient(err) {
+		t.Fatalf("a plain failure must stay plain: %v", err)
+	}
+}
+
+func TestLLMWireFailuresAreTransientButBadRequestsAreNot(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+	m := &LLM{Client: srv.Client(), Base: srv.URL, Name: "test-model"}
+	_, err := m.Complete(context.Background(), []chatMsg{{Role: "user", Content: "hi"}})
+	if err == nil || !IsTransient(err) {
+		t.Fatalf("a 500 is the endpoint's problem — transient: %v", err)
+	}
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+	}))
+	defer srv2.Close()
+	m2 := &LLM{Client: srv2.Client(), Base: srv2.URL, Name: "test-model"}
+	_, err = m2.Complete(context.Background(), []chatMsg{{Role: "user", Content: "hi"}})
+	if err == nil || IsTransient(err) {
+		t.Fatalf("a 400 is our own request being wrong — retrying is laps: %v", err)
+	}
+}
+
+func TestHeadlessOwnerCancelIsFinalNotTransient(t *testing.T) {
+	bin := stubClaude(t, `sleep 5`)
+	h := &Headless{Bin: bin, Dir: t.TempDir(), Timeout: time.Minute}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(100 * time.Millisecond); cancel() }()
+	_, err := h.RunTurn(ctx, "abc-123", "hi")
+	if err == nil || !strings.Contains(err.Error(), "stopped") {
+		t.Fatalf("a cancel must say it was stopped: %v", err)
+	}
+	if IsTransient(err) {
+		t.Fatal("an owner's stop is final — recover must never resurrect it")
 	}
 }

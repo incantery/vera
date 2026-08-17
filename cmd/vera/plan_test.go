@@ -189,7 +189,7 @@ func TestExecuteRefusesAnAskWithItsQuestion(t *testing.T) {
 	}
 }
 
-func TestExecuteLaysStepCardsOnTheSameGround(t *testing.T) {
+func TestExecuteLaysTheGraphOnTheSameGround(t *testing.T) {
 	oldWorld := worldRoot
 	defer func() { worldRoot = oldWorld }()
 	worldRoot = t.TempDir()
@@ -201,31 +201,62 @@ func TestExecuteLaysStepCardsOnTheSameGround(t *testing.T) {
 	s.claudeBin = "false"
 
 	p := drive.Plan{Kind: "new", Home: "code", Name: "pipeline", Cadence: "once",
-		Goal:  "Build the collector.",
-		Steps: []string{"Build the summarizer.", "Wire the delivery."}}
+		Goal: "Build the collector.",
+		Nodes: []drive.PlanNode{
+			{Kind: "implement", Deps: []int{1}, Text: "Build the summarizer."},
+			{Kind: "review", Deps: []int{1, 2}, Text: "Read both and report problems."},
+			// A forward reference: piece 4 cannot wait on piece 5.
+			{Kind: "verify", Deps: []int{5}, Text: "Run the tests."},
+		}}
 	first, serr := s.executePlanCore(p, "", "", time.Now())
 	if serr != nil {
 		t.Fatal(serr.msg)
 	}
 	all := s.tasks.list()
-	if len(all) != 3 {
-		t.Fatalf("one driving card and two planned steps: %d cards", len(all))
+	if len(all) != 4 {
+		t.Fatalf("one driving card and three planned nodes: %d cards", len(all))
 	}
-	var steps int
+	byIntent := map[string]task{}
 	for _, tk := range all {
+		byIntent[tk.Intent] = tk
+		if tk.Root != first.ID {
+			t.Fatalf("every node of one plan shares the goal: %+v", tk)
+		}
 		if tk.ID == first.ID {
 			continue
 		}
-		steps++
 		if tk.Col != "inbox" || tk.Workspace != first.Workspace {
-			t.Fatalf("a step waits as backlog on the same ground: %+v", tk)
+			t.Fatalf("a node waits as backlog on the same ground: %+v", tk)
 		}
 		if tk.Log[0].Actor != "vera" {
 			t.Fatalf("the decomposition wears vera's name: %+v", tk.Log)
 		}
 	}
-	if steps != 2 {
-		t.Fatalf("both steps land: %d", steps)
+
+	impl := byIntent["Build the summarizer."]
+	if impl.Kind != kindImplement || len(impl.Deps) != 1 || impl.Deps[0] != first.ID {
+		t.Fatalf("piece 2 waits on the root: %+v", impl)
+	}
+	if impl.Mode != "work" || impl.Proposal == "" {
+		t.Fatalf("a writing node keeps its teeth and offers an early start: %+v", impl)
+	}
+
+	rev := byIntent["Read both and report problems."]
+	if len(rev.Deps) != 2 {
+		t.Fatalf("a review may wait on two pieces — the shape a chain could not hold: %+v", rev)
+	}
+	if rev.Mode != "read" {
+		t.Fatalf("a review is pinned read-only whatever the plan asked for: %+v", rev)
+	}
+	if rev.Proposal != "" {
+		t.Fatalf("vera opens read-only nodes herself; an offer would be noise: %+v", rev)
+	}
+
+	// A dependency pointing forward is dropped, and the node falls back
+	// to the root rather than becoming a card that waits on nothing.
+	ver := byIntent["Run the tests."]
+	if len(ver.Deps) != 1 || ver.Deps[0] != first.ID {
+		t.Fatalf("a forward dep is dropped and the node falls back to the root: %+v", ver)
 	}
 }
 

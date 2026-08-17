@@ -30,7 +30,8 @@ drift), or open the bare URL and type the key at the login screen.
 
 ## The board is the home screen
 
-One global kanban across every Claude Code session on the machine:
+One global kanban across every Claude Code session that is vera's
+business:
 
 - **inbox** — captured backlog, unassigned, nothing spent.
 - **in progress** — an agent is on it; the card wears the agent's live
@@ -39,10 +40,16 @@ One global kanban across every Claude Code session on the machine:
   escalated question with a reply box.
 - **done / dropped** — closed, with the reason on the record.
 
-Your live sessions appear automatically: a working, titled session is
-adopted as an in-progress card bearing its own title. The rail on the
-left lists every agent; click through for the chat surface (full
-history, digests, what-vera-sent provenance, /compact, costs).
+The board claims a session only when it can honestly say it's vera's:
+a session vera itself birthed or drove (lineage), a session a card
+assigns, or a session working on **registered ground** — a directory
+you bookmarked from the explorer, or a scratch workspace vera made.
+Everything else on the machine stays invisible to the board;
+bookmarking a repo is how its sessions opt in. On claimed ground a
+working, titled session is adopted as an in-progress card bearing its
+own title. The rail on the left lists every agent; click through for
+the chat surface (full history, digests, what-vera-sent provenance,
+/compact, costs).
 
 ## Your first task
 
@@ -86,6 +93,77 @@ ones vera creates itself, under `~/vera-scratch/`.)
    cap, or a 4-turn budget — each an honest card, never a silent stall.
 5. **Accept** — when the judge believes the goal is met, it proposes
    *Move to done*. Irreversible transitions are always yours.
+
+## The engine
+
+Vera keeps its own heartbeat: every fifteen seconds (and whenever the
+board moves) a tick reads the world once and a fixed roster of
+systems decides what should happen — game-engine style. What ships
+today:
+
+- **Reconcile** — a card claiming a run in flight after a vera
+  restart is folded back to waiting instead of hanging forever.
+- **Recover** — a run that died of *machinery* (a killed process, the
+  turn clock, the judge's endpoint flaking) is restarted
+  automatically: at most twice, with backoff, resuming from the
+  card's recorded exchanges. Judgment stops — escalations, spend
+  caps, real errors — are never retried; those are yours.
+- **Schedule** — `POST /api/schedule` with an intent, a workspace,
+  and a when (`at` RFC3339, `every` a duration like `"24h"`, or
+  both) and the due moment births a card and starts it, exactly like
+  an accepted chain step. `GET` lists, `DELETE /api/schedule/{id}`
+  removes.
+- **Steward** — the engine's one thinking pass: when the board has
+  actually changed (fingerprinted) and a cooldown has passed, the
+  vera agent reads the whole board — states, goals, the workers'
+  last words, log tails — and proposes at most three moves: *this
+  looks finished* (a done proposal), *start this next*, *here's the
+  answer* (a drafted reply to an escalated card, parked as a one-tap
+  "Send Vera's reply" — shown verbatim, never sent unseen, and never
+  drafted for authorization, destructive, or credential asks), or a
+  one-line note. A card newly entering "waiting on you" opens a
+  3-minute fast lane; a merely-changed board waits the full half
+  hour. Guarded server-side; it never closes anything, and one note
+  per card per day.
+- **Ignite** — read-mode self-start, the steward's acting half. A
+  START on a card that already names **registered ground** (a
+  bookmark or scratch workspace) queues it, and the ignite system
+  starts the drive itself — read mode only, so nothing can mutate;
+  the worst case is bounded spend, and each ignition counts against
+  the autonomy budget individually. Cards without named ground still
+  become proposals: picking ground is yours, and work mode (edits)
+  always is.
+- **Report** — the daily account of autonomy: once a day the engine
+  writes what happened — started, judged done, accepted, recovered,
+  steward moves, what it cost, and what waits on you — from the
+  records that already exist. `GET /api/report` serves the latest;
+  it also prints to vera's log.
+
+- **Driver** — the marathon tier. Start a card with an **autopilot
+  budget** (the `autopilot $` field beside the tool policy, or
+  `budgetUsd` on `POST /api/tasks/{id}/start`, capped at $200) and
+  vera drives it for hours by itself: every time a run stops on a
+  turn budget, a per-run spend cap, or a routine escalation, the
+  driver continues it — escalations get the standing answer "use
+  your best judgment and log open questions" — until the card's
+  metered spend meets your authorization. The budget is the only
+  human boundary; everything else stays honest: circling parks
+  (money does not fix a conversation going nowhere), machinery
+  errors go to recover, DONE is still a proposal only you accept,
+  and autopilot is **read-only by construction** — a budget big
+  enough to run unattended is never a budget for unattended edits.
+
+Standing needs are real now, too: accepting a standing card
+(`cadence: standing`, from a plan) closes that pass and lays the next
+one in the inbox — same intent, same ground, spending nothing until
+its moment comes.
+
+Autonomy has a ceiling: at most `--autonomy` spending actions per
+hour (default 6; `0` turns recovery and scheduled starts off), and a
+card's log records everything the engine did — including what it
+*wanted* to do when the budget was spent. Acceptance boundaries are
+untouched: the engine accelerates everything between your decisions,
+never through them.
 
 ## Costs, honestly
 

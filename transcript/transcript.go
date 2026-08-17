@@ -93,6 +93,11 @@ type Session struct {
 	// is in flight or just finished); history once the turn ends.
 	ToolName   string
 	ToolDetail string
+
+	// Recovered: the scan missed this session (the cap was full or the
+	// file aged past the window) and it was looked up by id instead.
+	// The disk never lost it; the flag says the list almost did.
+	Recovered bool
 }
 
 // CtxPct renders occupancy as a percent of the model's window; -1 when
@@ -304,6 +309,57 @@ func (sc *Scanner) Scan(now time.Time) []Session {
 		out = out[:sc.Max]
 	}
 	return out
+}
+
+// Find locates one session by id alone — no Window, no Max, no Skip.
+// The cap exists so a flood cannot drown the list, but a flood must
+// not disappear an agent someone is engaged with: the transcript is
+// still on disk, and a caller who names the id deserves its real
+// state. Returns nil when no project directory holds the file.
+func (sc *Scanner) Find(id string, now time.Time) *Session {
+	if !filenameID(id) {
+		return nil
+	}
+	projects, err := os.ReadDir(sc.Dir)
+	if err != nil {
+		return nil
+	}
+	for _, p := range projects {
+		if !p.IsDir() {
+			continue
+		}
+		path := filepath.Join(sc.Dir, p.Name(), id+".jsonl")
+		info, err := os.Stat(path)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		s := parseTail(path, info.ModTime(), now, sc.Idle, sc.Quiet)
+		s.ID = id
+		s.Recovered = true
+		if s.Title == "" {
+			s.Title = fallbackTitle(s.Cwd, p.Name(), s.ID)
+		}
+		return &s
+	}
+	return nil
+}
+
+// filenameID: the charset a transcript filename can carry, nonempty.
+// An id holding a path separator is not a session, it is an escape
+// attempt — refused before it ever touches a path.
+func filenameID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func sortSessions(out []Session) {

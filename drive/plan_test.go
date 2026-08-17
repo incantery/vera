@@ -111,9 +111,48 @@ func TestPlanAskIsAKind(t *testing.T) {
 	}
 }
 
-func TestPlanStepsSalvageAndCap(t *testing.T) {
-	p := salvagePlan("KIND: new\nHOME: code\nNAME: pipeline\nCADENCE: once\nGOAL: Build the collector.\nSTEP: Build the summarizer over the collector's output.\nSTEP: Wire a morning delivery.\nSTEP: three\nSTEP: four is past the cap\nWHY: several honest pieces.")
-	if len(p.Steps) != 3 || p.Steps[0] != "Build the summarizer over the collector's output." {
-		t.Fatalf("steps in order, capped at three: %v", p.Steps)
+func TestPlanNodesSalvageTheGraph(t *testing.T) {
+	p := salvagePlan("KIND: new\nHOME: code\nNAME: pipeline\nCADENCE: once\n" +
+		"GOAL: Build the collector.\n" +
+		"NODE: implement | 1 | Build the summarizer over the collector's output.\n" +
+		"NODE: review | 1, 2 | Read both pieces and report what is wrong.\n" +
+		"NODE: verify | 2 | Run the tests.\n" +
+		"WHY: several honest pieces.")
+	if len(p.Nodes) != 3 {
+		t.Fatalf("three nodes: %+v", p.Nodes)
+	}
+	if p.Nodes[0].Kind != "implement" || p.Nodes[0].Text != "Build the summarizer over the collector's output." {
+		t.Fatalf("kind and instruction survive the split: %+v", p.Nodes[0])
+	}
+	// The shape a chain could not carry: one node waiting on two.
+	if len(p.Nodes[1].Deps) != 2 || p.Nodes[1].Deps[0] != 1 || p.Nodes[1].Deps[1] != 2 {
+		t.Fatalf("a node may wait on several: %+v", p.Nodes[1])
+	}
+	// Two nodes hanging off the same piece is what lets them run beside
+	// each other — the whole reason the line became a graph.
+	if len(p.Nodes[2].Deps) != 1 || p.Nodes[2].Deps[0] != 2 {
+		t.Fatalf("verify waits on piece 2: %+v", p.Nodes[2])
+	}
+}
+
+func TestPlanNodesSalvageTakesWhatCame(t *testing.T) {
+	p := salvagePlan("KIND: repo\nWHERE: /tmp/x\nGOAL: Do it.\n" +
+		"NODE: nonsense | - | A piece with a kind nobody defined.\n" +
+		"NODE: review | not-a-number, 1 | Read it.\n" +
+		"NODE: implement | 1 |   \n" +
+		"NODE: missing the pipes entirely\n" +
+		"NODE: verify | 1 | Run the tests.\n" +
+		"NODE: review | 1 | One past the cap.\n" +
+		"NODE: review | 1 | Two past the cap.\n")
+	// An unusable kind is an implementation — what every piece was
+	// before kinds existed — and a node with no instruction is nothing.
+	if len(p.Nodes) != 4 {
+		t.Fatalf("capped at four, empties and malformed lines dropped: %+v", p.Nodes)
+	}
+	if p.Nodes[0].Kind != "implement" {
+		t.Fatalf("an unknown kind falls back to implement: %+v", p.Nodes[0])
+	}
+	if len(p.Nodes[1].Deps) != 1 || p.Nodes[1].Deps[0] != 1 {
+		t.Fatalf("an unparseable dep is dropped, the rest survive: %+v", p.Nodes[1])
 	}
 }

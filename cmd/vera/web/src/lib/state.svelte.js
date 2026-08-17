@@ -31,13 +31,15 @@ export function setKey(k) {
 	}
 }
 
-// checkAuth probes /api/auth with the current key and names the
-// outcome: 'ok' (door open), 'denied' (wrong or missing key), 'down'
-// (vera not answering). Plain fetch, not api() — a login attempt
-// that fails must report, not redirect.
-export async function checkAuth() {
+// checkAuth probes /api/auth and names the outcome: 'ok' (door
+// open), 'denied' (wrong or missing key), 'down' (vera not
+// answering). Plain fetch, not api() — a login attempt that fails
+// must report, not redirect. A candidate key can be tried without
+// touching the stash, so a typo never destroys a working key.
+export async function checkAuth(candidate) {
+	const k = candidate ?? apiKey;
 	try {
-		const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+		const headers = k ? { Authorization: `Bearer ${k}` } : {};
 		const r = await fetch('/api/auth', { headers });
 		return r.ok ? 'ok' : r.status === 401 ? 'denied' : 'down';
 	} catch {
@@ -48,6 +50,9 @@ export async function checkAuth() {
 export function api(path, opts = {}) {
 	const headers = { ...(opts.headers ?? {}) };
 	if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+	// Bodies are always JSON here; saying so keeps the request
+	// non-simple, which is one more thing a cross-site form can't fake.
+	if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
 	return fetch(path, { ...opts, headers }).then((r) => {
 		// A 401 mid-session means the key changed under us — every
 		// road leads back to the login screen, which returns you here.
@@ -212,9 +217,10 @@ export async function uploadImage(id, blob) {
 
 // uploadUrl: <img> tags cannot send a Bearer header, so the key (when
 // one guards the door) rides the query string the server also honors.
+// The in-memory key, not the stash — a storage-refusing browser whose
+// API calls work should see its images too.
 export function uploadUrl(id, name) {
-	const key = typeof localStorage !== 'undefined' ? (localStorage.getItem('vera-key') ?? '') : '';
-	return `/api/agent/${id}/uploads/${name}${key ? `?key=${encodeURIComponent(key)}` : ''}`;
+	return `/api/agent/${id}/uploads/${name}${apiKey ? `?key=${encodeURIComponent(apiKey)}` : ''}`;
 }
 
 // imageParts splits a message into its text and the attachment names
@@ -258,6 +264,9 @@ export function boardFrame(f) {
 			pinned: t.pinned || undefined,
 			proposal: t.proposal || undefined, proposalWhy: t.proposalWhy || undefined,
 			proposalKind: t.proposalKind || undefined,
+			proposalText: t.proposalText || undefined,
+			autoStart: t.autoStart || undefined,
+			budgetUsd: t.budgetUsd || undefined,
 			costUsd: t.costUsd || undefined,
 			runs: t.runs?.length ? t.runs.map((r) => ({ kind: r.kind, outcome: r.outcome, costUsd: r.costUsd })) : undefined,
 			workspace: t.workspace || undefined, scratchName: t.scratchName || undefined,
@@ -270,7 +279,11 @@ export function boardFrame(f) {
 		})),
 		inflight: f.inflight, spend: f.spend, notice: f.notice,
 		fleet: { agents: f.fleet?.agents ?? 0, working: f.fleet?.working ?? 0 },
-		repos: (f.repos ?? []).map((r) => ({ dir: r.dir, cwd: r.cwd, ...(r.scratch ? { scratch: 'yes' } : {}) })),
+		repos: (f.repos ?? []).map((r) => ({
+			dir: r.dir, cwd: r.cwd,
+			...(r.scratch ? { scratch: 'yes' } : {}),
+			...(r.bookmark ? { bookmark: 'yes' } : {})
+		})),
 		sessions: (f.sessions ?? []).map((s) => ({
 			id: s.id, title: s.title, state: s.state, dir: s.dir, cwd: s.cwd,
 			branch: s.branch || undefined, prompt: s.prompt || undefined,

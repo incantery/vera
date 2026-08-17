@@ -1424,6 +1424,7 @@ type Repo struct {
 	Dir           string                 `protobuf:"bytes,1,opt,name=dir,proto3" json:"dir,omitempty"`
 	Cwd           string                 `protobuf:"bytes,2,opt,name=cwd,proto3" json:"cwd,omitempty"`
 	Scratch       bool                   `protobuf:"varint,3,opt,name=scratch,proto3" json:"scratch,omitempty"`
+	Bookmark      bool                   `protobuf:"varint,4,opt,name=bookmark,proto3" json:"bookmark,omitempty"` // registered ground: the durable offer
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1475,6 +1476,13 @@ func (x *Repo) GetCwd() string {
 func (x *Repo) GetScratch() bool {
 	if x != nil {
 		return x.Scratch
+	}
+	return false
+}
+
+func (x *Repo) GetBookmark() bool {
+	if x != nil {
+		return x.Bookmark
 	}
 	return false
 }
@@ -1777,6 +1785,11 @@ type BoardTask struct {
 	Live          *TaskLive              `protobuf:"bytes,24,opt,name=live,proto3" json:"live,omitempty"`         // absent for backlog and closed cards
 	Cadence       string                 `protobuf:"bytes,25,opt,name=cadence,proto3" json:"cadence,omitempty"`   // "" | "once" | "standing" — from the plan the card was born from
 	Deadline      string                 `protobuf:"bytes,26,opt,name=deadline,proto3" json:"deadline,omitempty"` // YYYY-MM-DD, only if the ask named one
+	// The drafted reply a "reply" proposal carries — shown verbatim
+	// before the tap; a send button without this text is a lie.
+	ProposalText  string  `protobuf:"bytes,27,opt,name=proposal_text,json=proposalText,proto3" json:"proposal_text,omitempty"`
+	AutoStart     string  `protobuf:"bytes,28,opt,name=auto_start,json=autoStart,proto3" json:"auto_start,omitempty"`   // "read" when the steward queued a self-start; the veto card reads it
+	BudgetUsd     float64 `protobuf:"fixed64,29,opt,name=budget_usd,json=budgetUsd,proto3" json:"budget_usd,omitempty"` // the autopilot authorization; 0 = not a marathon card
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1991,6 +2004,27 @@ func (x *BoardTask) GetDeadline() string {
 		return x.Deadline
 	}
 	return ""
+}
+
+func (x *BoardTask) GetProposalText() string {
+	if x != nil {
+		return x.ProposalText
+	}
+	return ""
+}
+
+func (x *BoardTask) GetAutoStart() string {
+	if x != nil {
+		return x.AutoStart
+	}
+	return ""
+}
+
+func (x *BoardTask) GetBudgetUsd() float64 {
+	if x != nil {
+		return x.BudgetUsd
+	}
+	return 0
 }
 
 type TaskRun struct {
@@ -2773,17 +2807,22 @@ func (x *PlanRequest) GetText() string {
 }
 
 type PlanShape struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`         // repo | new | ask | none
-	Where         string                 `protobuf:"bytes,2,opt,name=where,proto3" json:"where,omitempty"`       // kind repo: the offered workspace path
-	Home          string                 `protobuf:"bytes,3,opt,name=home,proto3" json:"home,omitempty"`         // kind new: code | life
-	Name          string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`         // kind new: the workspace directory name
-	Cadence       string                 `protobuf:"bytes,5,opt,name=cadence,proto3" json:"cadence,omitempty"`   // once | standing
-	Deadline      string                 `protobuf:"bytes,6,opt,name=deadline,proto3" json:"deadline,omitempty"` // YYYY-MM-DD, only if the ask named one
-	Goal          string                 `protobuf:"bytes,7,opt,name=goal,proto3" json:"goal,omitempty"`         // the instruction the worker would be handed
-	Why           string                 `protobuf:"bytes,8,opt,name=why,proto3" json:"why,omitempty"`           // one line the owner reads to judge the plan
-	Question      string                 `protobuf:"bytes,9,opt,name=question,proto3" json:"question,omitempty"` // kind ask: the one missing fact
-	Steps         []string               `protobuf:"bytes,10,rep,name=steps,proto3" json:"steps,omitempty"`      // later pieces, when the work is honestly several
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Kind     string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`         // repo | new | ask | none
+	Where    string                 `protobuf:"bytes,2,opt,name=where,proto3" json:"where,omitempty"`       // kind repo: the offered workspace path
+	Home     string                 `protobuf:"bytes,3,opt,name=home,proto3" json:"home,omitempty"`         // kind new: code | life
+	Name     string                 `protobuf:"bytes,4,opt,name=name,proto3" json:"name,omitempty"`         // kind new: the workspace directory name
+	Cadence  string                 `protobuf:"bytes,5,opt,name=cadence,proto3" json:"cadence,omitempty"`   // once | standing
+	Deadline string                 `protobuf:"bytes,6,opt,name=deadline,proto3" json:"deadline,omitempty"` // YYYY-MM-DD, only if the ask named one
+	Goal     string                 `protobuf:"bytes,7,opt,name=goal,proto3" json:"goal,omitempty"`         // the instruction the worker would be handed
+	Why      string                 `protobuf:"bytes,8,opt,name=why,proto3" json:"why,omitempty"`           // one line the owner reads to judge the plan
+	Question string                 `protobuf:"bytes,9,opt,name=question,proto3" json:"question,omitempty"` // kind ask: the one missing fact
+	// The later pieces, when the work is honestly several — a graph, not
+	// a line: each node names what it waits on, so reviews and
+	// verifications can hang off the same piece and run beside each
+	// other. Field 10 was a flat repeated string; the shape it could not
+	// express is the reason it changed.
+	Nodes         []*PlanNode `protobuf:"bytes,11,rep,name=nodes,proto3" json:"nodes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2881,11 +2920,74 @@ func (x *PlanShape) GetQuestion() string {
 	return ""
 }
 
-func (x *PlanShape) GetSteps() []string {
+func (x *PlanShape) GetNodes() []*PlanNode {
 	if x != nil {
-		return x.Steps
+		return x.Nodes
 	}
 	return nil
+}
+
+// PlanNode is one piece of the work graph. Deps are 1-based piece
+// numbers — piece 1 is always the goal — resolved to card ids when the
+// plan is laid down.
+type PlanNode struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Kind          string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"` // implement | investigate | review | verify
+	Deps          []int32                `protobuf:"varint,2,rep,packed,name=deps,proto3" json:"deps,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"` // the self-contained instruction
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlanNode) Reset() {
+	*x = PlanNode{}
+	mi := &file_vera_v1_vera_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlanNode) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlanNode) ProtoMessage() {}
+
+func (x *PlanNode) ProtoReflect() protoreflect.Message {
+	mi := &file_vera_v1_vera_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlanNode.ProtoReflect.Descriptor instead.
+func (*PlanNode) Descriptor() ([]byte, []int) {
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *PlanNode) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *PlanNode) GetDeps() []int32 {
+	if x != nil {
+		return x.Deps
+	}
+	return nil
+}
+
+func (x *PlanNode) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
 }
 
 type PlanResponse struct {
@@ -2898,7 +3000,7 @@ type PlanResponse struct {
 
 func (x *PlanResponse) Reset() {
 	*x = PlanResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[38]
+	mi := &file_vera_v1_vera_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2910,7 +3012,7 @@ func (x *PlanResponse) String() string {
 func (*PlanResponse) ProtoMessage() {}
 
 func (x *PlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[38]
+	mi := &file_vera_v1_vera_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2923,7 +3025,7 @@ func (x *PlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanResponse.ProtoReflect.Descriptor instead.
 func (*PlanResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{38}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *PlanResponse) GetId() string {
@@ -2951,7 +3053,7 @@ type ExecutePlanRequest struct {
 
 func (x *ExecutePlanRequest) Reset() {
 	*x = ExecutePlanRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[39]
+	mi := &file_vera_v1_vera_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2963,7 +3065,7 @@ func (x *ExecutePlanRequest) String() string {
 func (*ExecutePlanRequest) ProtoMessage() {}
 
 func (x *ExecutePlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[39]
+	mi := &file_vera_v1_vera_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2976,7 +3078,7 @@ func (x *ExecutePlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutePlanRequest.ProtoReflect.Descriptor instead.
 func (*ExecutePlanRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{39}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ExecutePlanRequest) GetId() string {
@@ -3010,7 +3112,7 @@ type ExecutePlanResponse struct {
 
 func (x *ExecutePlanResponse) Reset() {
 	*x = ExecutePlanResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[40]
+	mi := &file_vera_v1_vera_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3022,7 +3124,7 @@ func (x *ExecutePlanResponse) String() string {
 func (*ExecutePlanResponse) ProtoMessage() {}
 
 func (x *ExecutePlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[40]
+	mi := &file_vera_v1_vera_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3035,7 +3137,7 @@ func (x *ExecutePlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutePlanResponse.ProtoReflect.Descriptor instead.
 func (*ExecutePlanResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{40}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ExecutePlanResponse) GetTaskId() string {
@@ -3065,7 +3167,7 @@ type BrowseRequest struct {
 
 func (x *BrowseRequest) Reset() {
 	*x = BrowseRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[41]
+	mi := &file_vera_v1_vera_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3077,7 +3179,7 @@ func (x *BrowseRequest) String() string {
 func (*BrowseRequest) ProtoMessage() {}
 
 func (x *BrowseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[41]
+	mi := &file_vera_v1_vera_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3090,7 +3192,7 @@ func (x *BrowseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrowseRequest.ProtoReflect.Descriptor instead.
 func (*BrowseRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{41}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *BrowseRequest) GetPath() string {
@@ -3112,7 +3214,7 @@ type DirEntry struct {
 
 func (x *DirEntry) Reset() {
 	*x = DirEntry{}
-	mi := &file_vera_v1_vera_proto_msgTypes[42]
+	mi := &file_vera_v1_vera_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3124,7 +3226,7 @@ func (x *DirEntry) String() string {
 func (*DirEntry) ProtoMessage() {}
 
 func (x *DirEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[42]
+	mi := &file_vera_v1_vera_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3137,7 +3239,7 @@ func (x *DirEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirEntry.ProtoReflect.Descriptor instead.
 func (*DirEntry) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{42}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *DirEntry) GetName() string {
@@ -3183,7 +3285,7 @@ type BrowseResponse struct {
 
 func (x *BrowseResponse) Reset() {
 	*x = BrowseResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[43]
+	mi := &file_vera_v1_vera_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3195,7 +3297,7 @@ func (x *BrowseResponse) String() string {
 func (*BrowseResponse) ProtoMessage() {}
 
 func (x *BrowseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[43]
+	mi := &file_vera_v1_vera_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3208,7 +3310,7 @@ func (x *BrowseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BrowseResponse.ProtoReflect.Descriptor instead.
 func (*BrowseResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{43}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *BrowseResponse) GetRoot() string {
@@ -3274,7 +3376,7 @@ type Bookmark struct {
 
 func (x *Bookmark) Reset() {
 	*x = Bookmark{}
-	mi := &file_vera_v1_vera_proto_msgTypes[44]
+	mi := &file_vera_v1_vera_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3286,7 +3388,7 @@ func (x *Bookmark) String() string {
 func (*Bookmark) ProtoMessage() {}
 
 func (x *Bookmark) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[44]
+	mi := &file_vera_v1_vera_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3299,7 +3401,7 @@ func (x *Bookmark) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Bookmark.ProtoReflect.Descriptor instead.
 func (*Bookmark) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{44}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *Bookmark) GetName() string {
@@ -3333,7 +3435,7 @@ type BookmarkRequest struct {
 
 func (x *BookmarkRequest) Reset() {
 	*x = BookmarkRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[45]
+	mi := &file_vera_v1_vera_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3345,7 +3447,7 @@ func (x *BookmarkRequest) String() string {
 func (*BookmarkRequest) ProtoMessage() {}
 
 func (x *BookmarkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[45]
+	mi := &file_vera_v1_vera_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3358,7 +3460,7 @@ func (x *BookmarkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BookmarkRequest.ProtoReflect.Descriptor instead.
 func (*BookmarkRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{45}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *BookmarkRequest) GetBookmark() *Bookmark {
@@ -3383,7 +3485,7 @@ type BookmarkResponse struct {
 
 func (x *BookmarkResponse) Reset() {
 	*x = BookmarkResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[46]
+	mi := &file_vera_v1_vera_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3395,7 +3497,7 @@ func (x *BookmarkResponse) String() string {
 func (*BookmarkResponse) ProtoMessage() {}
 
 func (x *BookmarkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[46]
+	mi := &file_vera_v1_vera_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3408,7 +3510,7 @@ func (x *BookmarkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BookmarkResponse.ProtoReflect.Descriptor instead.
 func (*BookmarkResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{46}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{47}
 }
 
 type StartSessionRequest struct {
@@ -3422,7 +3524,7 @@ type StartSessionRequest struct {
 
 func (x *StartSessionRequest) Reset() {
 	*x = StartSessionRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[47]
+	mi := &file_vera_v1_vera_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3434,7 +3536,7 @@ func (x *StartSessionRequest) String() string {
 func (*StartSessionRequest) ProtoMessage() {}
 
 func (x *StartSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[47]
+	mi := &file_vera_v1_vera_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3447,7 +3549,7 @@ func (x *StartSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSessionRequest.ProtoReflect.Descriptor instead.
 func (*StartSessionRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{47}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *StartSessionRequest) GetCwd() string {
@@ -3480,7 +3582,7 @@ type StartSessionResponse struct {
 
 func (x *StartSessionResponse) Reset() {
 	*x = StartSessionResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[48]
+	mi := &file_vera_v1_vera_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3492,7 +3594,7 @@ func (x *StartSessionResponse) String() string {
 func (*StartSessionResponse) ProtoMessage() {}
 
 func (x *StartSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[48]
+	mi := &file_vera_v1_vera_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3505,7 +3607,7 @@ func (x *StartSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSessionResponse.ProtoReflect.Descriptor instead.
 func (*StartSessionResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{48}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *StartSessionResponse) GetBirthId() string {
@@ -3524,7 +3626,7 @@ type BirthRequest struct {
 
 func (x *BirthRequest) Reset() {
 	*x = BirthRequest{}
-	mi := &file_vera_v1_vera_proto_msgTypes[49]
+	mi := &file_vera_v1_vera_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3536,7 +3638,7 @@ func (x *BirthRequest) String() string {
 func (*BirthRequest) ProtoMessage() {}
 
 func (x *BirthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[49]
+	mi := &file_vera_v1_vera_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3549,7 +3651,7 @@ func (x *BirthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BirthRequest.ProtoReflect.Descriptor instead.
 func (*BirthRequest) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{49}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *BirthRequest) GetId() string {
@@ -3570,7 +3672,7 @@ type BirthResponse struct {
 
 func (x *BirthResponse) Reset() {
 	*x = BirthResponse{}
-	mi := &file_vera_v1_vera_proto_msgTypes[50]
+	mi := &file_vera_v1_vera_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3582,7 +3684,7 @@ func (x *BirthResponse) String() string {
 func (*BirthResponse) ProtoMessage() {}
 
 func (x *BirthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_vera_v1_vera_proto_msgTypes[50]
+	mi := &file_vera_v1_vera_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3595,7 +3697,7 @@ func (x *BirthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BirthResponse.ProtoReflect.Descriptor instead.
 func (*BirthResponse) Descriptor() ([]byte, []int) {
-	return file_vera_v1_vera_proto_rawDescGZIP(), []int{50}
+	return file_vera_v1_vera_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *BirthResponse) GetStatus() string {
@@ -3736,11 +3838,12 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x05usage\x18\t \x01(\v2\x0e.vera.v1.UsageR\x05usage\"9\n" +
 	"\x05Fleet\x12\x16\n" +
 	"\x06agents\x18\x01 \x01(\x05R\x06agents\x12\x18\n" +
-	"\aworking\x18\x02 \x01(\x05R\aworking\"D\n" +
+	"\aworking\x18\x02 \x01(\x05R\aworking\"`\n" +
 	"\x04Repo\x12\x10\n" +
 	"\x03dir\x18\x01 \x01(\tR\x03dir\x12\x10\n" +
 	"\x03cwd\x18\x02 \x01(\tR\x03cwd\x12\x18\n" +
-	"\ascratch\x18\x03 \x01(\bR\ascratch\"\xf4\x02\n" +
+	"\ascratch\x18\x03 \x01(\bR\ascratch\x12\x1a\n" +
+	"\bbookmark\x18\x04 \x01(\bR\bbookmark\"\xf4\x02\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x14\n" +
@@ -3770,7 +3873,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x0fweek_all_resets\x18\x05 \x01(\tR\rweekAllResets\x12&\n" +
 	"\x0fweek_model_name\x18\x06 \x01(\tR\rweekModelName\x12$\n" +
 	"\x0eweek_model_pct\x18\a \x01(\x05R\fweekModelPct\x12*\n" +
-	"\x11week_model_resets\x18\b \x01(\tR\x0fweekModelResets\"\xf6\x05\n" +
+	"\x11week_model_resets\x18\b \x01(\tR\x0fweekModelResets\"\xd9\x06\n" +
 	"\tBoardTask\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x16\n" +
@@ -3799,7 +3902,12 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x0fupdated_unix_ms\x18\x17 \x01(\x03R\rupdatedUnixMs\x12%\n" +
 	"\x04live\x18\x18 \x01(\v2\x11.vera.v1.TaskLiveR\x04live\x12\x18\n" +
 	"\acadence\x18\x19 \x01(\tR\acadence\x12\x1a\n" +
-	"\bdeadline\x18\x1a \x01(\tR\bdeadline\"R\n" +
+	"\bdeadline\x18\x1a \x01(\tR\bdeadline\x12#\n" +
+	"\rproposal_text\x18\x1b \x01(\tR\fproposalText\x12\x1d\n" +
+	"\n" +
+	"auto_start\x18\x1c \x01(\tR\tautoStart\x12\x1d\n" +
+	"\n" +
+	"budget_usd\x18\x1d \x01(\x01R\tbudgetUsd\"R\n" +
 	"\aTaskRun\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x18\n" +
 	"\aoutcome\x18\x02 \x01(\tR\aoutcome\x12\x19\n" +
@@ -3848,7 +3956,7 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\x03now\x18\x02 \x01(\tR\x03now\x12\x18\n" +
 	"\areplies\x18\x03 \x03(\tR\areplies\"!\n" +
 	"\vPlanRequest\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\xeb\x01\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xfe\x01\n" +
 	"\tPlanShape\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05where\x18\x02 \x01(\tR\x05where\x12\x12\n" +
@@ -3858,9 +3966,12 @@ const file_vera_v1_vera_proto_rawDesc = "" +
 	"\bdeadline\x18\x06 \x01(\tR\bdeadline\x12\x12\n" +
 	"\x04goal\x18\a \x01(\tR\x04goal\x12\x10\n" +
 	"\x03why\x18\b \x01(\tR\x03why\x12\x1a\n" +
-	"\bquestion\x18\t \x01(\tR\bquestion\x12\x14\n" +
-	"\x05steps\x18\n" +
-	" \x03(\tR\x05steps\"F\n" +
+	"\bquestion\x18\t \x01(\tR\bquestion\x12'\n" +
+	"\x05nodes\x18\v \x03(\v2\x11.vera.v1.PlanNodeR\x05nodes\"F\n" +
+	"\bPlanNode\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
+	"\x04deps\x18\x02 \x03(\x05R\x04deps\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\"F\n" +
 	"\fPlanResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12&\n" +
 	"\x04plan\x18\x02 \x01(\v2\x12.vera.v1.PlanShapeR\x04plan\"`\n" +
@@ -3936,7 +4047,7 @@ func file_vera_v1_vera_proto_rawDescGZIP() []byte {
 	return file_vera_v1_vera_proto_rawDescData
 }
 
-var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
+var file_vera_v1_vera_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_vera_v1_vera_proto_goTypes = []any{
 	(*WatchAgentRequest)(nil),    // 0: vera.v1.WatchAgentRequest
 	(*WatchAgentResponse)(nil),   // 1: vera.v1.WatchAgentResponse
@@ -3976,19 +4087,20 @@ var file_vera_v1_vera_proto_goTypes = []any{
 	(*SuggestResponse)(nil),      // 35: vera.v1.SuggestResponse
 	(*PlanRequest)(nil),          // 36: vera.v1.PlanRequest
 	(*PlanShape)(nil),            // 37: vera.v1.PlanShape
-	(*PlanResponse)(nil),         // 38: vera.v1.PlanResponse
-	(*ExecutePlanRequest)(nil),   // 39: vera.v1.ExecutePlanRequest
-	(*ExecutePlanResponse)(nil),  // 40: vera.v1.ExecutePlanResponse
-	(*BrowseRequest)(nil),        // 41: vera.v1.BrowseRequest
-	(*DirEntry)(nil),             // 42: vera.v1.DirEntry
-	(*BrowseResponse)(nil),       // 43: vera.v1.BrowseResponse
-	(*Bookmark)(nil),             // 44: vera.v1.Bookmark
-	(*BookmarkRequest)(nil),      // 45: vera.v1.BookmarkRequest
-	(*BookmarkResponse)(nil),     // 46: vera.v1.BookmarkResponse
-	(*StartSessionRequest)(nil),  // 47: vera.v1.StartSessionRequest
-	(*StartSessionResponse)(nil), // 48: vera.v1.StartSessionResponse
-	(*BirthRequest)(nil),         // 49: vera.v1.BirthRequest
-	(*BirthResponse)(nil),        // 50: vera.v1.BirthResponse
+	(*PlanNode)(nil),             // 38: vera.v1.PlanNode
+	(*PlanResponse)(nil),         // 39: vera.v1.PlanResponse
+	(*ExecutePlanRequest)(nil),   // 40: vera.v1.ExecutePlanRequest
+	(*ExecutePlanResponse)(nil),  // 41: vera.v1.ExecutePlanResponse
+	(*BrowseRequest)(nil),        // 42: vera.v1.BrowseRequest
+	(*DirEntry)(nil),             // 43: vera.v1.DirEntry
+	(*BrowseResponse)(nil),       // 44: vera.v1.BrowseResponse
+	(*Bookmark)(nil),             // 45: vera.v1.Bookmark
+	(*BookmarkRequest)(nil),      // 46: vera.v1.BookmarkRequest
+	(*BookmarkResponse)(nil),     // 47: vera.v1.BookmarkResponse
+	(*StartSessionRequest)(nil),  // 48: vera.v1.StartSessionRequest
+	(*StartSessionResponse)(nil), // 49: vera.v1.StartSessionResponse
+	(*BirthRequest)(nil),         // 50: vera.v1.BirthRequest
+	(*BirthResponse)(nil),        // 51: vera.v1.BirthResponse
 }
 var file_vera_v1_vera_proto_depIdxs = []int32{
 	2,  // 0: vera.v1.WatchAgentResponse.agent:type_name -> vera.v1.Agent
@@ -4011,44 +4123,45 @@ var file_vera_v1_vera_proto_depIdxs = []int32{
 	25, // 17: vera.v1.BoardTask.exchanges:type_name -> vera.v1.Exchange
 	26, // 18: vera.v1.BoardTask.live:type_name -> vera.v1.TaskLive
 	28, // 19: vera.v1.ReviewResponse.files:type_name -> vera.v1.ReviewFile
-	37, // 20: vera.v1.PlanResponse.plan:type_name -> vera.v1.PlanShape
-	37, // 21: vera.v1.ExecutePlanRequest.plan:type_name -> vera.v1.PlanShape
-	42, // 22: vera.v1.BrowseResponse.dirs:type_name -> vera.v1.DirEntry
-	44, // 23: vera.v1.BrowseResponse.bookmarks:type_name -> vera.v1.Bookmark
-	44, // 24: vera.v1.BookmarkRequest.bookmark:type_name -> vera.v1.Bookmark
-	0,  // 25: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
-	12, // 26: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
-	14, // 27: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
-	16, // 28: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
-	27, // 29: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
-	30, // 30: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
-	32, // 31: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
-	34, // 32: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
-	36, // 33: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
-	39, // 34: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
-	41, // 35: vera.v1.VeraService.Browse:input_type -> vera.v1.BrowseRequest
-	47, // 36: vera.v1.VeraService.StartSession:input_type -> vera.v1.StartSessionRequest
-	49, // 37: vera.v1.VeraService.Birth:input_type -> vera.v1.BirthRequest
-	45, // 38: vera.v1.VeraService.SetBookmark:input_type -> vera.v1.BookmarkRequest
-	1,  // 39: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
-	13, // 40: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
-	15, // 41: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
-	17, // 42: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
-	29, // 43: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
-	31, // 44: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
-	33, // 45: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
-	35, // 46: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
-	38, // 47: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
-	40, // 48: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
-	43, // 49: vera.v1.VeraService.Browse:output_type -> vera.v1.BrowseResponse
-	48, // 50: vera.v1.VeraService.StartSession:output_type -> vera.v1.StartSessionResponse
-	50, // 51: vera.v1.VeraService.Birth:output_type -> vera.v1.BirthResponse
-	46, // 52: vera.v1.VeraService.SetBookmark:output_type -> vera.v1.BookmarkResponse
-	39, // [39:53] is the sub-list for method output_type
-	25, // [25:39] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	38, // 20: vera.v1.PlanShape.nodes:type_name -> vera.v1.PlanNode
+	37, // 21: vera.v1.PlanResponse.plan:type_name -> vera.v1.PlanShape
+	37, // 22: vera.v1.ExecutePlanRequest.plan:type_name -> vera.v1.PlanShape
+	43, // 23: vera.v1.BrowseResponse.dirs:type_name -> vera.v1.DirEntry
+	45, // 24: vera.v1.BrowseResponse.bookmarks:type_name -> vera.v1.Bookmark
+	45, // 25: vera.v1.BookmarkRequest.bookmark:type_name -> vera.v1.Bookmark
+	0,  // 26: vera.v1.VeraService.WatchAgent:input_type -> vera.v1.WatchAgentRequest
+	12, // 27: vera.v1.VeraService.Say:input_type -> vera.v1.SayRequest
+	14, // 28: vera.v1.VeraService.Interrupt:input_type -> vera.v1.InterruptRequest
+	16, // 29: vera.v1.VeraService.WatchBoard:input_type -> vera.v1.WatchBoardRequest
+	27, // 30: vera.v1.VeraService.Review:input_type -> vera.v1.ReviewRequest
+	30, // 31: vera.v1.VeraService.Commit:input_type -> vera.v1.CommitRequest
+	32, // 32: vera.v1.VeraService.Discard:input_type -> vera.v1.DiscardRequest
+	34, // 33: vera.v1.VeraService.Suggest:input_type -> vera.v1.SuggestRequest
+	36, // 34: vera.v1.VeraService.Plan:input_type -> vera.v1.PlanRequest
+	40, // 35: vera.v1.VeraService.ExecutePlan:input_type -> vera.v1.ExecutePlanRequest
+	42, // 36: vera.v1.VeraService.Browse:input_type -> vera.v1.BrowseRequest
+	48, // 37: vera.v1.VeraService.StartSession:input_type -> vera.v1.StartSessionRequest
+	50, // 38: vera.v1.VeraService.Birth:input_type -> vera.v1.BirthRequest
+	46, // 39: vera.v1.VeraService.SetBookmark:input_type -> vera.v1.BookmarkRequest
+	1,  // 40: vera.v1.VeraService.WatchAgent:output_type -> vera.v1.WatchAgentResponse
+	13, // 41: vera.v1.VeraService.Say:output_type -> vera.v1.SayResponse
+	15, // 42: vera.v1.VeraService.Interrupt:output_type -> vera.v1.InterruptResponse
+	17, // 43: vera.v1.VeraService.WatchBoard:output_type -> vera.v1.WatchBoardResponse
+	29, // 44: vera.v1.VeraService.Review:output_type -> vera.v1.ReviewResponse
+	31, // 45: vera.v1.VeraService.Commit:output_type -> vera.v1.CommitResponse
+	33, // 46: vera.v1.VeraService.Discard:output_type -> vera.v1.DiscardResponse
+	35, // 47: vera.v1.VeraService.Suggest:output_type -> vera.v1.SuggestResponse
+	39, // 48: vera.v1.VeraService.Plan:output_type -> vera.v1.PlanResponse
+	41, // 49: vera.v1.VeraService.ExecutePlan:output_type -> vera.v1.ExecutePlanResponse
+	44, // 50: vera.v1.VeraService.Browse:output_type -> vera.v1.BrowseResponse
+	49, // 51: vera.v1.VeraService.StartSession:output_type -> vera.v1.StartSessionResponse
+	51, // 52: vera.v1.VeraService.Birth:output_type -> vera.v1.BirthResponse
+	47, // 53: vera.v1.VeraService.SetBookmark:output_type -> vera.v1.BookmarkResponse
+	40, // [40:54] is the sub-list for method output_type
+	26, // [26:40] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_vera_v1_vera_proto_init() }
@@ -4062,7 +4175,7 @@ func file_vera_v1_vera_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vera_v1_vera_proto_rawDesc), len(file_vera_v1_vera_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   51,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

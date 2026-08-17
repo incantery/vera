@@ -174,6 +174,7 @@ message Repo {
   string dir = 1;
   string cwd = 2;
   bool scratch = 3;
+  bool bookmark = 4;  // registered ground: the durable offer
 }
 
 // Session is one rail row: a lineage root wearing its head's live
@@ -239,6 +240,11 @@ message BoardTask {
   TaskLive live = 24;  // absent for backlog and closed cards
   string cadence = 25;   // "" | "once" | "standing" — from the plan the card was born from
   string deadline = 26;  // YYYY-MM-DD, only if the ask named one
+  // The drafted reply a "reply" proposal carries — shown verbatim
+  // before the tap; a send button without this text is a lie.
+  string proposal_text = 27;
+  string auto_start = 28;  // "read" when the steward queued a self-start; the veto card reads it
+  double budget_usd = 29;  // the autopilot authorization; 0 = not a marathon card
 }
 
 message TaskRun {
@@ -336,7 +342,21 @@ message PlanShape {
   string goal = 7;      // the instruction the worker would be handed
   string why = 8;       // one line the owner reads to judge the plan
   string question = 9;  // kind ask: the one missing fact
-  repeated string steps = 10;  // later pieces, when the work is honestly several
+  // The later pieces, when the work is honestly several — a graph, not
+  // a line: each node names what it waits on, so reviews and
+  // verifications can hang off the same piece and run beside each
+  // other. Field 10 was a flat repeated string; the shape it could not
+  // express is the reason it changed.
+  repeated PlanNode nodes = 11;
+}
+
+// PlanNode is one piece of the work graph. Deps are 1-based piece
+// numbers — piece 1 is always the goal — resolved to card ids when the
+// plan is laid down.
+message PlanNode {
+  string kind = 1;  // implement | investigate | review | verify
+  repeated int32 deps = 2;
+  string text = 3;  // the self-contained instruction
 }
 
 message PlanResponse {

@@ -53,8 +53,19 @@ func main() {
 	apiBase := flag.String("api-base", "", "judge API base URL (default OpenAI; ollama etc. work)")
 	keyFile := flag.String("key-file", "", "judge API key file (default ~/.config/vera/openai_key)")
 	effort := flag.String("effort", "low", "judge reasoning effort (empty omits the field)")
+	// Routing: workers are matched to the node they run, because the
+	// spread between the cheapest and the strongest tier is roughly ten
+	// times the price and a human never re-picks mid-task. Worker tiers
+	// are claude ALIASES so they resolve against whatever the account
+	// can serve. Vera's own parts default to --model at every tier —
+	// she cannot know an arbitrary endpoint's vocabulary — so these two
+	// are how you split them.
+	noRoute := flag.Bool("no-route", false, "run every node and every part on one model (routing off)")
+	modelCheap := flag.String("model-cheap", "", "vera's model for bounded per-turn parts: digests, phrasing, goal compiles (default --model)")
+	modelStrong := flag.String("model-strong", "", "vera's model for planning, where one bad answer is paid for by every node under it (default --model)")
 	claudeBin := flag.String("claude", "", "the claude binary (default: claude from PATH)")
 	turns := flag.Int("turns", 4, "prompts a drive may send before giving up")
+	autonomy := flag.Int("autonomy", 6, "engine actions per hour that may spend (recoveries, scheduled starts); 0 turns autonomy off")
 	defLineage, defArtifacts, defTasks := defaultLineagePath(), defaultArtifactsDir(), defaultTasksDir()
 	statePath := flag.String("state", defLineage, "lineage journal (empty forgets forks across restarts)")
 	artifactsDir := flag.String("artifacts", defaultArtifactsDir(), "artifact shelf directory (empty disables it)")
@@ -141,22 +152,35 @@ func main() {
 		digestPath:  defaultDigestPath(),
 		suggestPath: defaultSuggestPath(),
 		planPath:    defaultPlanPath(),
+		outcomePath: defaultOutcomePath(),
 		uploads:     defaultUploadsDir(),
+		sched:       &schedStore{path: defaultSchedulePath()},
+		report:      &reportStore{path: defaultReportPath()},
 		hub:         newHub(),
 	}
+	// The semantic log rides the hub it pokes, so it is built after the
+	// server and before anything that could move.
+	s.events = newEventLog(defaultEventPath(), s.hub)
 	s.loadJournals()
 	go s.hub.watch(*dir)
 	go s.uc.Loop()
-	// Attachments outlive their usefulness with the agents that carried
-	// them, and the usage collector's probe transcripts outlive their
-	// harvest: sweep both at start and every few hours.
-	go func() {
-		for {
-			s.pruneUploads(*window)
-			pruneProbes(*dir, home, time.Now())
-			time.Sleep(6 * time.Hour)
-		}
-	}()
+	// The engine: vera's heartbeat. Reconcile first so recover reads a
+	// truthful board; hygiene subsumes the old prune sweeper. The
+	// steward keeps a handle on the server so the owner's "look now"
+	// can press it directly.
+	s.steward = &stewardSystem{s: s}
+	eng := newEngine(s, []System{
+		reconcileSystem{s},
+		recoverSystem{s},
+		driverSystem{s},
+		graphSystem{s},
+		scheduleSystem{s},
+		s.steward,
+		igniteSystem{s},
+		reportSystem{s},
+		&hygieneSystem{s: s, dir: *dir, home: home, window: *window},
+	}, *autonomy)
+	go eng.loop()
 	// A missing key is a standing notice only where the default API
 	// lives; a custom base is a local server that wants no auth.
 	if key == "" && *apiBase == "" {
@@ -167,6 +191,7 @@ func main() {
 			Base:   *apiBase, Key: key, Name: *model, Effort: *effort,
 		}
 	}
+	s.route = newRouter(*model, *modelCheap, *modelStrong, *noRoute)
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /", webHandler())
@@ -205,6 +230,12 @@ func main() {
 	mux.HandleFunc("GET /api/births/{id}", s.handleBirth)
 	mux.HandleFunc("POST /api/workspaces", s.handleWorkspaceCreate)
 	mux.HandleFunc("DELETE /api/workspaces/{name}", s.handleWorkspaceDelete)
+	mux.HandleFunc("GET /api/report", s.handleReport)
+	mux.HandleFunc("POST /api/steward/look", s.handleStewardLook)
+	mux.HandleFunc("GET /api/schedule", s.handleScheduleList)
+	mux.HandleFunc("POST /api/schedule", s.handleScheduleAdd)
+	mux.HandleFunc("DELETE /api/schedule/{id}", s.handleScheduleRemove)
+	mux.HandleFunc("POST /api/schedule/{id}/resume", s.handleScheduleResume)
 	mux.HandleFunc("POST /api/drive", s.handleDrive)
 	mux.HandleFunc("POST /api/drive/stop", s.handleStop)
 	// The typed wire: Connect handlers mount beside the REST rails in
@@ -215,6 +246,11 @@ func main() {
 	mux.Handle("POST "+rpcPath, rpcHandler)
 
 	fmt.Printf("vera: watching %s\n", *dir)
+	if *autonomy > 0 {
+		fmt.Printf("vera: the engine is on — recover, schedule, hygiene (≤%d spending actions/hour)\n", *autonomy)
+	} else {
+		fmt.Println("vera: the engine keeps the board truthful only — autonomy is off (--autonomy 0)")
+	}
 	if worldRoot != "" {
 		fmt.Printf("vera: world %s — the board sees only sessions working under it\n", worldRoot)
 	}
@@ -240,6 +276,9 @@ func main() {
 	if s.notice != "" {
 		fmt.Println("vera: " + s.notice)
 	}
+	// Outermost on every bind: a browser-borne cross-site mutation is
+	// refused before the key is even consulted.
+	handler = guardMutations(handler)
 	if err := http.ListenAndServe(*addr, handler); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -303,6 +342,7 @@ func webHandler() http.Handler {
 type server struct {
 	sc        *transcript.Scanner
 	llm       *drive.LLM // the vera agent's wire; nil = no key, membrane off
+	route     *router    // which model runs which piece; nil = the configured one, always
 	notice    string
 	claudeBin string
 	turns     int
@@ -313,10 +353,15 @@ type server struct {
 	scratch   *scratchStore
 	marks     *bookmarkStore // the workspace registry: named, durable ground
 
+	sched   *schedStore    // scheduled work; nil = schedule off
+	report  *reportStore   // the daily account; nil = report off
+	steward *stewardSystem // the thinking pass; nil = steward off (no "look now")
+
 	spendPath   string // spend journal; "" = remember only while running
 	digestPath  string // digest journal; same deal
 	suggestPath string // suggestion journal; every bid served, for learning later
 	planPath    string // plan journal; every bid and every nod, for learning later
+	outcomePath string // what every finished node cost and whether the owner kept it
 	uploads     string // pasted-image directory, namespaced per agent
 
 	mu       sync.Mutex
@@ -331,6 +376,15 @@ type server struct {
 	queues   map[string][]queuedSay // agent root -> direct messages typed ahead
 
 	hub *hub // "something changed" — feeds the watch streams
+
+	// events is what MOVED, in words, every line naming the artifact
+	// it was read from. The board is the state; this is the story.
+	events *eventLog
+
+	// bg counts the drive goroutines in flight. Production never
+	// waits on it; tests drain it so a run landing mid-teardown
+	// cannot race the temp dirs it writes into.
+	bg sync.WaitGroup
 }
 
 // digestRec is one reply's compression, cached by the reply's hash so
@@ -341,10 +395,12 @@ type digestRec struct {
 	Bullets  []string `json:"bullets,omitempty"`
 }
 
-// rootLLM is the vera agent's wire with its meter bound to one agent's
-// ledger.
-func (s *server) rootLLM(root string) *drive.LLM {
-	ll := *s.llm
+// rootLLM is the vera agent's wire for one part, with its meter bound
+// to one agent's ledger. The part is what decides the model: these are
+// the highest-frequency calls vera makes, so this is where routing
+// either pays for itself or does nothing at all.
+func (s *server) rootLLM(root string, p part) *drive.LLM {
+	ll := *s.llmFor(p)
 	ll.Spend = func(c float64) { s.addSpend(root, 0, c) }
 	return &ll
 }
@@ -461,6 +517,11 @@ type wireSession struct {
 	// vera-made scratch workspace.
 	Task    string `json:"task,omitempty"`
 	Scratch bool   `json:"scratch,omitempty"`
+	// Recovered: the scan missed this agent — a flood filled the cap,
+	// or the transcript aged past the window — and the row was
+	// restored by id. Worn so the UI can say "brought back" instead
+	// of pretending the agent never left.
+	Recovered bool `json:"recovered,omitempty"`
 }
 
 // handleState is the index's poll: one agent per LINEAGE. Forks are
@@ -705,7 +766,7 @@ func (s *server) digestFor(root, prompt, reply string) *digestRec {
 	s.digests[h] = rec
 	s.mu.Unlock()
 	go func() {
-		headline, bullets, err := s.rootLLM(root).Digest(context.Background(), prompt, reply)
+		headline, bullets, err := s.rootLLM(root, partDigest).Digest(context.Background(), prompt, reply)
 		s.mu.Lock()
 		defer s.hub.notify()
 		defer s.mu.Unlock()
@@ -843,7 +904,7 @@ func (s *server) say(id string, req sayReq) (string, *sayErr) {
 					lastReply = m.Text
 				}
 			}
-			exp, err := s.rootLLM(root).Expand(context.Background(), req.Text, lastPrompt, lastReply)
+			exp, err := s.rootLLM(root, partExpand).Expand(context.Background(), req.Text, lastPrompt, lastReply)
 			if err != nil {
 				s.mu.Lock()
 				job.Status = "failed"
@@ -1042,7 +1103,7 @@ func (s *server) handleDrive(w http.ResponseWriter, r *http.Request) {
 	s.runs = append([]*run{rn}, s.runs...)
 	s.mu.Unlock()
 
-	ll := *s.llm // copy, so the per-run spend meter is this run's
+	ll := *s.llmFor(partJudge) // copy, so the per-run spend meter is this run's
 	ll.Spend = func(c float64) {
 		s.update(rn.ID, func(r *run) { r.JudgeUSD += c })
 		s.addSpend(root, 0, c)
@@ -1054,7 +1115,9 @@ func (s *server) handleDrive(w http.ResponseWriter, r *http.Request) {
 		Progress: func(line string) { s.update(rn.ID, func(r *run) { r.Status = line; r.At = time.Now() }) },
 	}
 	headID := head.ID
+	s.bg.Add(1)
 	go func() {
+		defer s.bg.Done()
 		defer cancel()
 		res, err := loop.Run(ctx, headID, req.Goal)
 		s.ln.advance(root, res.SessionID)

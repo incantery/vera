@@ -1,0 +1,126 @@
+[
+  {
+    "id": "verify-reports-the-failing-test",
+    "kind": "verify",
+    "goal": "Run `go test ./...` in this directory and report what happened. Name the test function that fails and quote the actual and wanted values it printed. Change nothing.",
+    "mode": "read",
+    "tools": [
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)"
+    ],
+    "files": {
+      "go.mod": "module lab/verify1\n\ngo 1.21\n",
+      "sum.go": "package sum\n\n// Sum adds the ints.\nfunc Sum(xs []int) int {\n\ttotal := 0\n\tfor i := 1; i < len(xs); i++ {\n\t\ttotal += xs[i]\n\t}\n\treturn total\n}\n",
+      "sum_test.go": "package sum\n\nimport \"testing\"\n\nfunc TestSumAddsEveryElement(t *testing.T) {\n\tif got := Sum([]int{5, 1, 1}); got != 7 {\n\t\tt.Errorf(\"Sum = %d, want 7\", got)\n\t}\n}\n"
+    },
+    "expect": [
+      "TestSumAddsEveryElement",
+      "2",
+      "7"
+    ]
+  },
+  {
+    "id": "verify-reports-a-green-suite",
+    "kind": "verify",
+    "goal": "Run `go test ./...` in this directory and report whether the suite passes. State plainly whether it passed or failed. Change nothing.",
+    "mode": "read",
+    "tools": [
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)"
+    ],
+    "files": {
+      "go.mod": "module lab/verify2\n\ngo 1.21\n",
+      "rev.go": "package rev\n\n// Reverse reverses the runes of s.\nfunc Reverse(s string) string {\n\tr := []rune(s)\n\tfor i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {\n\t\tr[i], r[j] = r[j], r[i]\n\t}\n\treturn string(r)\n}\n",
+      "rev_test.go": "package rev\n\nimport \"testing\"\n\nfunc TestReverse(t *testing.T) {\n\tif got := Reverse(\"abc\"); got != \"cba\" {\n\t\tt.Errorf(\"Reverse = %q, want %q\", got, \"cba\")\n\t}\n\tif got := Reverse(\"\"); got != \"\" {\n\t\tt.Errorf(\"Reverse(empty) = %q\", got)\n\t}\n}\n"
+    },
+    "expect": [
+      "pass"
+    ]
+  },
+  {
+    "id": "review-finds-the-lock-not-released",
+    "kind": "review",
+    "goal": "Read cache.go. It has one concurrency bug that will deadlock the process. Name the method it is in and say exactly what is wrong. Change nothing.",
+    "mode": "read",
+    "files": {
+      "cache.go": "package cache\n\nimport \"sync\"\n\ntype Cache struct {\n\tmu sync.Mutex\n\tm  map[string]string\n}\n\nfunc New() *Cache { return &Cache{m: map[string]string{}} }\n\nfunc (c *Cache) Get(k string) (string, bool) {\n\tc.mu.Lock()\n\tdefer c.mu.Unlock()\n\tv, ok := c.m[k]\n\treturn v, ok\n}\n\nfunc (c *Cache) Set(k, v string) {\n\tc.mu.Lock()\n\tc.m[k] = v\n}\n\nfunc (c *Cache) Len() int {\n\tc.mu.Lock()\n\tdefer c.mu.Unlock()\n\treturn len(c.m)\n}\n"
+    },
+    "expect": [
+      "Set",
+      "unlock"
+    ]
+  },
+  {
+    "id": "review-finds-the-slice-aliasing",
+    "kind": "review",
+    "goal": "Read window.go. The Window method has a bug that lets a caller corrupt the buffer it was given. Name the method and say what is wrong. Change nothing.",
+    "mode": "read",
+    "files": {
+      "window.go": "package buf\n\n// Buffer holds a rolling series of samples.\ntype Buffer struct{ xs []float64 }\n\nfunc (b *Buffer) Append(x float64) { b.xs = append(b.xs, x) }\n\n// Window returns the most recent n samples.\nfunc (b *Buffer) Window(n int) []float64 {\n\tif n > len(b.xs) {\n\t\tn = len(b.xs)\n\t}\n\treturn b.xs[len(b.xs)-n:]\n}\n"
+    },
+    "expect": [
+      "Window",
+      "copy"
+    ]
+  },
+  {
+    "id": "investigate-traces-the-caller",
+    "kind": "investigate",
+    "goal": "In this directory, the value returned by Rate() ends up in a log line. Trace it and report which function writes that log line and which file it is in. Change nothing.",
+    "mode": "read",
+    "files": {
+      "rate.go": "package app\n\n// Rate is the current sampling rate.\nfunc Rate() int { return 42 }\n",
+      "meter.go": "package app\n\nfunc measure() int {\n\treturn Rate() * 2\n}\n",
+      "report.go": "package app\n\nimport \"fmt\"\n\nfunc emitSummary() {\n\tfmt.Printf(\"sampling at %d\\n\", measure())\n}\n",
+      "unused.go": "package app\n\nimport \"fmt\"\n\nfunc printBanner() {\n\tfmt.Println(\"app starting\")\n}\n"
+    },
+    "expect": [
+      "emitSummary",
+      "report.go"
+    ]
+  },
+  {
+    "id": "investigate-counts-the-implementations",
+    "kind": "investigate",
+    "goal": "Report every type in this directory that implements the Store interface, by name. Change nothing.",
+    "mode": "read",
+    "files": {
+      "store.go": "package store\n\ntype Store interface {\n\tGet(k string) (string, bool)\n\tPut(k, v string) error\n}\n",
+      "mem.go": "package store\n\ntype MemStore struct{ m map[string]string }\n\nfunc (s *MemStore) Get(k string) (string, bool) { v, ok := s.m[k]; return v, ok }\nfunc (s *MemStore) Put(k, v string) error      { s.m[k] = v; return nil }\n",
+      "null.go": "package store\n\ntype NullStore struct{}\n\nfunc (NullStore) Get(string) (string, bool) { return \"\", false }\nfunc (NullStore) Put(string, string) error { return nil }\n",
+      "partial.go": "package store\n\n// ReadOnlyStore deliberately does NOT satisfy Store: no Put.\ntype ReadOnlyStore struct{ m map[string]string }\n\nfunc (s *ReadOnlyStore) Get(k string) (string, bool) { v, ok := s.m[k]; return v, ok }\n"
+    },
+    "expect": [
+      "MemStore",
+      "NullStore"
+    ]
+  },
+  {
+    "id": "implement-fixes-the-off-by-one",
+    "kind": "implement",
+    "goal": "The Go module in this directory has a failing test. Run `go test ./...`, find the bug in sum.go, and fix it so the tests pass. Do not modify sum_test.go.",
+    "mode": "work",
+    "files": {
+      "go.mod": "module lab/impl1\n\ngo 1.21\n",
+      "sum.go": "package sum\n\n// Sum adds the ints.\nfunc Sum(xs []int) int {\n\ttotal := 0\n\tfor i := 1; i < len(xs); i++ {\n\t\ttotal += xs[i]\n\t}\n\treturn total\n}\n",
+      "sum_test.go": "package sum\n\nimport \"testing\"\n\nfunc TestSumAddsEveryElement(t *testing.T) {\n\tif got := Sum([]int{5, 1, 1}); got != 7 {\n\t\tt.Errorf(\"Sum = %d, want 7\", got)\n\t}\n\tif got := Sum(nil); got != 0 {\n\t\tt.Errorf(\"Sum(nil) = %d, want 0\", got)\n\t}\n}\n",
+      ".golden/sum_test.go": "package sum\n\nimport \"testing\"\n\nfunc TestSumAddsEveryElement(t *testing.T) {\n\tif got := Sum([]int{5, 1, 1}); got != 7 {\n\t\tt.Errorf(\"Sum = %d, want 7\", got)\n\t}\n\tif got := Sum(nil); got != 0 {\n\t\tt.Errorf(\"Sum(nil) = %d, want 0\", got)\n\t}\n}\n"
+    },
+    "check": "cmp -s sum_test.go .golden/sum_test.go && go test ./..."
+  },
+  {
+    "id": "implement-adds-the-missing-method",
+    "kind": "implement",
+    "goal": "The test in this directory does not compile because ReadOnlyStore is missing a method required by the Store interface. Add it so `go test ./...` passes. A Put on a read-only store must return an error. Do not modify store_test.go.",
+    "mode": "work",
+    "files": {
+      "go.mod": "module lab/impl2\n\ngo 1.21\n",
+      "store.go": "package store\n\nimport \"errors\"\n\nvar ErrReadOnly = errors.New(\"store is read-only\")\n\ntype Store interface {\n\tGet(k string) (string, bool)\n\tPut(k, v string) error\n}\n\ntype ReadOnlyStore struct{ M map[string]string }\n\nfunc (s *ReadOnlyStore) Get(k string) (string, bool) { v, ok := s.M[k]; return v, ok }\n",
+      "store_test.go": "package store\n\nimport \"testing\"\n\nfunc TestReadOnlyStoreSatisfiesStore(t *testing.T) {\n\tvar s Store = &ReadOnlyStore{M: map[string]string{\"a\": \"1\"}}\n\tif v, ok := s.Get(\"a\"); !ok || v != \"1\" {\n\t\tt.Fatalf(\"Get = %q %v\", v, ok)\n\t}\n\tif err := s.Put(\"b\", \"2\"); err == nil {\n\t\tt.Fatal(\"Put on a read-only store must return an error\")\n\t}\n}\n",
+      ".golden/store_test.go": "package store\n\nimport \"testing\"\n\nfunc TestReadOnlyStoreSatisfiesStore(t *testing.T) {\n\tvar s Store = &ReadOnlyStore{M: map[string]string{\"a\": \"1\"}}\n\tif v, ok := s.Get(\"a\"); !ok || v != \"1\" {\n\t\tt.Fatalf(\"Get = %q %v\", v, ok)\n\t}\n\tif err := s.Put(\"b\", \"2\"); err == nil {\n\t\tt.Fatal(\"Put on a read-only store must return an error\")\n\t}\n}\n"
+    },
+    "check": "cmp -s store_test.go .golden/store_test.go && go test ./..."
+  }
+]

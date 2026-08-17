@@ -591,7 +591,7 @@
 >
 	<!-- header -->
 	<header class="dv-head" style="flex: 0 0 auto; display: flex; align-items: center; gap: 12px; padding: 9px 16px 9px 14px; border-bottom: 1px solid var(--color-divider);">
-		<a href="/" aria-label="back to the board" style="font-size: 13px; line-height: 1; padding: 4px 6px; color: var(--color-neutral-600); border-radius: var(--radius-sm);" class="hover:text-[var(--color-neutral-200)]!">←</a>
+		<a href="/" aria-label="back home" style="font-size: 13px; line-height: 1; padding: 4px 6px; color: var(--color-neutral-600); border-radius: var(--radius-sm);" class="hover:text-[var(--color-neutral-200)]!">←</a>
 		<div style="flex: 1 1 auto; display: flex; align-items: baseline; gap: 9px; min-width: 12ch; overflow: hidden;">
 			<span style="flex: 0 1 auto; min-width: 12ch; font-family: {MONO}; font-size: 13px; font-weight: 500; color: var(--color-neutral-100); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{data?.agent?.title ?? '…'}</span>
 			<span style="flex: 0 1 auto; min-width: 0; font-family: {MONO}; font-size: 11.5px; color: var(--color-neutral-600); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{data?.agent?.dir}{data?.agent?.branch ? ` · ${data.agent.branch}` : ''}{data?.resume ? ` · ${data.resume.slice(0, 8)}` : ''}</span>
@@ -801,9 +801,14 @@
 										<div style="border-radius: var(--radius-sm); background: {selHere ? 'var(--color-neutral-900)' : 'transparent'}; position: relative; overflow: hidden;">
 											<div
 												onclick={() => toggleOpen(e)}
-												onkeydown={(ev) => ev.key === 'Enter' && toggleOpen(e)}
+												onkeydown={(ev) => {
+													if (ev.key === 'Enter' || ev.key === ' ') {
+														ev.preventDefault();
+														toggleOpen(e);
+													}
+												}}
 												role="button"
-												tabindex="-1"
+												tabindex={openable(e) ? 0 : -1}
 												style="display: flex; align-items: center; gap: 10px; padding: 5px 9px 5px 3px; cursor: {openable(e) ? 'pointer' : 'default'};"
 												class="hover:bg-[var(--color-neutral-900)]!"
 											>
@@ -883,19 +888,22 @@
 										{#if sugg.happened}
 											<div style="font-size: 11.5px; line-height: 1.5; color: var(--color-neutral-500); text-wrap: pretty;">{sugg.happened}</div>
 										{/if}
+										<!-- thumbs mis-tap: on the phone the big target loads the
+										     composer, and only the explicit "send" commits words
+										     to the agent — the reverse of the desktop rail -->
 										{#each sugg.replies as rep, ri (ri)}
 											<div style="display: flex; align-items: stretch; border: 1px solid {ri === 0 ? 'var(--color-accent-700)' : 'var(--color-neutral-800)'}; border-radius: var(--radius-md); overflow: hidden;">
 												<button
-													onclick={() => sendSuggestion(rep)}
+													onclick={() => editSuggestion(rep)}
 													style="flex: 1; min-width: 0; font: inherit; text-align: left; cursor: pointer; border: none; background: transparent; padding: 8px 10px; font-size: 12.5px; line-height: 1.5; color: var(--color-neutral-200); text-wrap: pretty;"
-													title="send this reply now"
+													title="put this reply in the composer — send from there"
 												>{rep}</button>
 												<button
-													onclick={() => editSuggestion(rep)}
-													aria-label="put this reply in the composer to edit first"
-													style="flex: 0 0 auto; font: inherit; font-size: 12px; padding: 0 12px; cursor: pointer; border: none; border-left: 1px solid var(--color-neutral-800); background: transparent; color: var(--color-neutral-500);"
-													title="put this reply in the composer to edit first"
-												>✎</button>
+													onclick={() => sendSuggestion(rep)}
+													aria-label="send this reply now"
+													style="flex: 0 0 auto; font: inherit; font-family: {MONO}; font-size: 11px; padding: 0 12px; cursor: pointer; border: none; border-left: 1px solid var(--color-neutral-800); background: transparent; color: var(--color-accent-300);"
+													title="send this reply now"
+												>send</button>
 											</div>
 										{/each}
 									{/if}

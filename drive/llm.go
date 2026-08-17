@@ -66,12 +66,13 @@ func (m *LLM) Complete(ctx context.Context, msgs []chatMsg) (string, error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		// The wire itself failed — nothing was judged. Transient.
+		return "", MarkTransient(err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", err
+		return "", MarkTransient(err)
 	}
 	if resp.StatusCode != 200 {
 		var e struct {
@@ -79,10 +80,16 @@ func (m *LLM) Complete(ctx context.Context, msgs []chatMsg) (string, error) {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
+		err := fmt.Errorf("llm endpoint: HTTP %d", resp.StatusCode)
 		if json.Unmarshal(raw, &e) == nil && e.Error.Message != "" {
-			return "", errors.New(e.Error.Message)
+			err = errors.New(e.Error.Message)
 		}
-		return "", fmt.Errorf("llm endpoint: HTTP %d", resp.StatusCode)
+		// Rate limits and server-side failures pass; a 4xx is our own
+		// request being wrong and retrying it would be laps.
+		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+			return "", MarkTransient(err)
+		}
+		return "", err
 	}
 	var rep struct {
 		Choices []struct {

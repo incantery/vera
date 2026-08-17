@@ -72,7 +72,7 @@ func (s *server) agentSuggest(id string) (*suggestRec, *sayErr) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
 	defer cancel()
-	happened, nowLine, replies, err := s.rootLLM(root).Suggest(ctx, head.Title, prompt, reply)
+	happened, nowLine, replies, err := s.rootLLM(root, partSuggest).Suggest(ctx, head.Title, prompt, reply)
 	s.mu.Lock()
 	if err != nil {
 		rec.Err = err.Error()

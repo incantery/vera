@@ -64,6 +64,7 @@ func TestWatchBoardStreamsFramesOnChange(t *testing.T) {
 	now := time.Now()
 	writeWorkingTranscript(t, dir, "-repo-alpha", "live-1", "the live work", now)
 	s := testServer(t, dir)
+	claimGround(t, s, "/repo/-repo-alpha")
 	s.hub = newHub()
 
 	mux := http.NewServeMux()

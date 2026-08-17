@@ -24,6 +24,11 @@ type result struct {
 	Model string `json:"model"`
 	Arm   string `json:"arm"` // bare | drive
 	Rep   int    `json:"rep"`
+	// Kind is the task's node kind, copied onto the record so the
+	// routing table can be read back without the corpus that produced
+	// it. Lines written before kinds existed carry none and sit out of
+	// the routing verdict rather than being guessed at.
+	Kind string `json:"kind,omitempty"`
 	// Pass is the mechanical bar's word: every bar the task states,
 	// met. The judge's own DONE rides separately in Done — the gap
 	// between the two columns is the judge grading itself generously.

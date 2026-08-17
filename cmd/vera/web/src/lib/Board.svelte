@@ -64,9 +64,9 @@
 			tasks: (board?.tasks ?? []).filter((t) => t.col === key)
 		}))
 	);
-	const sel = $derived(
-		(board?.tasks ?? []).find((t) => t.id === selId) ?? (board?.tasks ?? [])[0] ?? null
-	);
+	// Selection is explicit: no card is "chosen" until the human picks
+	// one, so the pane's pin/drop/delete always act on a real choice.
+	const sel = $derived((board?.tasks ?? []).find((t) => t.id === selId) ?? null);
 	// stateTone keeps nocturne's mono rule: accent or neutral, no
 	// second hue.
 	const stateTone = {
@@ -89,7 +89,8 @@
 	// nears and turns accent once it is behind us — the board should
 	// never let a spoken date go quietly.
 	function dueTone(iso) {
-		const days = (new Date(iso + 'T23:59:59') - Date.now()) / 86400000;
+		const days = (new Date(iso.includes('T') ? iso : iso + 'T23:59:59') - Date.now()) / 86400000;
+		if (!isFinite(days)) return 'var(--color-neutral-500)';
 		if (days < 0) return 'var(--color-accent-300)';
 		if (days <= 3) return 'var(--color-accent-400)';
 		return 'var(--color-neutral-500)';
@@ -135,9 +136,13 @@
 			const r = await api('/api/plan', { method: 'POST', body: JSON.stringify({ text }) });
 			const out = await r.json();
 			if (r.status === 409) {
+				// planning is off (no key) — the capture still lands, but
+				// the downgrade speaks instead of passing silently
 				busy = false;
 				planning = false;
-				return submitCapture();
+				await submitCapture();
+				if (!err) err = (out.error ? out.error + ' — ' : '') + 'captured without a plan';
+				return;
 			}
 			if (!r.ok) throw new Error(out.error ?? 'vera did not answer');
 			plan = out;
@@ -188,10 +193,17 @@
 	}
 	async function accept(t) {
 		if (t.proposalKind === 'start') {
-			await start(t.id, { mode: startMode, ...(startIn ? { newIn: startIn } : {}) });
+			const budget = +startBudget > 0 ? +startBudget : 0;
+			await start(t.id, {
+				mode: budget > 0 ? 'read' : startMode,
+				...(startIn ? { newIn: startIn } : {}),
+				...(budget > 0 ? { budgetUsd: budget } : {})
+			});
 			startIn = '';
+			startBudget = '';
 		} else await act(t.id, 'accept');
 	}
+	let startBudget = $state(''); // '' or dollars: the autopilot authorization
 
 	// Where an unassigned task starts: '' = the current agent; a cwd =
 	// a fresh agent born there. Mode is the tool policy. A waiting
@@ -477,7 +489,12 @@
 							{#each col.tasks as t (t.id)}
 								<div
 									onclick={() => pick(t.id)}
-									onkeydown={(e) => e.key === 'Enter' && pick(t.id)}
+									onkeydown={(e) => {
+										if (e.key === 'Enter' || e.key === ' ') {
+											e.preventDefault();
+											pick(t.id);
+										}
+									}}
 									role="button"
 									tabindex="0"
 									aria-pressed={sel?.id === t.id}
@@ -675,6 +692,14 @@
 									{sel.proposalWhy}
 								</div>
 							{/if}
+							{#if sel.proposalKind === 'reply' && sel.proposalText}
+								<!-- the drafted reply, verbatim — nothing is sent unseen -->
+								<div
+									style="font-size: 12.5px; line-height: 1.55; color: var(--color-accent-100); border-left: 2px solid var(--color-accent-700); padding-left: 10px; text-wrap: pretty;"
+								>
+									“{sel.proposalText}”
+								</div>
+							{/if}
 							{#if sel.proposalKind === 'start'}
 								<div style="display: flex; gap: 6px; flex-wrap: wrap;">
 									{#if !sel.agent}
@@ -719,12 +744,28 @@
 									<!-- the tool policy: code-side sets, never LLM-chosen -->
 									<select
 										bind:value={startMode}
-										title="read: analysis only, permission-gated tools stay refused. work: edits plus scoped build/test commands."
-										style="font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 5px 8px;"
+										disabled={+startBudget > 0}
+										title="read: analysis only, permission-gated tools stay refused. work: edits plus scoped build/test commands. (autopilot forces read-only)"
+										style="font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 5px 8px; opacity: {+startBudget > 0 ? 0.55 : 1};"
 									>
 										<option value="read">read-only</option>
 										<option value="work">can edit & test</option>
 									</select>
+									<label
+										title="autopilot: vera keeps continuing runs by itself until this many dollars are spent, the judge says done, or the conversation circles. Read-only, always."
+										style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--color-neutral-400); background: var(--color-surface); border: 1px solid var(--color-divider); border-radius: var(--radius-sm); padding: 0 8px;"
+									>
+										autopilot $
+										<input
+											bind:value={startBudget}
+											type="number"
+											min="0"
+											max="200"
+											step="1"
+											placeholder="0"
+											style="width: 48px; background: none; border: 0; font: inherit; font-size: 12px; color: var(--color-text); outline: none;"
+										/>
+									</label>
 								</div>
 							{/if}
 							<div style="display: flex; gap: 8px; margin-top: 2px;">
@@ -733,7 +774,11 @@
 									style="font-size: 12px;"
 									disabled={busy}
 									onclick={() => accept(sel)}
-									>{sel.proposalKind === 'start' ? 'Start drive' : 'Accept as done'}</button
+									>{sel.proposalKind === 'start'
+										? 'Start drive'
+										: sel.proposalKind === 'reply'
+											? "Send Vera's reply"
+											: 'Accept as done'}</button
 								>
 								<button
 									class="btn btn-ghost"

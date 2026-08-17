@@ -85,6 +85,19 @@ func (ln *lineage) headOf(id string) string {
 	return r
 }
 
+// knows answers whether an id is family: a root vera has driven (it
+// has a head on record) or a fork vera made. Family is the strongest
+// ownership claim the board has — vera built these sessions.
+func (ln *lineage) knows(id string) bool {
+	ln.mu.Lock()
+	defer ln.mu.Unlock()
+	if _, ok := ln.root[id]; ok {
+		return true
+	}
+	_, ok := ln.head[id]
+	return ok
+}
+
 func (ln *lineage) isFork(id string) bool {
 	ln.mu.Lock()
 	defer ln.mu.Unlock()

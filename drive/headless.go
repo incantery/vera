@@ -101,6 +101,10 @@ func (h *Headless) exec(ctx context.Context, args []string) (Turn, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, h.bin(), args...)
 	cmd.Dir = h.Dir
+	// A killed claude can leave grandchildren holding its pipes; without
+	// a WaitDelay, Run would wait on them past the deadline — a turn
+	// that cannot die is worse than one that dies badly.
+	cmd.WaitDelay = 5 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	runErr := cmd.Run()
@@ -108,13 +112,33 @@ func (h *Headless) exec(ctx context.Context, args []string) (Turn, error) {
 	var env resultEnvelope
 	parseErr := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &env)
 	if runErr != nil {
+		// The deadline firing kills the child, and exec reports that as
+		// a bare "signal: killed" — the honest story is the clock, and
+		// a clock is machinery: transient, retryable.
+		if ctx.Err() == context.DeadlineExceeded {
+			return Turn{}, MarkTransient(errors.New(
+				"the turn ran past its " + h.timeout().String() + " budget and was killed"))
+		}
+		// An owner's cancel arrives the same way — a killed child — but
+		// is the OPPOSITE of transient: someone chose to stop this, and
+		// autonomy that un-stops itself breaks the trust the whole
+		// machine runs on. Classified before the kill heuristic below.
+		if ctx.Err() == context.Canceled {
+			return Turn{}, errors.New("the turn was stopped")
+		}
 		// claude exits nonzero on an errored turn but may still have
 		// said why in the envelope; the envelope's word beats "exit 1".
 		if parseErr == nil && env.Result != "" {
 			return Turn{SessionID: env.SessionID, CostUSD: env.CostUSD},
 				errors.New(snip(env.Result, 300))
 		}
-		return Turn{}, errors.New(runErr.Error() + ": " + snip(stderr.String(), 300))
+		err := errors.New(runErr.Error() + ": " + snip(stderr.String(), 300))
+		// Killed without our deadline: the OS (memory pressure) or a
+		// human took the process — the goal said nothing.
+		if strings.Contains(runErr.Error(), "signal: killed") {
+			return Turn{}, MarkTransient(err)
+		}
+		return Turn{}, err
 	}
 	if parseErr != nil {
 		return Turn{}, errors.New("claude's answer did not parse: " + snip(stdout.String(), 200))

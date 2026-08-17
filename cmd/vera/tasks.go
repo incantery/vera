@@ -86,10 +86,36 @@ type task struct {
 	// Vera proposes, the human disposes.
 	Proposal     string `json:"proposal,omitempty"`
 	ProposalWhy  string `json:"proposalWhy,omitempty"`
-	ProposalKind string `json:"proposalKind,omitempty"` // "start" | "done"
+	ProposalKind string `json:"proposalKind,omitempty"` // "start" | "done" | "reply"
+	// ProposalText is the payload a "reply" proposal carries: the
+	// exact drafted answer that goes to the worker if the owner
+	// accepts. Shown verbatim before the tap — nothing is sent that
+	// was not seen.
+	ProposalText string `json:"proposalText,omitempty"`
 
 	Runs    []taskRun `json:"runs,omitempty"`
 	CostUSD float64   `json:"costUsd,omitempty"`
+
+	// The stop record: how the last run died, worn durably so the
+	// engine's recover system can tell machinery failures (transient —
+	// retry is sane) from judgment calls (the human's). Retries counts
+	// automatic recoveries since the last human touch; a reply or a
+	// restart from the owner resets the budget.
+	StopErr       string `json:"stopErr,omitempty"`
+	StopTransient bool   `json:"stopTransient,omitempty"`
+	Retries       int    `json:"retries,omitempty"`
+	// StopReason names how the last run ended, structurally: "error",
+	// "escalated", "circling", "spend-cap", "turns", "done". The
+	// driver reads it to know which stops autopilot may roll through.
+	StopReason string `json:"stopReason,omitempty"`
+
+	// BudgetUSD is the marathon tier: the owner's dollar authorization
+	// for this card. While spend stays under it, the driver system
+	// continues stopped runs on its own — routine escalations included
+	// — so the card runs for hours with the budget as the only human
+	// boundary. Circling and machinery errors still stop it; work mode
+	// never qualifies (autopilot is read-only by construction).
+	BudgetUSD float64 `json:"budgetUsd,omitempty"`
 
 	// Workspace is where the task's runs execute — the assigned
 	// agent's directory, recorded at start so cleanup knows the place
@@ -104,6 +130,12 @@ type task struct {
 	// through claude's own permission system). Code-side sets, never
 	// LLM-chosen.
 	Mode string `json:"mode,omitempty"`
+	// AutoStart marks an inbox card the engine may start on its own —
+	// "read" is the only tier autonomy takes (analysis cannot mutate;
+	// the worst case is bounded spend). The steward sets it, the
+	// ignite system burns it on the attempt, and work mode stays
+	// behind the owner's nod.
+	AutoStart string `json:"autoStart,omitempty"`
 	// Cadence and Deadline come from vera's plan when the card was born
 	// of one: "once" | "standing", and YYYY-MM-DD if the ask named a
 	// date. Standing is recorded before it is executable — vera cannot
@@ -114,6 +146,26 @@ type task struct {
 	// the nod that starts the card it names. The chain spends only at
 	// human acceptance boundaries.
 	NextID string `json:"nextId,omitempty"`
+
+	// The graph, when a plan laid one down. Kind is what the node is
+	// FOR — implement, review, verify — and decides both whether vera
+	// may open it unasked and which worker she reaches for. Deps names
+	// what it waits on, which is the chain generalized: NextID could
+	// only say "after this one", Deps can say "after all of these".
+	// Root is the goal every node of one plan shares, so the work view
+	// can draw a graph instead of filtering a table.
+	//
+	// A card with no Deps is not in a graph; a card with no Root is its
+	// own goal. Both stay true of every card written before this
+	// existed, which is why nothing needs migrating.
+	Kind string   `json:"kind,omitempty"`
+	Deps []string `json:"deps,omitempty"`
+	Root string   `json:"root,omitempty"`
+	// Model is what routing actually reached for, recorded when the
+	// worker was born. Kept on the card rather than re-derived at read
+	// time on purpose: the tier table moves as it learns, and evidence
+	// that moved with it would be evidence rewriting its own past.
+	Model string `json:"model,omitempty"`
 	// Exchanges is the drive's own conversation, persisted so an
 	// owner's reply can seed a continuation after any restart. Capped:
 	// the transcript holds the full story, the task holds the working
@@ -143,7 +195,7 @@ func (t *task) event(actor, text string, at time.Time) {
 }
 
 func (t *task) clearProposal() {
-	t.Proposal, t.ProposalWhy, t.ProposalKind = "", "", ""
+	t.Proposal, t.ProposalWhy, t.ProposalKind, t.ProposalText = "", "", "", ""
 }
 
 func (t *task) open() bool {
@@ -163,15 +215,39 @@ var workTools = []string{
 	"Bash(npm test:*)", "Bash(npm run build:*)", "Bash(make:*)",
 }
 
+// checkTools is "work" minus the teeth: the project's own build and
+// test commands, no edits. It exists because a verify node pinned to
+// pure read mode cannot run the tests it exists to run — print mode
+// refuses gated tools, so the node would open, find it has no Bash, and
+// report nothing. Three policies, not two.
+//
+// This is a real escalation over pure read — `go test` executes the
+// repository's own code — and it is a narrower one than it looks: the
+// node cannot change a byte, and it runs on ground the owner already
+// pointed vera at. A verification that cannot verify is worse than no
+// verification, because it reports success either way.
+var checkTools = []string{
+	"Bash(go build:*)", "Bash(go test:*)", "Bash(go vet:*)", "Bash(gofmt:*)",
+	"Bash(npm test:*)", "Bash(npm run build:*)", "Bash(make:*)",
+}
+
 func toolsFor(mode string) []string {
-	if mode == "work" {
+	switch mode {
+	case "work":
 		return workTools
+	case "check":
+		return checkTools
 	}
 	return nil
 }
 
 type taskStore struct {
 	dir string
+	// One lock over the whole store: ids are max+1, adoption is
+	// read-then-write, and the board mutates from HTTP handlers and
+	// engine goroutines at once. The store is small; the lock is the
+	// cheapest true thing.
+	mu sync.Mutex
 }
 
 func defaultTasksDir() string {
@@ -189,6 +265,12 @@ func (st *taskStore) path(id string) (string, error) {
 }
 
 func (st *taskStore) list() []task {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.listLocked()
+}
+
+func (st *taskStore) listLocked() []task {
 	if st.dir == "" {
 		return nil
 	}
@@ -201,7 +283,7 @@ func (st *taskStore) list() []task {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		t, err := st.get(strings.TrimSuffix(e.Name(), ".json"))
+		t, err := st.getLocked(strings.TrimSuffix(e.Name(), ".json"))
 		if err != nil {
 			continue
 		}
@@ -218,6 +300,12 @@ func (st *taskStore) list() []task {
 }
 
 func (st *taskStore) get(id string) (task, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.getLocked(id)
+}
+
+func (st *taskStore) getLocked(id string) (task, error) {
 	path, err := st.path(id)
 	if err != nil {
 		return task{}, err
@@ -240,11 +328,12 @@ func (st *taskStore) get(id string) (task, error) {
 	return t, nil
 }
 
-// nextID numbers tasks globally: T-<max+1>, starting at T-100 so ids
-// read as ids and never as counts.
-func (st *taskStore) nextID() string {
+// nextIDLocked numbers tasks globally: T-<max+1>, starting at T-100
+// so ids read as ids and never as counts. Only meaningful under the
+// lock — an id handed out unlocked is an id handed out twice.
+func (st *taskStore) nextIDLocked() string {
 	max := 99
-	for _, t := range st.list() {
+	for _, t := range st.listLocked() {
 		if n, err := strconv.Atoi(strings.TrimPrefix(t.ID, "T-")); err == nil && n > max {
 			max = n
 		}
@@ -253,6 +342,21 @@ func (st *taskStore) nextID() string {
 }
 
 func (st *taskStore) write(t task) error {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.writeLocked(t)
+}
+
+// create assigns the next id and writes, atomically — the only safe
+// way to mint a new card from outside the store.
+func (st *taskStore) create(t task) (task, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	t.ID = st.nextIDLocked()
+	return t, st.writeLocked(t)
+}
+
+func (st *taskStore) writeLocked(t task) error {
 	path, err := st.path(t.ID)
 	if err != nil {
 		return err
@@ -272,23 +376,28 @@ func (st *taskStore) write(t task) error {
 	return os.Rename(tmp, path)
 }
 
-// mutate runs f on one task under a fresh read and writes the result.
+// mutate runs f on one task under a fresh read and writes the result
+// — one lock across the whole read-modify-write.
 func (st *taskStore) mutate(id string, f func(*task) error) (task, error) {
-	t, err := st.get(id)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	t, err := st.getLocked(id)
 	if err != nil {
 		return task{}, err
 	}
 	if err := f(&t); err != nil {
 		return task{}, err
 	}
-	return t, st.write(t)
+	return t, st.writeLocked(t)
 }
 
 // capture opens an UNASSIGNED task in the inbox — backlog for the
 // next free agent. Vera spends nothing.
 func (st *taskStore) capture(text string, now time.Time) (task, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
 	t := task{
-		ID:    st.nextID(),
+		ID:    st.nextIDLocked(),
 		Title: transcript.Snip(text, 90), Intent: text,
 		Col: "inbox", State: "inbox · backlog",
 		Face:         "Captured, unassigned. Vera has spent nothing on it yet.",
@@ -298,15 +407,24 @@ func (st *taskStore) capture(text string, now time.Time) (task, error) {
 		CreatedAt:    now, UpdatedAt: now,
 	}
 	t.event("human", "captured", now)
-	return t, st.write(t)
+	return t, st.writeLocked(t)
 }
 
 // adopt records work that already exists: an agent is working right
 // now with no open task assigned, so the board gains the in-progress
 // card for it, titled with the agent's own title.
 func (st *taskStore) adopt(root, title, dir string, now time.Time) (task, error) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	// Idempotent under the lock: two concurrent board reads deciding
+	// to adopt the same agent must yield ONE card, not twins.
+	for _, x := range st.listLocked() {
+		if x.Agent == root && x.open() {
+			return task{}, errors.New("already adopted")
+		}
+	}
 	t := task{
-		ID:    st.nextID(),
+		ID:    st.nextIDLocked(),
 		Title: title,
 		Intent: "Adopted from the live session in " + dir +
 			" — the work this agent is already doing.",
@@ -317,7 +435,7 @@ func (st *taskStore) adopt(root, title, dir string, now time.Time) (task, error)
 		CreatedAt: now, UpdatedAt: now,
 	}
 	t.event("vera", "adopted from the live session ("+dir+")", now)
-	return t, st.write(t)
+	return t, st.writeLocked(t)
 }
 
 // nearOpen names the merge-into candidate: the freshest live task a
@@ -335,17 +453,23 @@ func nearOpen(tasks []task, excludeID string) *task {
 // ---- the board's view of the fleet ----
 
 // boardSessions is the scan the board reads: non-fork roots wearing
-// their head's live state, the same collapse the rail gets.
+// their head's live state, the same collapse the rail gets — filtered
+// to the sessions vera can honestly claim. The machine is full of
+// Claude sessions that are not vera's business; the board only sees
+// its own: lineage family, task-assigned agents, and sessions working
+// on registered ground. A sandbox world claims everything inside it —
+// the world IS the claim.
 func (s *server) boardSessions(now time.Time) map[string]*transcript.Session {
 	scanned := s.sc.Scan(now)
 	byID := map[string]*transcript.Session{}
 	for i := range scanned {
 		byID[scanned[i].ID] = &scanned[i]
 	}
+	claim := s.claimer()
 	out := map[string]*transcript.Session{}
 	for i := range scanned {
 		t := &scanned[i]
-		if s.ln.isFork(t.ID) {
+		if s.ln.isFork(t.ID) || !claim(t) {
 			continue
 		}
 		live := t
@@ -355,6 +479,56 @@ func (s *server) boardSessions(now time.Time) map[string]*transcript.Session {
 		out[t.ID] = live
 	}
 	return out
+}
+
+// claimer builds this moment's ownership test, reading the ground
+// registries once so the per-session check is cheap. Ownership is any
+// of: vera's own lineage, an assignment already on a card, or a cwd
+// under registered ground (a bookmark or a vera-made scratch
+// workspace). Bookmarking a directory is how ground opts in.
+func (s *server) claimer() func(*transcript.Session) bool {
+	if worldRoot != "" {
+		return func(*transcript.Session) bool { return true }
+	}
+	assigned := map[string]bool{}
+	for _, t := range s.tasks.list() {
+		if t.Agent != "" {
+			assigned[t.Agent] = true
+		}
+	}
+	var ground []string
+	for _, b := range s.marks.list() {
+		ground = append(ground, b.Cwd)
+	}
+	ground = append(ground, s.scratch.list()...)
+	return func(t *transcript.Session) bool {
+		return s.ln.knows(t.ID) || assigned[t.ID] || underAny(t.Cwd, ground)
+	}
+}
+
+// registeredGround: is this a directory the owner has opted in — a
+// bookmark, a vera scratch workspace, or anywhere inside a sandbox
+// world? Autonomy only ever starts work on ground with a name.
+func (s *server) registeredGround(cwd string) bool {
+	if worldRoot != "" {
+		return underAny(cwd, []string{worldRoot})
+	}
+	var ground []string
+	for _, b := range s.marks.list() {
+		ground = append(ground, b.Cwd)
+	}
+	ground = append(ground, s.scratch.list()...)
+	return underAny(cwd, ground)
+}
+
+// underAny: is cwd one of the dirs, or inside one?
+func underAny(cwd string, dirs []string) bool {
+	for _, d := range dirs {
+		if cwd == d || strings.HasPrefix(cwd, d+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // syncBoard adopts live work the board does not know yet: every
@@ -583,9 +757,10 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		AgentID string `json:"agentId"`
-		NewIn   string `json:"newIn"` // birth a fresh agent in this repo
-		Mode    string `json:"mode"`  // "" or "read" | "work"
+		AgentID   string  `json:"agentId"`
+		NewIn     string  `json:"newIn"`     // birth a fresh agent in this repo
+		Mode      string  `json:"mode"`      // "" or "read" | "work"
+		BudgetUSD float64 `json:"budgetUsd"` // > 0 = autopilot: read-only, driver continues runs until spent
 	}
 	// The body is optional; absence means "vera picks".
 	json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<14)).Decode(&req)
@@ -603,6 +778,25 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 	mode := req.Mode
 	if mode != "work" {
 		mode = "read"
+	}
+	// The marathon tier is read-only by construction: a budget large
+	// enough to run for hours must not be a budget for unattended
+	// edits. Cap what one card can be authorized for.
+	if req.BudgetUSD > 0 {
+		mode = "read"
+		if req.BudgetUSD > 200 {
+			httpErr(w, 400, "an autopilot budget caps at $200 per card")
+			return
+		}
+		t, err = s.tasks.mutate(t.ID, func(t *task) error {
+			t.BudgetUSD = req.BudgetUSD
+			t.event("human", fmt.Sprintf("autopilot: authorized $%.2f — read-only; vera continues runs until spent, judged done, or circling", req.BudgetUSD), now)
+			return nil
+		})
+		if err != nil {
+			httpErr(w, 500, err.Error())
+			return
+		}
 	}
 	if req.NewIn != "" {
 		s.startTaskFresh(w, r, t, req.NewIn, mode, now)
@@ -631,7 +825,7 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 409, "that agent already has a run in flight — one task drives at a time")
 		return
 	}
-	goal, err := s.rootLLM(root).CompileGoal(r.Context(), t.Intent)
+	goal, err := s.rootLLM(root, partCompile).CompileGoal(r.Context(), t.Intent)
 	if err != nil {
 		httpErr(w, 502, "vera could not compile the goal: "+err.Error())
 		return
@@ -645,6 +839,8 @@ func (s *server) handleTaskStart(w http.ResponseWriter, r *http.Request) {
 		t.Col, t.State = "progress", "in progress · turn in flight"
 		t.Face = "Started. The first turn is in flight."
 		t.clearProposal()
+		// The owner started it: fresh retry budget.
+		t.Retries, t.StopErr, t.StopTransient = 0, "", false
 		t.event("vera", "assigned to "+dir+" ("+shortID(root)+") · mode "+mode, now)
 		t.event("vera", "compiled intent → drive goal, started against "+shortID(head.ID), now)
 		return nil
@@ -680,31 +876,41 @@ func (s *server) handleTaskReply(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "say something")
 		return
 	}
-	now := time.Now()
-	t, err := s.tasks.get(r.PathValue("tid"))
-	if err != nil {
-		httpErr(w, 404, err.Error())
+	t, serr := s.taskReply(r.PathValue("tid"), req.Text, "replied", time.Now())
+	if serr != nil {
+		httpErr(w, serr.code, serr.msg)
 		return
+	}
+	writeJSON(w, t)
+}
+
+// taskReply is the transport-neutral core the REST reply and an
+// accepted drafted answer both ride: validate, seed, continue the
+// same drive. eventVerb names how the words arrived ("replied" —
+// typed; "accepted vera's drafted reply" — one tap on the proposal).
+func (s *server) taskReply(tid, text, eventVerb string, now time.Time) (task, *sayErr) {
+	if s.llm == nil {
+		return task{}, &sayErr{409, s.notice}
+	}
+	t, err := s.tasks.get(tid)
+	if err != nil {
+		return task{}, &sayErr{404, err.Error()}
 	}
 	if t.Col != "waiting" {
-		httpErr(w, 409, "only a waiting task takes a reply")
-		return
+		return task{}, &sayErr{409, "only a waiting task takes a reply"}
 	}
 	if t.Agent == "" {
-		httpErr(w, 409, "this task has no agent yet — start it instead")
-		return
+		return task{}, &sayErr{409, "this task has no agent yet — start it instead"}
 	}
 	root, head := s.resolveAgent(t.Agent, now)
 	if head == nil {
-		httpErr(w, 404, "the task's agent is gone from the window")
-		return
+		return task{}, &sayErr{404, "the task's agent is gone from the window"}
 	}
 	s.mu.Lock()
 	busy := s.drivingLocked(root)
 	s.mu.Unlock()
 	if busy {
-		httpErr(w, 409, "that agent already has a run in flight")
-		return
+		return task{}, &sayErr{409, "that agent already has a run in flight"}
 	}
 	goal := t.Goal
 	if goal == "" {
@@ -713,17 +919,18 @@ func (s *server) handleTaskReply(w http.ResponseWriter, r *http.Request) {
 	t, err = s.tasks.mutate(t.ID, func(t *task) error {
 		t.Col, t.State = "progress", "in progress · continuing on your answer"
 		t.Ask = ""
-		t.Face = "Continuing: " + transcript.Snip(req.Text, 100)
+		t.Face = "Continuing: " + transcript.Snip(text, 100)
 		t.clearProposal()
-		t.event("human", "replied — "+transcript.Snip(req.Text, 100), now)
+		// The owner touched the card: fresh retry budget.
+		t.Retries, t.StopErr, t.StopTransient = 0, "", false
+		t.event("human", eventVerb+" — "+transcript.Snip(text, 100), now)
 		return nil
 	})
 	if err != nil {
-		httpErr(w, 500, err.Error())
-		return
+		return task{}, &sayErr{500, err.Error()}
 	}
-	s.startTaskDrive(root, head, t.ID, goal, t.Mode, req.Text, t.Exchanges)
-	writeJSON(w, t)
+	s.startTaskDrive(root, head, t.ID, goal, t.Mode, text, t.Exchanges)
+	return t, nil
 }
 
 func shortID(id string) string {
@@ -747,7 +954,7 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 	// takes its first breath; until then the meter holds its coins.
 	var judgeUSD float64
 	var judgeMu sync.Mutex
-	ll := *s.llm
+	ll := *s.llmFor(partCompile)
 	ll.Spend = func(c float64) { judgeMu.Lock(); judgeUSD += c; judgeMu.Unlock() }
 
 	goal, err := ll.CompileGoal(r.Context(), t.Intent)
@@ -784,7 +991,7 @@ func (s *server) startTaskFresh(w http.ResponseWriter, r *http.Request, t task, 
 func (s *server) spawnFresh(t task, newIn, mode, goal string, heldUSD float64) {
 	judgeUSD := heldUSD
 	var judgeMu sync.Mutex
-	ll := *s.llm
+	ll := *s.llmFor(partJudge)
 	dir := filepath.Base(newIn)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -806,15 +1013,37 @@ func (s *server) spawnFresh(t task, newIn, mode, goal string, heldUSD float64) {
 		judgeMu.Unlock()
 		s.update(rn.ID, func(r *run) { r.JudgeUSD += c })
 	}
+	// The worker is matched to the node it runs: a verify reads command
+	// output, an implement writes the code everything else checks. An
+	// empty model says nothing and the CLI's own default stands.
+	worker := s.route.forKind(t.Kind)
+	turner := &drive.Headless{Bin: s.claudeBin, Dir: newIn, Model: worker,
+		AllowedTools: toolsFor(mode)}
+	if note := routeNote(t.Kind, worker); note != "" {
+		s.tasks.mutate(t.ID, func(t *task) error {
+			t.Model = worker
+			t.event("vera", note, time.Now())
+			return nil
+		})
+		s.events.emit(evNodeMoved, goalOf(t), t.ID, "Vera "+note+".")
+	}
 	loop := &drive.Loop{
-		Turner:   &drive.Headless{Bin: s.claudeBin, Dir: newIn, AllowedTools: toolsFor(mode)},
+		Turner:   turner,
 		Judge:    &drive.LLMJudge{LLM: &jl},
 		MaxTurns: s.turns,
 		Progress: func(line string) { s.update(rn.ID, func(r *run) { r.Status = line; r.At = time.Now() }) },
 		OnTurn:   s.auditTurn(t.ID),
 	}
+	if t.BudgetUSD > 0 {
+		turner.Timeout = 30 * time.Minute
+		if rem := t.BudgetUSD - t.CostUSD; rem < 5 {
+			loop.MaxUSD = max(rem, 0.5)
+		}
+	}
 	taskID := t.ID
+	s.bg.Add(1)
 	go func() {
+		defer s.bg.Done()
 		defer cancel()
 		res, err := loop.RunFresh(ctx, goal)
 		judgeMu.Lock()
@@ -912,20 +1141,41 @@ func (s *server) startTaskDrive(root string, head *transcript.Session, taskID, g
 	s.runs = append([]*run{rn}, s.runs...)
 	s.mu.Unlock()
 
-	ll := *s.llm
+	ll := *s.llmFor(partJudge)
 	ll.Spend = func(c float64) {
 		s.update(rn.ID, func(r *run) { r.JudgeUSD += c })
 		s.addSpend(root, 0, c)
 	}
+	// A continued drive routes by the same node kind the first turn
+	// did: switching models mid-conversation would re-read the whole
+	// history on a stranger and pay for the privilege.
+	kind := ""
+	if bt, err := s.tasks.get(taskID); err == nil {
+		kind = bt.Kind
+	}
+	turner := &drive.Headless{Bin: s.claudeBin, Dir: head.Cwd,
+		Model: s.route.forKind(kind), AllowedTools: toolsFor(mode)}
 	loop := &drive.Loop{
-		Turner:   &drive.Headless{Bin: s.claudeBin, Dir: head.Cwd, AllowedTools: toolsFor(mode)},
+		Turner:   turner,
 		Judge:    &drive.LLMJudge{LLM: &ll},
 		MaxTurns: s.turns,
 		Progress: func(line string) { s.update(rn.ID, func(r *run) { r.Status = line; r.At = time.Now() }) },
 		OnTurn:   s.auditTurn(taskID),
 	}
+	// An autopilot run never overshoots what remains of the owner's
+	// budget: the per-run cap shrinks to the remainder. And marathon
+	// turns get a marathon clock — a deep read of a codebase is
+	// honestly longer than the 10m default.
+	if bt, err := s.tasks.get(taskID); err == nil && bt.BudgetUSD > 0 {
+		turner.Timeout = 30 * time.Minute
+		if rem := bt.BudgetUSD - bt.CostUSD; rem < 5 {
+			loop.MaxUSD = max(rem, 0.5)
+		}
+	}
 	headID := head.ID
+	s.bg.Add(1)
 	go func() {
+		defer s.bg.Done()
 		defer cancel()
 		var res drive.Result
 		var err error
@@ -971,20 +1221,32 @@ func (s *server) taskRunLanded(taskID string, res drive.Result, runErr error, se
 			t.Exchanges = t.Exchanges[len(t.Exchanges)-maxExchanges:]
 		}
 		outcome := fmt.Sprintf("%d turns", len(newTurns))
+		t.StopErr, t.StopTransient = "", false
 		switch {
 		case runErr != nil:
+			t.StopReason = "error"
 			outcome += ", stopped: " + transcript.Snip(runErr.Error(), 60)
 			t.Col, t.State = "waiting", "waiting · the run stopped"
 			t.Ask = "The run stopped: " + runErr.Error() + " — start again, or drop?"
 			t.Face = "The run stopped before the goal was met."
+			// The stop record: the engine reads this to decide whether
+			// the death was machinery (retry) or judgment (yours).
+			t.StopErr, t.StopTransient = runErr.Error(), drive.IsTransient(runErr)
 			t.event("vera", "run stopped: "+transcript.Snip(runErr.Error(), 80), now)
 		case res.Escalated:
+			t.StopReason = "escalated"
+			if res.Circled {
+				t.StopReason = "circling"
+			} else if res.Capped {
+				t.StopReason = "spend-cap"
+			}
 			outcome += ", escalated"
 			t.Col, t.State = "waiting", "waiting · escalated to you"
 			t.Ask = res.Ask
 			t.Face = "Vera escalated: " + transcript.Snip(res.Ask, 120)
 			t.event("vera", "escalated — "+transcript.Snip(res.Ask, 100), now)
 		case res.Done:
+			t.StopReason = "done"
 			outcome += ", judge said DONE"
 			t.Col, t.State = "waiting", "waiting for acceptance"
 			t.Ask = ""
@@ -993,11 +1255,17 @@ func (s *server) taskRunLanded(taskID string, res drive.Result, runErr error, se
 				"Judge returned DONE: "+res.Reason+" Irreversible — yours to confirm.", "done"
 			t.event("vera", "judged done, proposed acceptance", now)
 		default:
+			t.StopReason = "turns"
 			outcome += ", budget spent"
 			t.Col, t.State = "waiting", "waiting · budget spent"
 			t.Ask = res.Reason + " — start another run, or drop?"
 			t.Face = "The turn budget ran out before the judge was satisfied."
 			t.event("vera", "budget spent without DONE", now)
+		}
+		if runErr == nil {
+			// The machinery completed a whole run; a later transient
+			// death starts from a fresh retry budget.
+			t.Retries = 0
 		}
 		if n := len(res.Turns); n > 0 {
 			t.event("worker", fmt.Sprintf("%d turn(s) landed", n), now)
@@ -1006,6 +1274,22 @@ func (s *server) taskRunLanded(taskID string, res drive.Result, runErr error, se
 		t.CostUSD += cost
 		return nil
 	})
+}
+
+// rearmStanding lays the next pass of a standing need: same intent,
+// same ground, a fresh unassigned card in the inbox — spending
+// nothing until its moment comes (the steward's queue, the owner's
+// start, or a deadline the next plan names).
+func (s *server) rearmStanding(prev task, now time.Time) {
+	st := task{
+		Title: prev.Title, Intent: prev.Intent,
+		Workspace: prev.Workspace, Mode: prev.Mode, Cadence: "standing",
+		Col: "inbox", State: "inbox · standing",
+		Face:      "A standing need — the last pass (" + prev.ID + ") was accepted; this is the next.",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	st.event("vera", "standing need re-armed after "+prev.ID+" was accepted", now)
+	s.tasks.create(st)
 }
 
 // handleTaskAct is the small verbs: accept, decline, drop, pin, merge.
@@ -1034,6 +1318,21 @@ func (s *server) handleTaskAct(w http.ResponseWriter, r *http.Request) {
 			s.handleTaskStart(w, r)
 			return
 		}
+		// A drafted answer: accepting sends exactly the text the card
+		// showed, and the same drive continues on it.
+		if t.ProposalKind == "reply" {
+			if strings.TrimSpace(t.ProposalText) == "" {
+				httpErr(w, 409, "the drafted reply is empty — answer yourself instead")
+				return
+			}
+			nt, serr := s.taskReply(tid, t.ProposalText, "accepted vera's drafted reply", now)
+			if serr != nil {
+				httpErr(w, serr.code, serr.msg)
+				return
+			}
+			writeJSON(w, nt)
+			return
+		}
 		if t.ProposalKind != "done" {
 			httpErr(w, 409, "nothing proposed to accept")
 			return
@@ -1046,15 +1345,37 @@ func (s *server) handleTaskAct(w http.ResponseWriter, r *http.Request) {
 			t.event("human", "accepted as done", now)
 			return nil
 		})
+		if err == nil {
+			s.recordOutcome(t, true, now)
+		}
 		// Accepting a plan-step card is the nod for the piece after it.
 		if err == nil && t.NextID != "" {
 			s.chainNext(t.NextID, t.Mode, now)
+		}
+		// A standing need outlives any one pass: acceptance closes THIS
+		// card and lays the next, so the board keeps saying so.
+		if err == nil && t.Cadence == "standing" {
+			s.rearmStanding(t, now)
 		}
 		respond(w, t, err)
 	case "decline":
 		t, err := s.tasks.mutate(tid, func(t *task) error {
 			t.clearProposal()
 			t.event("human", "declined the proposal for now", now)
+			return nil
+		})
+		respond(w, t, err)
+	case "hold":
+		// The veto on a queued self-start: the mark clears, nothing
+		// spends, and the card stays exactly where it was. The steward
+		// may argue again on a later pass; the owner may hold again.
+		t, err := s.tasks.mutate(tid, func(t *task) error {
+			if t.AutoStart == "" {
+				return errors.New("nothing queued to hold")
+			}
+			t.AutoStart = ""
+			t.State = "inbox · backlog"
+			t.event("human", "held — vera's queued start canceled", now)
 			return nil
 		})
 		respond(w, t, err)
@@ -1071,6 +1392,9 @@ func (s *server) handleTaskAct(w http.ResponseWriter, r *http.Request) {
 			t.event("human", "dropped — "+reason, now)
 			return nil
 		})
+		if err == nil {
+			s.recordOutcome(t, false, now)
+		}
 		respond(w, t, err)
 	case "pin":
 		t, err := s.tasks.mutate(tid, func(t *task) error {
