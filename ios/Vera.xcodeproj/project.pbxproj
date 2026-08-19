@@ -6,14 +6,32 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		A1000000000000000000B00A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A1000000000000000000A009 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1000000000000000000A006;
+			remoteInfo = Vera;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		A1000000000000000000A001 /* Vera.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vera.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000B001 /* VeraTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VeraTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A1000000000000000000A002 /* Vera */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Vera; sourceTree = "<group>"; };
-		A1000000000000000000B002 /* VeraTests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = VeraTests; sourceTree = "<group>"; };
+		A1000000000000000000A002 /* Vera */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Vera;
+			sourceTree = "<group>";
+		};
+		A1000000000000000000B002 /* VeraTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VeraTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -98,24 +116,6 @@
 		};
 /* End PBXNativeTarget section */
 
-/* Begin PBXContainerItemProxy section */
-		A1000000000000000000B00A /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A1000000000000000000A009 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A1000000000000000000A006;
-			remoteInfo = Vera;
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXTargetDependency section */
-		A1000000000000000000B00B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A1000000000000000000A006 /* Vera */;
-			targetProxy = A1000000000000000000B00A /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
-
 /* Begin PBXProject section */
 		A1000000000000000000A009 /* Project object */ = {
 			isa = PBXProject;
@@ -183,6 +183,14 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		A1000000000000000000B00B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1000000000000000000A006 /* Vera */;
+			targetProxy = A1000000000000000000B00A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
 		A1000000000000000000A00D /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -249,6 +257,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 8J4Z2239S9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -275,6 +284,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = 8J4Z2239S9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -330,15 +340,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1000000000000000000B00C /* Build configuration list for PBXNativeTarget "VeraTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A1000000000000000000B00F /* Debug */,
-				A1000000000000000000B010 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		A1000000000000000000A00A /* Build configuration list for PBXProject "Vera" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -353,6 +354,15 @@
 			buildConfigurations = (
 				A1000000000000000000A00F /* Debug */,
 				A1000000000000000000A010 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000000000000000000B00C /* Build configuration list for PBXNativeTarget "VeraTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000B00F /* Debug */,
+				A1000000000000000000B010 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

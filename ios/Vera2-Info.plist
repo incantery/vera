@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+
+	<!-- Vera runs on your Mac over plain HTTP on the LAN. ATS blocks
+	     cleartext by default; NSAllowsLocalNetworking permits it for
+	     local addresses ONLY, which is exactly the scope we want and
+	     narrower than NSAllowsArbitraryLoads. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+
+	<!-- iOS 14+ prompts before an app may touch the local network.
+	     Without this key the request fails in a way that reads exactly
+	     like the Mac being switched off. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Vera talks to the Mac running on your network. Without this it cannot reach it.</string>
+
+	<key>NSCameraUsageDescription</key>
+	<string>To scan the pairing code shown on your Mac.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>To hear what you say to Vera.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>To turn what you say into words Vera can read.</string>
+</dict>
+</plist>
