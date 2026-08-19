@@ -30,6 +30,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -45,6 +46,7 @@ const version = "0.1.0"
 
 func main() {
 	addr := flag.String("addr", ":4780", "listen address")
+	noPeer := flag.Bool("no-peer", false, "do not advertise over peer-to-peer")
 	state := flag.String("state", "", "identity file (default ~/.local/state/vera2/identity.json)")
 	model := flag.String("model", "gpt-5.6-luna", "model (any OpenAI-compatible server's name for it)")
 	apiBase := flag.String("api-base", "", "API base URL (default OpenAI; ollama etc. work)")
@@ -78,9 +80,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	// One transport today. The interface exists so the Swift sidecar
-	// can become a second one without anything above this line moving.
-	var transport Transport = newLAN(*addr, id)
+	// Two transports now, which is what the interface was for. LAN is
+	// the one that works at home and can be watched with curl; peer is
+	// the one that survives a network which refuses to route between
+	// its own clients.
+	transports := []Transport{newLAN(*addr, id)}
+	var radio *peerTransport
+	peering := "off (--no-peer)"
+	if !*noPeer {
+		sidecar, err := sidecarBinary()
+		if err != nil {
+			// Not fatal. A Mac without swiftc still serves the LAN,
+			// and saying so is better than refusing to start.
+			peering = "unavailable — " + err.Error()
+		} else {
+			radio = newPeer(id, filepath.Join(stateDir(), "vera2", "peer.sock"), sidecar)
+			transports = append(transports, radio)
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -219,12 +236,29 @@ func main() {
 		go watchUsage(ctx, *usageEvery)
 	}
 
-	go announce(transport, id, *addr, how, telemetry, conversations, memory, hands)
+	go func() {
+		// Asked rather than assumed: the sidecar takes a second to get
+		// the radio up, and it can fail.
+		if radio != nil {
+			peering = radio.Ready(10 * time.Second)
+		}
+		announce(transports[0], id, *addr, how, telemetry, conversations, memory, hands, peering)
+	}()
 
-	if err := transport.Serve(ctx, answer); err != nil {
-		fmt.Fprintln(os.Stderr, "vera2: "+err.Error())
-		os.Exit(1)
+	// Every transport carries the same handler. A failure in one is
+	// reported and does not take the others down — losing the radio
+	// should not cost you the wifi.
+	var wg sync.WaitGroup
+	for _, t := range transports {
+		wg.Add(1)
+		go func(t Transport) {
+			defer wg.Done()
+			if err := t.Serve(ctx, answer); err != nil {
+				slog.Error("transport stopped", "transport", t.Name(), "error", err.Error())
+			}
+		}(t)
 	}
+	wg.Wait()
 }
 
 // echo is the stand-in for a mind.
@@ -289,7 +323,7 @@ func chooseMind(echoOnly bool, model, apiBase, keyFile string, generations *agen
 }
 
 // announce prints where to pair, once the listener has a real port.
-func announce(t Transport, id Identity, addr, how, telemetry, conversations string, memory *Memory, hands *Delegate) {
+func announce(t Transport, id Identity, addr, how, telemetry, conversations string, memory *Memory, hands *Delegate, peering string) {
 	time.Sleep(150 * time.Millisecond)
 	fmt.Printf("vera2 — %s\n", id.Name)
 	fmt.Printf("  answering with  %s\n", how)
@@ -308,6 +342,7 @@ func announce(t Transport, id Identity, addr, how, telemetry, conversations stri
 			fmt.Printf("    reporting as service.name=%s, joined to Vera's traces\n", delegateService)
 		}
 	}
+	fmt.Printf("  peer-to-peer  %s\n", peering)
 	fmt.Printf("  pair at  http://localhost%s/\n", portOf(addr))
 	for _, hint := range t.Hints() {
 		fmt.Printf("  reachable at  %s\n", hint)
@@ -328,12 +363,7 @@ func identityPath(override string) string {
 	if override != "" {
 		return override
 	}
-	dir := os.Getenv("XDG_STATE_HOME")
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(dir, "vera2", "identity.json")
+	return filepath.Join(stateDir(), "vera2", "identity.json")
 }
 
 // checkTelemetry sends exactly what a real exchange sends, flushes it,

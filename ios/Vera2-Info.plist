@@ -40,8 +40,15 @@
 	<!-- iOS 14+ prompts before an app may touch the local network.
 	     Without this key the request fails in a way that reads exactly
 	     like the Mac being switched off. -->
+	<!-- Browsing is silent without this: NWBrowser simply returns
+	     nothing, with no error, for a service type not listed here. -->
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_vera._tcp</string>
+	</array>
+
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Vera talks to the Mac running on your network. Without this it cannot reach it.</string>
+	<string>Vera talks to the Mac running it — over your network, or directly to it when the network will not carry the traffic.</string>
 
 	<key>NSCameraUsageDescription</key>
 	<string>To scan the pairing code shown on your Mac.</string>

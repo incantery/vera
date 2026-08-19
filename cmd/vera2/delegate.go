@@ -35,12 +35,7 @@ func workspacePath(override string) string {
 	if override != "" {
 		return override
 	}
-	dir := os.Getenv("XDG_STATE_HOME")
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(dir, "vera2", "workspace")
+	return filepath.Join(stateDir(), "vera2", "workspace")
 }
 
 type Delegate struct {

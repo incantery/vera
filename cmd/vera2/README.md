@@ -13,6 +13,8 @@ open ios/Vera2.xcodeproj           # ⌘R to a real phone
 transport.go   the boundary: Message in, Frames out
 lan.go         an HTTP listener behind it — the known-good baseline
 run.go         work that outlives the connection that asked for it
+peer.go        the transport that does not need the network
+peer/          the Swift sidecar that owns the radio
 pair.go        identity, secret, address hints
 page.go        the button and the QR
 mind.go        one streamed model call per exchange
@@ -222,6 +224,50 @@ than quietly inflating it.
 
 It is one person's memory. There is no user id anywhere.
 
+## Peer-to-peer
+
+LAN works at home and fails in a hotel: access points routinely isolate
+clients from each other at layer 2, so the phone and the Mac are on the
+same wifi and cannot exchange a packet. No amount of retrying fixes
+something being done on purpose. The way around it is a link that does
+not involve the access point — AWDL, which on Apple hardware means
+Network.framework, for which there is no Go.
+
+So a **Swift sidecar owns the radio and nothing else**: it advertises
+`_vera._tcp` over peer-to-peer, accepts peers, and copies bytes into a
+unix socket. It knows nothing about Vera's protocol, its messages, or
+its secret. That is deliberate — a clever sidecar means maintaining the
+protocol twice, and the arrangement is meant to let Android later get
+its own equally stupid sidecar over its own radio while nothing above
+the byte stream moves.
+
+The sidecar is **built on first run** from source embedded in the
+binary, cached by content hash. Shipping a compiled one would need
+signing, would drift from the source beside it, and would be the first
+thing to break on a new macOS.
+
+The protocol over that link is **not HTTP** — four bytes of big-endian
+length, then JSON, one request per connection. `Transport` was made
+message-shaped precisely so this implementation would not have to
+invent status codes and header parsing for a link that has neither.
+
+Both transports run at once, each with the same handler; a failure in
+one does not take the other down, because losing the radio should not
+cost you the wifi. The phone tries the network first — fast, and warm
+when you are at home — and goes around it only when nothing answered.
+A refused secret does not fall through: a Mac that rejected it over
+wifi will reject it over the radio, and retrying turns one clear error
+into two slow ones.
+
+The peer id rides in the Bonjour TXT record, so the phone knows *which*
+Mac it has found before saying anything to it. Names are for people and
+are not unique. **`Hints()` returns nothing for this transport, and
+that is the point** — it has no address to offer, which is exactly why
+the pairing code was built to carry an identity instead of one.
+
+The app needs `NSBonjourServices` listing `_vera._tcp`; without it
+`NWBrowser` returns nothing, with no error, forever.
+
 ## Runs
 
 A delegated task used to die when the phone went away — a lift, a
@@ -412,11 +458,6 @@ quitting the binary abandons whatever is in flight.
 **Memory is never revisited.** A fact is corrected only if the person
 happens to contradict it. Nothing ages, decays, or is re-examined, so a
 plan that silently fell through stays true forever.
-
-**LAN only.** It will not survive a hotel — access points isolate
-clients from each other, and then this listener is running perfectly and
-reachable by nobody. The peer-to-peer transport is the answer and the
-interface is the place it goes.
 
 **A shared secret, not a trust ceremony.** Good against the other guests
 on the wifi; not against someone who has read your disk.

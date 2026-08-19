@@ -90,8 +90,15 @@ struct Client: Sendable {
     /// One exchange. Frames arrive as they are written, which is the
     /// whole point — the first words should be on screen while the rest
     /// is still being composed.
+    ///
+    /// Two routes to the same Mac. The network is tried first because
+    /// it is fast and already warm when you are at home; peer-to-peer
+    /// is the answer when the network refuses to carry the traffic,
+    /// which is the normal state of a hotel or a guest wifi.
     func say(_ text: String) -> AsyncThrowingStream<Frame, Error> {
-        stream { address in
+        route(
+            peer: .say(text, in: conversation),
+            lan: stream { address in
             var request = URLRequest(url: URL(string: "http://\(address)/say")!)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -100,7 +107,8 @@ struct Client: Sendable {
                 "conversation": self.conversation,
             ])
             return request
-        }
+            }
+        )
     }
 
     /// Rejoin work already under way on the Mac, skipping the frames
@@ -108,13 +116,53 @@ struct Client: Sendable {
     /// while, so an answer produced while the app was closed is still
     /// waiting when it opens.
     func resume(run: String, from seen: Int) -> AsyncThrowingStream<Frame, Error> {
-        stream { address in
-            var parts = URLComponents(string: "http://\(address)/resume")!
-            parts.queryItems = [
-                URLQueryItem(name: "run", value: run),
-                URLQueryItem(name: "from", value: String(seen)),
-            ]
-            return URLRequest(url: parts.url!)
+        route(
+            peer: .resume(run, from: seen),
+            lan: stream { address in
+                var parts = URLComponents(string: "http://\(address)/resume")!
+                parts.queryItems = [
+                    URLQueryItem(name: "run", value: run),
+                    URLQueryItem(name: "from", value: String(seen)),
+                ]
+                return URLRequest(url: parts.url!)
+            }
+        )
+    }
+
+    /// Try the network, and go around it if it will not carry the
+    /// traffic. Only `unreachable` falls through: a Mac that answered
+    /// and refused the secret would refuse it over the radio too, and
+    /// retrying would turn one clear error into two slow ones.
+    private func route(peer: PeerRequest,
+                       lan: AsyncThrowingStream<Frame, Error>)
+    -> AsyncThrowingStream<Frame, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                var delivered = false
+                do {
+                    for try await frame in lan {
+                        delivered = true
+                        continuation.yield(frame)
+                    }
+                    continuation.finish()
+                    return
+                } catch ClientError.unreachable where !delivered {
+                    // Nothing was said over the network, so nothing is
+                    // repeated by going around it.
+                } catch {
+                    continuation.finish(throwing: error)
+                    return
+                }
+                do {
+                    for try await frame in PeerLink.exchange(with: pairing, request: peer) {
+                        continuation.yield(frame)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
