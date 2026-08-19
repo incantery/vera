@@ -25,6 +25,8 @@ github.com/grafana/agento11y/go v0.17.0 h1:uL7lTKhPk0pTbJTGr/9hmP4NFUUyLhZyyVbQw
 github.com/grafana/agento11y/go v0.17.0/go.mod h1:VLyfdZCWiMawl3Zr9tpk0TuxtssPIuxqEOhhXQyrPNI=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF28c5ZQfqCBQ5g2xfk=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0/go.mod h1:Hyl3n6Twe1hvtd9XUXDec4pTvgMSEixRuQKPTMH2bNs=
+github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc h1:z1d3g/fou7eW978AOY8riurgqK0oZQdHIkRxcjnWa8I=
+github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc/go.mod h1:Gv38TyMudM/6yaFxBn1EscKbGfSx/deU5NMIBB3X62I=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=
 github.com/klauspost/compress v1.19.1/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=

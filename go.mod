@@ -6,7 +6,6 @@ require (
 	connectrpc.com/connect v1.20.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/grafana/agento11y/go v0.17.0
-	github.com/incantery/vera/drive v0.0.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.opentelemetry.io/contrib/exporters/autoexport v0.70.0
 	go.opentelemetry.io/otel v1.45.0
@@ -25,6 +24,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
+	github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/prometheus/client_golang v1.24.1 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
@@ -55,5 +55,3 @@ require (
 	google.golang.org/grpc v1.83.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/incantery/vera/drive => ./drive

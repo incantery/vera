@@ -1,0 +1,19 @@
+// The workspace exists so that drive/ can be a real module WITHOUT a
+// replace in go.mod. That distinction is the whole point: `go install
+// pkg@version` refuses a module whose go.mod carries replace
+// directives, and `go run github.com/incantery/vera/cmd/vera@latest` is
+// the first line of the README — the on-ramp that promises one binary,
+// no install, no account. A replace would have quietly cost that.
+//
+// So the published requirement is an ordinary pseudo-version, and this
+// file — which consumers never see, and which pkg@version ignores —
+// points local builds at ./drive so edits there are picked up without
+// a push round-trip. After changing drive/, `go get
+// github.com/incantery/vera/drive@<commit>` is what makes the change
+// real for everyone else.
+go 1.25.7
+
+use (
+	.
+	./drive
+)
