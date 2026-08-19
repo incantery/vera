@@ -1,16 +1,14 @@
 import Foundation
 import Observation
 
-// The conversation, which today has no memory of itself.
+// The conversation.
 //
-// Every exchange is independent: what you said, and what came back.
-// There is no history sent to the machine, because there is nothing on
-// the machine that would read it yet. That is the next thing to be
-// wrong, and it should become obvious by using this rather than by
-// being argued about.
+// The Mac holds what was said (history) and what is true about you
+// (memory). This holds neither — only what is on screen, and only so
+// that reopening the app does not look like nothing ever happened.
 
-struct Exchange: Identifiable, Sendable {
-    let id = UUID()
+struct Exchange: Identifiable, Codable, Sendable {
+    var id = UUID()
     var said: String
     var reply = ""
     var failed: String?
@@ -32,17 +30,27 @@ final class Conversation {
     private(set) var exchanges: [Exchange] = []
     private(set) var replying = false
 
-    /// What ties this run of exchanges together. The Mac keeps no
-    /// history and so cannot work it out for itself; on the phone it
-    /// is simply the life of the screen. When history arrives this is
-    /// the thread it hangs on, which is why it exists before there is
-    /// anything to hang.
+    /// What ties this run of exchanges together, on both ends: the Mac
+    /// keys its history by it, and cannot work it out for itself.
+    ///
+    /// It is restored along with the transcript, so reopening the app
+    /// continues the conversation rather than starting a stranger. The
+    /// Mac drops a conversation after six idle hours, so a transcript
+    /// older than that will still read correctly and no longer be
+    /// followed — the screen is honest about what was said either way.
     private(set) var conversationID = UUID().uuidString
 
     @ObservationIgnored private var inFlight: Task<Void, Never>?
 
     init() {
         pairing = PairingStore.load()
+
+        // Only worth restoring if there is still a machine to continue
+        // with. Unpairing clears both.
+        if pairing != nil, let transcript = TranscriptStore.load() {
+            conversationID = transcript.conversation
+            exchanges = transcript.exchanges
+        }
 
         // Review scaffolds, not product surface. The Simulator has no
         // camera worth pointing at a screen and no microphone worth
@@ -72,11 +80,13 @@ final class Conversation {
         conversationID = UUID().uuidString
         exchanges = []
         replying = false
+        TranscriptStore.clear()
     }
 
     func unpair() {
         inFlight?.cancel()
         PairingStore.clear()
+        TranscriptStore.clear()
         pairing = nil
         exchanges = []
         conversationID = UUID().uuidString
@@ -90,6 +100,10 @@ final class Conversation {
         exchanges.append(Exchange(said: said))
         let index = exchanges.count - 1
         replying = true
+        // Saved before the answer as well as after: the app can be
+        // killed mid-reply, and losing the question is worse than
+        // restoring it marked interrupted.
+        persist()
 
         inFlight?.cancel()
         inFlight = Task { [weak self] in
@@ -108,16 +122,26 @@ final class Conversation {
                 }
                 self?.exchanges[index].done = true
                 self?.exchanges[index].status = nil
+                self?.persist()
             } catch {
                 self?.exchanges[index].failed = error.localizedDescription
                 self?.exchanges[index].done = true
                 self?.exchanges[index].status = nil
+                self?.persist()
             }
             self?.replying = false
         }
     }
 }
 
+
+extension Conversation {
+    /// Written on settle rather than on every delta — a token at a time
+    /// would be a file write per word.
+    fileprivate func persist() {
+        TranscriptStore.save(conversation: conversationID, exchanges: exchanges)
+    }
+}
 
 /// The value following `flag` in the launch arguments, if any.
 private func launchArgument(_ flag: String) -> String? {
