@@ -18,6 +18,13 @@ struct Exchange: Identifiable, Codable, Sendable {
     /// takes minutes, and a silent screen for that long reads as
     /// broken.
     var status: String?
+
+    /// The work on the Mac this came from, and how much of it has been
+    /// seen. Together they are enough to rejoin it after the app has
+    /// been closed — the Mac kept going, so there is something to
+    /// rejoin.
+    var run: String?
+    var seen = 0
 }
 
 @Observable
@@ -51,6 +58,7 @@ final class Conversation {
             conversationID = transcript.conversation
             exchanges = transcript.exchanges
         }
+        rejoinUnfinished()
 
         // Review scaffolds, not product surface. The Simulator has no
         // camera worth pointing at a screen and no microphone worth
@@ -111,6 +119,15 @@ final class Conversation {
             do {
                 for try await frame in client.say(said) {
                     guard let self, !Task.isCancelled else { return }
+                    exchanges[index].seen += 1
+                    if let run = frame.run {
+                        exchanges[index].run = run
+                        // Saved the moment it is known. Waiting until
+                        // the exchange settles would mean the one case
+                        // this exists for — the app dying mid-answer —
+                        // is the one case with nothing to rejoin.
+                        persist()
+                    }
                     if let delta = frame.delta {
                         exchanges[index].reply += delta
                         // The first real word means the waiting is over.
@@ -136,6 +153,46 @@ final class Conversation {
 
 
 extension Conversation {
+
+    /// Anything that was still running when the app went away is
+    /// probably still running now — the Mac does not stop because a
+    /// phone did. Rejoin it, skipping what was already read.
+    ///
+    /// TranscriptStore marks interrupted exchanges finished so the
+    /// screen never lies while this is in flight; a successful rejoin
+    /// simply overwrites that with the truth.
+    func rejoinUnfinished() {
+        guard let pairing else { return }
+        for (index, exchange) in exchanges.enumerated() {
+            guard let run = exchange.run, exchange.failed == "Interrupted." else { continue }
+            let client = Client(pairing: pairing, conversation: conversationID)
+            let seen = exchange.seen
+            Task { @MainActor [weak self] in
+                do {
+                    for try await frame in client.resume(run: run, from: seen) {
+                        guard let self, index < exchanges.count else { return }
+                        exchanges[index].seen += 1
+                        // It was not interrupted after all.
+                        exchanges[index].failed = nil
+                        if let delta = frame.delta {
+                            exchanges[index].reply += delta
+                            exchanges[index].status = nil
+                        }
+                        if let status = frame.status { exchanges[index].status = status }
+                        if let error = frame.error { exchanges[index].failed = error }
+                        if frame.done == true || frame.error != nil { break }
+                    }
+                    self?.exchanges[index].done = true
+                    self?.exchanges[index].status = nil
+                    self?.persist()
+                } catch {
+                    // The run is gone, or the Mac is. The exchange stays
+                    // marked interrupted, which is what it was.
+                }
+            }
+        }
+    }
+
     /// Written on settle rather than on every delta — a token at a time
     /// would be a file write per word.
     fileprivate func persist() {

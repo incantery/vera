@@ -10,6 +10,9 @@ struct Frame: Decodable, Sendable {
     var delta: String?
     var done: Bool?
     var error: String?
+    /// Names the work on the Mac. Arrives first, and is what a phone
+    /// that lost the connection reattaches to.
+    var run: String?
     /// What is happening while nothing is being said. Replaces whatever
     /// came before it; never part of the answer.
     var status: String?
@@ -18,6 +21,7 @@ struct Frame: Decodable, Sendable {
 enum ClientError: LocalizedError {
     case unreachable
     case refused
+    case gone
     case broken(String)
 
     // Spoken, because these end up on screen. "The Mac isn't answering"
@@ -26,6 +30,7 @@ enum ClientError: LocalizedError {
         switch self {
         case .unreachable: "I can't reach that Mac from here."
         case .refused: "That Mac doesn't recognise this phone any more."
+        case .gone: "That was too long ago — the Mac isn't holding it any more."
         case .broken(let why): why
         }
     }
@@ -86,25 +91,48 @@ struct Client: Sendable {
     /// whole point — the first words should be on screen while the rest
     /// is still being composed.
     func say(_ text: String) -> AsyncThrowingStream<Frame, Error> {
+        stream { address in
+            var request = URLRequest(url: URL(string: "http://\(address)/say")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode([
+                "text": text,
+                "conversation": self.conversation,
+            ])
+            return request
+        }
+    }
+
+    /// Rejoin work already under way on the Mac, skipping the frames
+    /// this phone has already seen. The Mac keeps a finished run for a
+    /// while, so an answer produced while the app was closed is still
+    /// waiting when it opens.
+    func resume(run: String, from seen: Int) -> AsyncThrowingStream<Frame, Error> {
+        stream { address in
+            var parts = URLComponents(string: "http://\(address)/resume")!
+            parts.queryItems = [
+                URLQueryItem(name: "run", value: run),
+                URLQueryItem(name: "from", value: String(seen)),
+            ]
+            return URLRequest(url: parts.url!)
+        }
+    }
+
+    private func stream(_ build: @escaping @Sendable (String) throws -> URLRequest) -> AsyncThrowingStream<Frame, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     guard let address = await resolve() else {
                         throw ClientError.unreachable
                     }
-                    var request = URLRequest(url: URL(string: "http://\(address)/say")!)
-                    request.httpMethod = "POST"
+                    var request = try build(address)
                     request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
-                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.httpBody = try JSONEncoder().encode([
-                        "text": text,
-                        "conversation": conversation,
-                    ])
 
                     let (bytes, response) = try await Self.session.bytes(for: request)
                     switch (response as? HTTPURLResponse)?.statusCode {
                     case 200: break
                     case 401: throw ClientError.refused
+                    case 404: throw ClientError.gone
                     case let code?: throw ClientError.broken("The Mac answered with \(code).")
                     case nil: throw ClientError.broken("The Mac answered with nothing at all.")
                     }

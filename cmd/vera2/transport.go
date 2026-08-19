@@ -42,6 +42,10 @@ type Frame struct {
 	Done  bool   `json:"done,omitempty"`
 	Error string `json:"error,omitempty"`
 
+	// Run names the work this frame belongs to. Sent once, first, so a
+	// phone that loses the connection knows what to reattach to.
+	Run string `json:"run,omitempty"`
+
 	// Status is what is happening while nothing is being said. Some
 	// work takes minutes, and a silent screen for that long reads as
 	// broken — so the wait gets narrated rather than hidden. It

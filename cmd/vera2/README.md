@@ -12,6 +12,7 @@ open ios/Vera2.xcodeproj           # ⌘R to a real phone
 ```
 transport.go   the boundary: Message in, Frames out
 lan.go         an HTTP listener behind it — the known-good baseline
+run.go         work that outlives the connection that asked for it
 pair.go        identity, secret, address hints
 page.go        the button and the QR
 mind.go        one streamed model call per exchange
@@ -221,6 +222,34 @@ than quietly inflating it.
 
 It is one person's memory. There is no user id anywhere.
 
+## Runs
+
+A delegated task used to die when the phone went away — a lift, a
+locked screen, a backgrounded app — and a ten-minute task is exactly
+the kind you walk away from. The cause was ownership: the work belonged
+to the HTTP request, so the request ending ended the work.
+
+Ownership is inverted now. **The run is the thing that exists; a
+connection is a view onto it.** `POST /say` starts a run on a detached
+context and then watches it; `GET /resume?run=…&from=N` rejoins one,
+skipping the frames already read. Any number of watchers can come and
+go. The first frame carries the run id, so a phone always knows what to
+reattach to.
+
+The phone persists that id the moment it arrives — not on settle, since
+the case this exists for is the app dying mid-answer, which would
+otherwise be the one case with nothing to rejoin. On launch it rejoins
+anything left unfinished and quietly replaces "Interrupted." with what
+actually happened.
+
+Frames are kept, not merely forwarded, which is what makes resuming
+from the middle possible. Finished runs are held 30 minutes — a
+delivery buffer, not a transcript; the transcript lives on the phone.
+A run still in flight is never evicted, since that would be the
+original bug wearing a hat. A run that stops without a terminal frame
+is closed with an error, because a watcher waiting on something that
+will never speak again is the one state worse than a failure.
+
 ## Delegation
 
 Vera is **never a coding agent**. It knows you, decides what deserves
@@ -373,11 +402,12 @@ trust.
 
 ## Not done
 
-**Delegated work dies with the connection.** Hanging up cancels the
-task — right for a ten-second job, wrong for a ten-minute one, and the
-phone will disconnect (backgrounding, a lift, a network blip). Surviving
-that wants durable jobs and a way to be told when they finish, which is
-a different piece of machinery.
+**Nothing tells you when it finished.** Work survives the connection
+now, but you only learn the answer by opening the app. Being told
+wants push notifications, which want a paid Apple developer account.
+
+**Runs do not survive a restart of vera2 itself.** They are in memory;
+quitting the binary abandons whatever is in flight.
 
 **Memory is never revisited.** A fact is corrected only if the person
 happens to contradict it. Nothing ages, decays, or is re-examined, so a
