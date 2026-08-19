@@ -10,7 +10,14 @@ import (
 	"strings"
 )
 
-const judgeSysPrompt = `You supervise an AI coding agent (the worker) for its owner, who set one goal and stepped away. You read the conversation so far — the messages sent on the owner's behalf and the worker's replies — and decide what happens next.
+// JudgeSysPrompt is the supervisor's whole brief. It is exported
+// because the judge's VOCABULARY — what DONE, CONTINUE and ESCALATE
+// mean, and the standing rule that a wrong answer typed into a repo is
+// worse than a question asked — is the part that must not fork. rook's
+// agent plugin judges on its own wire and its own spend meter, but by
+// these words; a second copy would be two products quietly disagreeing
+// about when to stop.
+const JudgeSysPrompt = `You supervise an AI coding agent (the worker) for its owner, who set one goal and stepped away. You read the conversation so far — the messages sent on the owner's behalf and the worker's replies — and decide what happens next.
 Reply with exactly this shape:
 First line: DONE, CONTINUE, or ESCALATE.
 The lines after:
@@ -36,25 +43,39 @@ func (j *LLMJudge) maxReply() int {
 }
 
 func (j *LLMJudge) Judge(ctx context.Context, goal string, history []Exchange) (Verdict, error) {
-	var b strings.Builder
-	b.WriteString("The owner's goal:\n" + goal + "\n")
-	for i, e := range history {
-		reply := e.Reply
-		if len(reply) > j.maxReply() {
-			reply = reply[:j.maxReply()] + "\n[truncated]"
-		}
-		fmt.Fprintf(&b, "\nMessage %d sent to the worker:\n%s\n\nThe worker's reply %d:\n%s\n",
-			i+1, e.Prompt, i+1, reply)
-	}
-	b.WriteString("\nDecide.")
 	content, err := j.Complete(ctx, []chatMsg{
-		{"system", judgeSysPrompt},
-		{"user", b.String()},
+		{"system", JudgeSysPrompt},
+		{"user", JudgePrompt(goal, history, j.maxReply())},
 	})
 	if err != nil {
 		return Verdict{}, err
 	}
 	return ParseVerdict(content)
+}
+
+// JudgePrompt lays the goal and the whole conversation out for the
+// supervisor. Exported alongside the brief for the same reason: the
+// judge reads a FORMAT, and a caller who writes the transcript
+// differently is asking a different question of the same words.
+//
+// maxReply caps each reply on the way in — a 300KB turn is not a
+// judgment worth $0.10 of context. Zero means the default.
+func JudgePrompt(goal string, history []Exchange, maxReply int) string {
+	if maxReply <= 0 {
+		maxReply = 12000
+	}
+	var b strings.Builder
+	b.WriteString("The owner's goal:\n" + goal + "\n")
+	for i, e := range history {
+		reply := e.Reply
+		if len(reply) > maxReply {
+			reply = reply[:maxReply] + "\n[truncated]"
+		}
+		fmt.Fprintf(&b, "\nMessage %d sent to the worker:\n%s\n\nThe worker's reply %d:\n%s\n",
+			i+1, e.Prompt, i+1, reply)
+	}
+	b.WriteString("\nDecide.")
+	return b.String()
 }
 
 // ParseVerdict holds the judge to the shape it was asked for. A broken
