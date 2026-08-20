@@ -73,11 +73,24 @@ func canonical(items []attentionItem) string {
 	return b.String()
 }
 
+// spendItem is the day's ledger as one info line for rook's subdued
+// chrome: kind "spend" never counts as attention (only "waiting"
+// does) — surfaces that want it, render it.
+func (a *attentionSystem) spendItem(now time.Time) attentionItem {
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	workers, vera := a.s.spendWindow(midnight, now)
+	return attentionItem{
+		Kind:     "spend",
+		Headline: fmt.Sprintf("$%.2f today", workers+vera),
+		Source:   "vera",
+	}
+}
+
 func (a *attentionSystem) Tick(w *World) []Action {
 	if a.path == "" {
 		return nil
 	}
-	items := renderAttention(w.Tasks)
+	items := append(renderAttention(w.Tasks), a.spendItem(w.Now))
 	body := canonical(items)
 	if body == a.last && a.fresh(w.Now) {
 		return nil

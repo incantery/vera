@@ -32,13 +32,16 @@ func TestAttentionPublishesTheWaitingSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
-	if len(lines) != 1 {
-		t.Fatalf("only the waiting card belongs in the feed:\n%s", b)
+	if len(lines) != 2 {
+		t.Fatalf("the waiting card plus the spend line belong in the feed:\n%s", b)
 	}
 	for _, want := range []string{waiting.ID, "postgres or sqlite?", `"kind":"waiting"`, `"dir":"/Users/x/dev/rook"`, `"source":"vera"`, `"at":"`} {
 		if !strings.Contains(lines[0], want) {
 			t.Fatalf("feed line must carry %q:\n%s", want, lines[0])
 		}
+	}
+	if !strings.Contains(lines[1], `"kind":"spend"`) || !strings.Contains(lines[1], "today") {
+		t.Fatalf("the second line is the day's spend:\n%s", lines[1])
 	}
 
 	// Unchanged set, fresh file: nothing owed.
@@ -54,8 +57,8 @@ func TestAttentionPublishesTheWaitingSet(t *testing.T) {
 		t.Fatalf("emptying the set is a change: %+v", acts)
 	}
 	acts[0].Run()
-	if b, _ := os.ReadFile(sys.path); strings.TrimSpace(string(b)) != "" {
-		t.Fatalf("resolved asks must leave the feed:\n%s", b)
+	if b, _ := os.ReadFile(sys.path); strings.Contains(string(b), "waiting") {
+		t.Fatalf("resolved asks must leave the feed (spend line may stay):\n%s", b)
 	}
 }
 
