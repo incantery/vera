@@ -164,10 +164,11 @@ final class Listener {
         task = nil
         request = nil
         heard = ""
-        if !chunk.isEmpty { onChunk(chunk) }
-        // Only carry on if we are still meant to be listening — finish()
-        // clears the flag before ending the request.
+        // Open the next session FIRST, so the running tap is feeding a
+        // live request before the hand-off — a buffer arriving in the
+        // hand-off is kept, not dropped into an abandoned request.
         if isListening { listen() }
+        if !chunk.isEmpty { onChunk(chunk) }
     }
 
     /// Ends the run and hands back the last chunk once the recogniser

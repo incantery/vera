@@ -24,8 +24,6 @@ struct DictateView: View {
     @State private var on = false
     @State private var heard = ""
     @State private var finishing = false
-    /// What this session has typed so far, for the screen.
-    @State private var typedSoFar = ""
 
     init(client: Client) {
         _link = State(initialValue: TerminalLink(client: client))
@@ -112,16 +110,16 @@ struct DictateView: View {
                 Text(problem).font(N.body(13)).foregroundStyle(N.accent300)
             }
             if on || finishing {
-                if !typedSoFar.isEmpty {
-                    Text(typedSoFar).font(N.body(14)).foregroundStyle(N.dim).lineLimit(4)
+                if !link.transcript.isEmpty {
+                    Text(link.transcript).font(N.body(14)).foregroundStyle(N.dim).lineLimit(4)
                 }
                 Text(heard.isEmpty ? (finishing ? "…" : "Listening") : heard)
                     .font(N.body(16)).foregroundStyle(N.text)
-            } else if !typedSoFar.isEmpty {
+            } else if !link.transcript.isEmpty {
                 VStack(spacing: 4) {
                     Text("Typed" + (link.lastRaw ? " · as heard" : ""))
                         .font(N.body(11)).foregroundStyle(N.dim)
-                    Text(typedSoFar).font(N.body(16)).foregroundStyle(N.text).lineLimit(6)
+                    Text(link.transcript).font(N.body(16)).foregroundStyle(N.text).lineLimit(6)
                 }
             } else {
                 Text("Tap to talk").font(N.body(14)).foregroundStyle(N.dim)
@@ -160,23 +158,20 @@ struct DictateView: View {
 
     private var sendRow: some View {
         Button {
-            Task {
-                await link.send()
-                if link.problem == nil { typedSoFar = "" }
-            }
+            Task { await link.send() }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "return")
                 Text("Send")
             }
             .font(N.body(15, .medium))
-            .foregroundStyle(typedSoFar.isEmpty || on ? N.dim : .white)
+            .foregroundStyle(!link.hasText || on ? N.dim : .white)
             .padding(.horizontal, 22)
             .padding(.vertical, 12)
-            .background(typedSoFar.isEmpty || on ? N.surface : N.accent, in: Capsule())
+            .background(!link.hasText || on ? N.surface : N.accent, in: Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(typedSoFar.isEmpty || on || link.busy || !targetOK)
+        .disabled(!link.hasText || on || link.busy || !targetOK)
         .padding(.bottom, 30)
     }
 
@@ -186,12 +181,11 @@ struct DictateView: View {
         guard !on, !finishing else { return }
         on = true
         heard = ""
-        typedSoFar = ""
+        link.clear()
         // Each session Apple ends by itself is typed and listening
-        // carries on with no gap in the audio.
-        listener.onChunk = { chunk in
-            Task { await typeChunk(chunk) }
-        }
+        // carries on with no gap in the audio. Chunks are queued and
+        // typed in order.
+        listener.onChunk = { chunk in link.type(chunk) }
         if listener.authorized {
             listener.startContinuous()
         } else {
@@ -209,14 +203,7 @@ struct DictateView: View {
             let said = await listener.finish()
             finishing = false
             heard = ""
-            if let said { await typeChunk(said) }
-        }
-    }
-
-    private func typeChunk(_ said: String) async {
-        await link.type(said)
-        if let typed = link.lastTyped {
-            typedSoFar += (typedSoFar.isEmpty ? "" : " ") + typed
+            if let said { link.type(said) }
         }
     }
 }

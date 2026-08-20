@@ -55,12 +55,17 @@ final class TerminalLink {
     private(set) var target: Target?
     private(set) var watching = false
     private(set) var problem: String?
-    /// The last thing typed, for the screen.
-    private(set) var lastTyped: String?
+    /// Everything typed this session, in order, for the screen.
+    private(set) var transcript = ""
     private(set) var lastRaw = false
     private(set) var busy = false
 
     @ObservationIgnored private var watcher: Task<Void, Never>?
+    // Chunks are typed one at a time, in the order they were spoken. Two
+    // chunks racing to /type would clobber each other's result and lose
+    // one, which is a whole sentence gone.
+    @ObservationIgnored private var queue: [String] = []
+    @ObservationIgnored private var draining = false
     private let client: Client
 
     init(client: Client) {
@@ -98,31 +103,60 @@ final class TerminalLink {
         watching = false
     }
 
-    /// Type the words into the focused pane. Cleaned on the Mac; not
-    /// sent.
-    func type(_ text: String) async {
+    /// Whether anything is typed and waiting to be sent.
+    var hasText: Bool { !transcript.isEmpty || !queue.isEmpty }
+
+    /// Enqueue a spoken chunk. Returns at once; the chunk is typed in
+    /// its turn. Ordering is the point — see `queue`.
+    func type(_ chunk: String) {
+        let chunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !chunk.isEmpty else { return }
+        queue.append(chunk)
+        drain()
+    }
+
+    private func drain() {
+        guard !draining else { return }
+        draining = true
+        Task { [weak self] in
+            guard let self else { return }
+            while !queue.isEmpty {
+                let chunk = queue.removeFirst()
+                busy = true
+                do {
+                    let typed = try await client.type(chunk, clean: true, enter: false)
+                    transcript += (transcript.isEmpty ? "" : " ") + typed.text
+                    lastRaw = typed.raw ?? false
+                    problem = nil
+                } catch {
+                    // Put it back at the front and stop, so nothing is
+                    // typed out of order after a failure, and the words
+                    // are not lost — the person sees why and can retry.
+                    queue.insert(chunk, at: 0)
+                    problem = error.localizedDescription
+                    break
+                }
+            }
+            busy = false
+            draining = false
+        }
+    }
+
+    /// Press Enter in the pane: send what has been typed. Only once the
+    /// queue has drained, so nothing is sent half-typed.
+    func send() async {
+        guard queue.isEmpty else { problem = "Still typing — try Send again in a moment."; return }
         busy = true
         defer { busy = false }
         do {
-            let typed = try await client.type(text, clean: true, enter: false)
-            lastTyped = typed.text
-            lastRaw = typed.raw ?? false
+            _ = try await client.type("", clean: false, enter: true)
+            transcript = ""
             problem = nil
         } catch {
             problem = error.localizedDescription
         }
     }
 
-    /// Press Enter in the pane: send what has been typed.
-    func send() async {
-        busy = true
-        defer { busy = false }
-        do {
-            _ = try await client.type("", clean: false, enter: true)
-            lastTyped = nil
-            problem = nil
-        } catch {
-            problem = error.localizedDescription
-        }
-    }
+    /// Forget the current transcript without sending — for a fresh start.
+    func clear() { transcript = ""; queue.removeAll() }
 }
