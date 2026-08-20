@@ -52,17 +52,6 @@ struct DictateView: View {
         .onChange(of: listener.heard) { _, now in
             if listener.isListening { heard = now }
         }
-        .onChange(of: listener.isListening) { _, listening in
-            // The recogniser hung up on its own while the mic is meant
-            // to be on: type what it settled and carry on.
-            guard on, !listening, !finishing else { return }
-            let said = listener.heard.trimmingCharacters(in: .whitespacesAndNewlines)
-            heard = ""
-            Task {
-                await restart()
-                if !said.isEmpty { await typeChunk(said) }
-            }
-        }
     }
 
     // MARK: - Parts
@@ -198,10 +187,15 @@ struct DictateView: View {
         on = true
         heard = ""
         typedSoFar = ""
+        // Each session Apple ends by itself is typed and listening
+        // carries on with no gap in the audio.
+        listener.onChunk = { chunk in
+            Task { await typeChunk(chunk) }
+        }
         if listener.authorized {
-            listener.start()
+            listener.startContinuous()
         } else {
-            Task { if await listener.authorize() { listener.start() } }
+            Task { if await listener.authorize() { listener.startContinuous() } }
         }
     }
 
@@ -217,20 +211,6 @@ struct DictateView: View {
             heard = ""
             if let said { await typeChunk(said) }
         }
-    }
-
-    /// Start listening again after the recogniser hung up. It can
-    /// refuse for a moment right after a stop; a few short retries
-    /// cover that, and a failure that outlasts them is shown, not
-    /// swallowed — a mic that says on and is off is the worst state.
-    private func restart() async {
-        for attempt in 0..<5 {
-            guard on else { return }
-            listener.start()
-            if listener.isListening { return }
-            try? await Task.sleep(for: .milliseconds(150 * (attempt + 1)))
-        }
-        on = false
     }
 
     private func typeChunk(_ said: String) async {
