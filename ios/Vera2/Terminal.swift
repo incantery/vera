@@ -159,4 +159,7 @@ final class TerminalLink {
 
     /// Forget the current transcript without sending — for a fresh start.
     func clear() { transcript = ""; queue.removeAll() }
+
+    /// Surface a problem from outside (a failed transcription).
+    func note(_ text: String) { problem = text }
 }

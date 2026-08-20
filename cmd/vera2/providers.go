@@ -10,6 +10,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 )
@@ -26,7 +27,18 @@ type ProviderStatus struct {
 // on every /status, and running it every time means "installed" is a
 // fact about now rather than about startup.
 func detectProviders() []ProviderStatus {
-	return []ProviderStatus{detectRook()}
+	return []ProviderStatus{detectRook(), detectParakeet()}
+}
+
+// detectParakeet reports the speech engine as a provider, so the same
+// surface that shows rook shows whether dictation is ready.
+func detectParakeet() ProviderStatus {
+	s := newParakeet().Status(context.Background())
+	p := ProviderStatus{Name: "parakeet", Installed: s.Installed, Detail: s.Detail, Capabilities: []string{}}
+	if s.Ready {
+		p.Capabilities = []string{"transcribe"}
+	}
+	return p
 }
 
 func detectRook() ProviderStatus {

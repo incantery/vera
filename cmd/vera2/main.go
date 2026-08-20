@@ -217,6 +217,9 @@ func main() {
 
 	answer, mind, how := chooseMind(*echoOnly, *model, *apiBase, *keyFile, generations, preface, memory, hands)
 	lan.how = how
+	// Speech to text lives on this machine; the phone sends audio and
+	// this turns it into words.
+	lan.stt = newParakeet()
 	if mind != nil {
 		// The Mac app reports where attention is over the LAN transport
 		// and the mind reads it from there; the two meet here and

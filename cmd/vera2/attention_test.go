@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -293,5 +294,82 @@ func TestTypeRefusesWithoutATargetAndNamesThePane(t *testing.T) {
 	lanUnderTest.typer = func(context.Context, string, bool, bool) (*TerminalFocus, error) { return nil, ErrNoTarget }
 	if code, _ := post(`{"text":"hi"}`); code != http.StatusConflict {
 		t.Fatalf("no target should be a conflict, got %d", code)
+	}
+}
+
+// fakeSTT is a Transcriber under test control.
+type fakeSTT struct {
+	ready bool
+	text  string
+}
+
+func (f *fakeSTT) Transcribe(context.Context, string) (string, error) { return f.text, nil }
+func (f *fakeSTT) Status(context.Context) STTStatus {
+	return STTStatus{Engine: "fake", UV: true, Installed: f.ready, ModelReady: f.ready, Ready: f.ready}
+}
+func (f *fakeSTT) Install(_ context.Context, progress func(string)) error {
+	progress("installing")
+	f.ready = true
+	progress("Ready.")
+	return nil
+}
+
+func TestTranscribeNeedsAReadyEngine(t *testing.T) {
+	base, id := serveLAN(t, echo)
+	stt := &fakeSTT{ready: false, text: "pull the pr down"}
+	lanUnderTest.stt = stt
+
+	post := func() (int, Transcribed) {
+		req, _ := http.NewRequest("POST", base+"/transcribe", strings.NewReader("RIFFfake-audio"))
+		req.Header.Set("Authorization", "Bearer "+id.Secret)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out Transcribed
+		_ = json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out
+	}
+	if code, _ := post(); code != http.StatusServiceUnavailable {
+		t.Fatalf("an unready engine should be 503, got %d", code)
+	}
+	stt.ready = true
+	code, out := post()
+	if code != 200 || out.Text != "pull the pr down" {
+		t.Fatalf("got %d %q", code, out.Text)
+	}
+}
+
+func TestSTTInstallStreamsProgressToDone(t *testing.T) {
+	base, id := serveLAN(t, echo)
+	lanUnderTest.stt = &fakeSTT{}
+	req, _ := http.NewRequest("POST", base+"/stt/install", nil)
+	req.Header.Set("Authorization", "Bearer "+id.Secret)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var steps int
+	var done bool
+	scan := bufio.NewScanner(res.Body)
+	for scan.Scan() {
+		var f Frame
+		if json.Unmarshal(scan.Bytes(), &f) != nil {
+			continue
+		}
+		if f.Status != "" {
+			steps++
+		}
+		if f.Done {
+			done = true
+		}
+		if f.Error != "" {
+			t.Fatalf("install errored: %s", f.Error)
+		}
+	}
+	if steps == 0 || !done {
+		t.Fatalf("want progress then done, got steps=%d done=%v", steps, done)
 	}
 }

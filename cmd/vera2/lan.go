@@ -17,9 +17,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +49,8 @@ type lanTransport struct {
 	poke map[string]func()
 	// typer is the terminal.type capability, when a provider offers it.
 	typer func(ctx context.Context, text string, enter, anywhere bool) (*TerminalFocus, error)
+	// stt transcribes audio the phone sends, and manages its own engine.
+	stt Transcriber
 
 	mu   sync.Mutex
 	port string
@@ -90,6 +94,9 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("GET /watch", l.watchStatus)
 	mux.HandleFunc("POST /dictate", l.dictate)
 	mux.HandleFunc("POST /type", l.typeInto)
+	mux.HandleFunc("POST /transcribe", l.transcribe)
+	mux.HandleFunc("GET /stt", l.sttStatus)
+	mux.HandleFunc("POST /stt/install", l.sttInstall)
 	mux.HandleFunc("POST /poke/{who}", loopbackOnly(l.pokeHandler))
 	mux.HandleFunc("GET /pair.json", loopbackOnly(l.pairJSON))
 	mux.HandleFunc("GET /pair.png", loopbackOnly(l.pairPNG))
@@ -247,6 +254,96 @@ func (l *lanTransport) onPoke(who string, fn func()) {
 		l.poke = map[string]func(){}
 	}
 	l.poke[who] = fn
+}
+
+// Transcribed is what /transcribe returns.
+type Transcribed struct {
+	Text string `json:"text"`
+}
+
+// transcribe takes recorded audio and returns the words. The phone
+// records; the Mac recognises. The body is the audio file, whatever
+// format the phone wrote — ffmpeg normalises it.
+func (l *lanTransport) transcribe(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.stt == nil {
+		http.Error(w, "no speech-to-text engine", http.StatusNotImplemented)
+		return
+	}
+	if !l.stt.Status(r.Context()).Ready {
+		http.Error(w, "speech-to-text is not installed yet", http.StatusServiceUnavailable)
+		return
+	}
+	f, err := os.CreateTemp("", "vera-audio-*")
+	if err != nil {
+		http.Error(w, "cannot buffer audio", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(f.Name())
+	// 200 MB ceiling: a very long dictation is large, but not unbounded.
+	if _, err := io.Copy(f, http.MaxBytesReader(w, r.Body, 200<<20)); err != nil {
+		f.Close()
+		http.Error(w, "bad audio", http.StatusBadRequest)
+		return
+	}
+	f.Close()
+
+	text, err := l.stt.Transcribe(r.Context(), f.Name())
+	if err != nil {
+		slog.Error("transcribe", "error", err.Error())
+		http.Error(w, "transcription failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, Transcribed{Text: text})
+}
+
+// sttStatus is what the "download and install" surface reads.
+func (l *lanTransport) sttStatus(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.stt == nil {
+		writeJSON(w, STTStatus{Engine: "none"})
+		return
+	}
+	writeJSON(w, l.stt.Status(r.Context()))
+}
+
+// sttInstall runs the install and streams its progress, one ndjson line
+// per step, so the button that started it can show what is happening.
+func (l *lanTransport) sttInstall(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.stt == nil {
+		http.Error(w, "no speech-to-text engine", http.StatusNotImplemented)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+	enc := json.NewEncoder(w)
+	emit := func(step string, done bool, errText string) {
+		_ = enc.Encode(Frame{Status: step, Done: done, Error: errText})
+		_ = rc.Flush()
+	}
+	// Its own context: an install outlives the request that asked, the
+	// same way a run does — a phone that locks mid-download should not
+	// abandon it.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	err := l.stt.Install(ctx, func(step string) { emit(step, false, "") })
+	if err != nil {
+		emit("", false, err.Error())
+		return
+	}
+	emit("Ready.", true, "")
 }
 
 // Typing is a request to put words into the focused pane.

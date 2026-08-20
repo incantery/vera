@@ -130,6 +130,59 @@ struct Client: Sendable {
         }
     }
 
+    /// Whether the Mac has a speech engine ready.
+    struct STT: Decodable, Sendable {
+        let engine: String
+        let uv: Bool?
+        let installed: Bool?
+        let modelReady: Bool?
+        let ready: Bool?
+        let detail: String?
+        let installing: Bool?
+        enum CodingKeys: String, CodingKey { case engine, uv, installed, modelReady = "model_ready", ready, detail, installing }
+    }
+
+    func sttStatus() async throws -> STT {
+        guard let address = await resolve() else { throw ClientError.unreachable }
+        var request = URLRequest(url: URL(string: "http://\(address)/stt")!)
+        request.timeoutInterval = 5
+        request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await Self.session.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ClientError.broken("The Mac would not report its speech engine.") }
+        return try JSONDecoder().decode(STT.self, from: data)
+    }
+
+    /// Kick off the managed install and stream its progress lines.
+    func installSTT() -> AsyncThrowingStream<Frame, Error> {
+        stream { address in
+            var request = URLRequest(url: URL(string: "http://\(address)/stt/install")!)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 20 * 60
+            return request
+        }
+    }
+
+    /// Send recorded audio; get back what was said. The Mac recognises.
+    func transcribe(_ audio: URL) async throws -> String {
+        guard let address = await resolve() else { throw ClientError.unreachable }
+        var request = URLRequest(url: URL(string: "http://\(address)/transcribe")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        let data = try Data(contentsOf: audio)
+        let (out, response) = try await Self.session.upload(for: request, from: data)
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 200:
+            struct R: Decodable { let text: String }
+            return try JSONDecoder().decode(R.self, from: out).text
+        case 401: throw ClientError.refused
+        case 503: throw ClientError.broken("Speech-to-text isn't installed on the Mac yet.")
+        case let code?: throw ClientError.broken("The Mac answered \(code) to transcribe.")
+        case nil: throw ClientError.broken("The Mac answered with nothing at all.")
+        }
+    }
+
     /// Put words into the pane the Mac is looking at. Enter only if
     /// asked; a pane that is not a coding agent is refused by the Mac.
     func type(_ text: String, clean: Bool, enter: Bool) async throws -> Typed {
