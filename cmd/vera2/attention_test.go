@@ -373,3 +373,50 @@ func TestSTTInstallStreamsProgressToDone(t *testing.T) {
 		t.Fatalf("want progress then done, got steps=%d done=%v", steps, done)
 	}
 }
+
+func TestFrecencyRanksRecentFirstAndMarksCurrent(t *testing.T) {
+	a := newAttention()
+	now := time.Now()
+	// Equal frequency, different recency: Notes last week, Ghostty just
+	// now. Recency must break the tie.
+	for i := 0; i < 3; i++ {
+		a.Observe(focused("m", "Notes", "com.apple.Notes", now.Add(-7*24*time.Hour)))
+		a.Observe(focused("m", "Ghostty", "com.mitchellh.ghostty", now.Add(-time.Duration(i)*time.Minute)))
+	}
+	// A rook pane, fresh, carrying the coordinates a jump needs.
+	pane := &TerminalFocus{Session: "vera", Window: "1", Pane: "1", Agent: "claude-code", Title: "the work"}
+	a.Observe(Observation{Type: "terminal.focus", Device: "m", Source: "rook", At: now, Terminal: pane})
+
+	ranked := a.Rank("m", now, 12)
+	pos := map[string]int{}
+	for i, r := range ranked {
+		pos[r.Label] = i
+	}
+	if pos["Ghostty"] > pos["Notes"] {
+		t.Fatalf("with equal frequency the recent app should rank first: %v", pos)
+	}
+	var foundPane bool
+	for _, r := range ranked {
+		if r.Kind == "pane" {
+			foundPane = true
+			if r.Terminal == nil || r.Terminal.Session != "vera" {
+				t.Fatalf("a pane target must carry its coordinates: %+v", r)
+			}
+		}
+	}
+	if !foundPane {
+		t.Fatal("the rook pane should be a jump target")
+	}
+	// The place in front of the person is marked, and the list does not
+	// reshuffle to put it first.
+	a.Observe(focused("m", "Ghostty", "com.mitchellh.ghostty", now))
+	var marked bool
+	for _, r := range a.Rank("m", now, 12) {
+		if r.Label == "Ghostty" {
+			marked = r.Current
+		}
+	}
+	if !marked {
+		t.Fatal("the current app should be marked")
+	}
+}

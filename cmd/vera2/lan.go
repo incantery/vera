@@ -449,6 +449,9 @@ type Status struct {
 	Devices      []DeviceStatus      `json:"devices"`
 	Providers    []ProviderStatus    `json:"providers"`
 	Integrations []IntegrationStatus `json:"integrations"`
+	// Targets is the frecency-ranked places on the device that asked,
+	// best first — the phone's home screen.
+	Targets []TargetStatus `json:"targets"`
 }
 
 func (l *lanTransport) status(w http.ResponseWriter, r *http.Request) {
@@ -468,6 +471,10 @@ func (l *lanTransport) snapshot(device string) Status {
 	if devices == nil {
 		devices = []DeviceStatus{}
 	}
+	targets := l.attention.Rank(device, now, 12)
+	if targets == nil {
+		targets = []TargetStatus{}
+	}
 	return Status{
 		Version:      version,
 		Name:         l.id.Name,
@@ -478,6 +485,7 @@ func (l *lanTransport) snapshot(device string) Status {
 		Devices:      devices,
 		Providers:    detectProviders(),
 		Integrations: integrations,
+		Targets:      targets,
 	}
 }
 

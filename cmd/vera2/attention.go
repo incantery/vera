@@ -86,6 +86,58 @@ type device struct {
 	Recent []Observation
 	// Integrations maps a source ("neovim") to the last time it spoke.
 	Integrations map[string]time.Time
+	// places is the frecency table: every app and pane the person has
+	// been to, keyed by target id, scored by how often and how lately.
+	places map[string]*place
+}
+
+// place is one thing the person has had in front of them — an app, or a
+// rook pane — with the frequency-and-recency the ranking is built from.
+// The name is zoxide's: frecency, frequency married to recency, so a
+// thing visited often but not lately loses to a thing visited twice
+// this minute.
+type place struct {
+	Key      string
+	Kind     string // "app" or "pane"
+	Label    string
+	BundleID string         // apps
+	Terminal *TerminalFocus // panes
+	// rank rises by one each visit; the score decays it by age, so an
+	// old favourite fades without being forgotten.
+	rank float64
+	last time.Time
+}
+
+// bump records a visit, the way zoxide does: +1 to rank, and the clock
+// reset to now.
+func (d *device) bump(key, kind, label string, at time.Time, mut func(*place)) {
+	p := d.places[key]
+	if p == nil {
+		p = &place{Key: key, Kind: kind}
+		d.places[key] = p
+	}
+	p.Label = label
+	p.rank++
+	if at.After(p.last) {
+		p.last = at
+	}
+	if mut != nil {
+		mut(p)
+	}
+}
+
+// frecency is zoxide's decay: lately counts for far more than often.
+func frecency(rank float64, age time.Duration) float64 {
+	switch {
+	case age < time.Hour:
+		return rank * 4
+	case age < 24*time.Hour:
+		return rank * 2
+	case age < 7*24*time.Hour:
+		return rank * 0.5
+	default:
+		return rank * 0.25
+	}
 }
 
 // Attention holds every device's observations.
@@ -156,6 +208,14 @@ func (a *Attention) Observe(o Observation) {
 				d.Focus = o.App
 				d.FocusSince = o.At
 			}
+			bundle := o.App.BundleID
+			if bundle == "" {
+				bundle = o.App.Name
+			}
+			app := *o.App
+			d.bump("app:"+bundle, "app", o.App.Name, o.At, func(p *place) {
+				p.BundleID = app.BundleID
+			})
 		}
 	case "app.unfocused":
 		if o.App != nil && d.Focus != nil && d.Focus.BundleID == o.App.BundleID {
@@ -164,6 +224,11 @@ func (a *Attention) Observe(o Observation) {
 		}
 	case "terminal.focus":
 		d.Terminal = o.Terminal
+		if o.Terminal != nil {
+			t := *o.Terminal
+			key := "pane:" + t.Session + ":" + t.Window + "." + t.Pane
+			d.bump(key, "pane", t.Describe(), o.At, func(p *place) { p.Terminal = &t })
+		}
 	case "terminal.unfocused":
 		d.Terminal = nil
 	}
@@ -194,7 +259,7 @@ func (a *Attention) Seen(name string, at time.Time) {
 func (a *Attention) device(name string) *device {
 	d := a.devices[name]
 	if d == nil {
-		d = &device{Name: name, Integrations: map[string]time.Time{}}
+		d = &device{Name: name, Integrations: map[string]time.Time{}, places: map[string]*place{}}
 		a.devices[name] = d
 	}
 	return d
@@ -278,6 +343,68 @@ func (a *Attention) before(d *device) []string {
 		}
 		seen[key] = true
 		out = append(out, o.App.Name)
+	}
+	return out
+}
+
+// TargetStatus is one ranked place a person can jump to.
+type TargetStatus struct {
+	Key      string         `json:"key"`
+	Kind     string         `json:"kind"` // "app" or "pane"
+	Label    string         `json:"label"`
+	Score    float64        `json:"score"`
+	BundleID string         `json:"bundle_id,omitempty"`
+	Terminal *TerminalFocus `json:"terminal,omitempty"`
+	// Current is the place in front of the person right now.
+	Current bool `json:"current,omitempty"`
+}
+
+// Rank is the frecency-ordered list of places on one device, best
+// first. The place in front of the person is marked but not moved — a
+// list that reshuffles under your thumb as focus changes is a list you
+// cannot tap.
+func (a *Attention) Rank(device string, now time.Time, limit int) []TargetStatus {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	d := a.devices[device]
+	if d == nil {
+		return nil
+	}
+	currentApp := ""
+	if d.Focus != nil {
+		if d.Focus.BundleID != "" {
+			currentApp = "app:" + d.Focus.BundleID
+		} else {
+			currentApp = "app:" + d.Focus.Name
+		}
+	}
+	// The pane is only "current" when a terminal is actually in front of
+	// the person — the pane persists behind Slack, but it is not where
+	// their attention is.
+	currentPane := ""
+	if d.Terminal != nil && d.Focus != nil && isTerminal(d.Focus) {
+		currentPane = "pane:" + d.Terminal.Session + ":" + d.Terminal.Window + "." + d.Terminal.Pane
+	}
+	out := make([]TargetStatus, 0, len(d.places))
+	for _, p := range d.places {
+		out = append(out, TargetStatus{
+			Key:      p.Key,
+			Kind:     p.Kind,
+			Label:    p.Label,
+			Score:    frecency(p.rank, now.Sub(p.last)),
+			BundleID: p.BundleID,
+			Terminal: p.Terminal,
+			Current:  p.Key == currentApp || p.Key == currentPane,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Score != out[j].Score {
+			return out[i].Score > out[j].Score
+		}
+		return out[i].Label < out[j].Label
+	})
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
 	}
 	return out
 }
