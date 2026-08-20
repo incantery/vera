@@ -48,7 +48,7 @@ struct DictateView: View {
             _ = await listener.authorize()
             link.start()
         }
-        .onDisappear { link.stop(); listener.stop() }
+        .onDisappear { link.stop(); listener.release() }
         .onChange(of: listener.heard) { _, now in
             if listener.isListening { heard = now }
         }
@@ -58,8 +58,10 @@ struct DictateView: View {
             guard on, !listening, !finishing else { return }
             let said = listener.heard.trimmingCharacters(in: .whitespacesAndNewlines)
             heard = ""
-            listener.start()
-            if !said.isEmpty { Task { await typeChunk(said) } }
+            Task {
+                await restart()
+                if !said.isEmpty { await typeChunk(said) }
+            }
         }
     }
 
@@ -115,6 +117,9 @@ struct DictateView: View {
     private var words: some View {
         VStack(spacing: 8) {
             if let problem = link.problem, link.watching {
+                Text(problem).font(N.body(13)).foregroundStyle(N.accent300)
+            }
+            if let problem = listener.problem {
                 Text(problem).font(N.body(13)).foregroundStyle(N.accent300)
             }
             if on || finishing {
@@ -212,6 +217,20 @@ struct DictateView: View {
             heard = ""
             if let said { await typeChunk(said) }
         }
+    }
+
+    /// Start listening again after the recogniser hung up. It can
+    /// refuse for a moment right after a stop; a few short retries
+    /// cover that, and a failure that outlasts them is shown, not
+    /// swallowed — a mic that says on and is off is the worst state.
+    private func restart() async {
+        for attempt in 0..<5 {
+            guard on else { return }
+            listener.start()
+            if listener.isListening { return }
+            try? await Task.sleep(for: .milliseconds(150 * (attempt + 1)))
+        }
+        on = false
     }
 
     private func typeChunk(_ said: String) async {

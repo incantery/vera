@@ -156,6 +156,15 @@ final class Listener {
         task?.cancel()
         request = nil
         task = nil
+        // The audio session stays active: the next chunk starts a
+        // breath later, and deactivating and reactivating back-to-back
+        // is how "the microphone is busy" happens. `release()` is for
+        // actually being done.
+    }
+
+    /// Give the audio session back. Call when leaving the screen.
+    func release() {
+        stop()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }
