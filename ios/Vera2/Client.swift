@@ -96,6 +96,7 @@ struct Client: Sendable {
             let terminal: Target.Terminal?
         }
         let devices: [Device]
+        let targets: [RankedTarget]?
     }
 
     func watch() -> AsyncThrowingStream<Status, Error> {
@@ -179,6 +180,28 @@ struct Client: Sendable {
         case 401: throw ClientError.refused
         case 503: throw ClientError.broken("Speech-to-text isn't installed on the Mac yet.")
         case let code?: throw ClientError.broken("The Mac answered \(code) to transcribe.")
+        case nil: throw ClientError.broken("The Mac answered with nothing at all.")
+        }
+    }
+
+    /// Bring a place to the front on the Mac — an app, or a rook pane.
+    func goto(_ t: RankedTarget) async throws {
+        guard let address = await resolve() else { throw ClientError.unreachable }
+        var request = URLRequest(url: URL(string: "http://\(address)/goto")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 8
+        request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable {
+            let kind: String; let bundle_id: String?; let name: String?
+            let terminal: Target.Terminal?; let device: String
+        }
+        request.httpBody = try JSONEncoder().encode(Body(kind: t.kind, bundle_id: t.bundleID, name: t.label, terminal: t.terminal, device: "phone"))
+        let (_, response) = try await Self.session.data(for: request)
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 204, 200: return
+        case 401: throw ClientError.refused
+        case let code?: throw ClientError.broken("The Mac answered \(code) to goto.")
         case nil: throw ClientError.broken("The Mac answered with nothing at all.")
         }
     }

@@ -15,10 +15,10 @@ import Observation
 // and this is a thing you do at home, pacing.
 
 struct Target: Decodable, Sendable, Equatable {
-    struct App: Decodable, Sendable, Equatable {
+    struct App: Codable, Sendable, Equatable {
         let name: String
     }
-    struct Terminal: Decodable, Sendable, Equatable {
+    struct Terminal: Codable, Sendable, Equatable {
         let session: String
         let window: String
         let pane: String
@@ -43,6 +43,19 @@ struct Target: Decodable, Sendable, Equatable {
     let terminal: Terminal?
 }
 
+/// One place the person can jump to, from the Mac's frecency ranking.
+struct RankedTarget: Decodable, Identifiable, Sendable, Equatable {
+    let key: String
+    let kind: String       // "app" or "pane"
+    let label: String
+    let score: Double
+    let bundleID: String?
+    let terminal: Target.Terminal?
+    let current: Bool?
+    var id: String { key }
+    enum CodingKeys: String, CodingKey { case key, kind, label, score, bundleID = "bundle_id", terminal, current }
+}
+
 struct Typed: Decodable, Sendable {
     let text: String
     let raw: Bool?
@@ -53,6 +66,8 @@ struct Typed: Decodable, Sendable {
 @MainActor
 final class TerminalLink {
     private(set) var target: Target?
+    private(set) var targets: [RankedTarget] = []
+    private(set) var going: String?
     private(set) var watching = false
     private(set) var problem: String?
     /// Everything typed this session, in order, for the screen.
@@ -86,6 +101,7 @@ final class TerminalLink {
                         // the pairing name.
                         target = status.devices.first { $0.name == client.pairing.name }
                             .map { Target(focus: $0.focus, terminal: $0.terminal) }
+                        targets = status.targets ?? []
                     }
                 } catch {
                     problem = error.localizedDescription
@@ -155,6 +171,14 @@ final class TerminalLink {
         } catch {
             problem = error.localizedDescription
         }
+    }
+
+    /// Bring a place to the front on the Mac.
+    func goto(_ t: RankedTarget) async {
+        going = t.key
+        defer { going = nil }
+        do { try await client.goto(t); problem = nil }
+        catch { problem = error.localizedDescription }
     }
 
     /// Forget the current transcript without sending — for a fresh start.

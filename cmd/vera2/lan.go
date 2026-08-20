@@ -527,7 +527,10 @@ func (l *lanTransport) snapshot(device string) Status {
 	if devices == nil {
 		devices = []DeviceStatus{}
 	}
-	targets := l.attention.Rank(device, now, 12)
+	// The places are this Mac's, whoever is asking — a phone has none of
+	// its own. The device param is the caller's heartbeat, not the
+	// subject of the ranking.
+	targets := l.attention.Rank(l.id.Name, now, 12)
 	if targets == nil {
 		targets = []TargetStatus{}
 	}

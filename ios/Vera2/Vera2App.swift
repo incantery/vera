@@ -9,8 +9,8 @@ struct Vera2App: App {
             Group {
                 if conversation.pairing == nil {
                     PairView { conversation.pairing = $0 }
-                } else {
-                    ConversationView()
+                } else if let pairing = conversation.pairing {
+                    HomeView(client: Client(pairing: pairing, conversation: conversation.conversationID))
                 }
             }
             .environment(conversation)

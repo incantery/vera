@@ -13,7 +13,6 @@ struct ConversationView: View {
     /// overwritten by the first word.
     @State private var typedBeforeRecording = ""
     @FocusState private var typing: Bool
-    @State private var dictating = false
 
     var body: some View {
         ZStack {
@@ -25,18 +24,7 @@ struct ConversationView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         }
-        .task {
-            _ = await listener.authorize()
-            // Review scaffold, like -pair and -say: open the dictation
-            // screen directly, so the Simulator can show it.
-            if CommandLine.arguments.contains("-dictate") { dictating = true }
-        }
-        .fullScreenCover(isPresented: $dictating) {
-            if let pairing = conversation.pairing {
-                DictateView(client: Client(pairing: pairing, conversation: conversation.conversationID))
-                    .environment(conversation)
-            }
-        }
+        .task { _ = await listener.authorize() }
         .onChange(of: listener.heard) { _, heard in
             guard listener.isListening else { return }
             draft = typedBeforeRecording.isEmpty ? heard : typedBeforeRecording + " " + heard
@@ -51,11 +39,6 @@ struct ConversationView: View {
                 .font(N.body(13, .medium))
                 .foregroundStyle(N.dim)
             Spacer()
-            Button("Dictate") { dictating = true }
-                .font(N.body(12))
-                .foregroundStyle(N.accent300)
-                .buttonStyle(.plain)
-
             Button("New") {
                 conversation.startNew()
                 draft = ""
