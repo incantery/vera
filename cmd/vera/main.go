@@ -178,6 +178,7 @@ func main() {
 		s.steward,
 		igniteSystem{s},
 		reportSystem{s},
+		&attentionSystem{s: s, path: defaultAttentionPath()},
 		&hygieneSystem{s: s, dir: *dir, home: home, window: *window},
 	}, *autonomy)
 	go eng.loop()
