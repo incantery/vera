@@ -85,6 +85,73 @@ struct Client: Sendable {
         return nil
     }
 
+    // MARK: - What the Mac is looking at
+
+    /// Pushed status: one now, one on every change. Mirrors the fields
+    /// the phone reads out of vera2's `Status`; the rest is ignored.
+    struct Status: Decodable, Sendable {
+        struct Device: Decodable, Sendable {
+            let name: String
+            let focus: Target.App?
+            let terminal: Target.Terminal?
+        }
+        let devices: [Device]
+    }
+
+    func watch() -> AsyncThrowingStream<Status, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    guard let address = await resolve() else { throw ClientError.unreachable }
+                    var parts = URLComponents(string: "http://\(address)/watch")!
+                    parts.queryItems = [URLQueryItem(name: "device", value: "phone")]
+                    var request = URLRequest(url: parts.url!)
+                    request.timeoutInterval = 60 * 60 * 24
+                    request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
+                    let (bytes, response) = try await Self.session.bytes(for: request)
+                    switch (response as? HTTPURLResponse)?.statusCode {
+                    case 200: break
+                    case 401: throw ClientError.refused
+                    case let code?: throw ClientError.broken("The Mac answered with \(code).")
+                    case nil: throw ClientError.broken("The Mac answered with nothing at all.")
+                    }
+                    for try await line in bytes.lines {
+                        guard !line.isEmpty, let status = try? JSONDecoder().decode(Status.self, from: Data(line.utf8)) else { continue }
+                        continuation.yield(status)
+                    }
+                    continuation.finish()
+                } catch is CancellationError {
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Put words into the pane the Mac is looking at. Enter only if
+    /// asked; a pane that is not a coding agent is refused by the Mac.
+    func type(_ text: String, clean: Bool, enter: Bool) async throws -> Typed {
+        guard let address = await resolve() else { throw ClientError.unreachable }
+        var request = URLRequest(url: URL(string: "http://\(address)/type")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let text: String; let clean: Bool; let enter: Bool; let device: String }
+        request.httpBody = try JSONEncoder().encode(Body(text: text, clean: clean, enter: enter, device: "phone"))
+        let (data, response) = try await Self.session.data(for: request)
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 200: return try JSONDecoder().decode(Typed.self, from: data)
+        case 401: throw ClientError.refused
+        case 409: throw ClientError.broken(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+        case 501: throw ClientError.broken("That Mac has nothing to type into — rook isn't running there.")
+        case let code?: throw ClientError.broken("The Mac answered with \(code).")
+        case nil: throw ClientError.broken("The Mac answered with nothing at all.")
+        }
+    }
+
     // MARK: - The conversation
 
     /// One exchange. Frames arrive as they are written, which is the

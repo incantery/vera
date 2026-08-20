@@ -43,6 +43,6 @@ func detectRook() ProviderStatus {
 	}
 	// What the adapter in rook.go actually delivers. Listed here so the
 	// Connections view and a future router read the same answer.
-	p.Capabilities = []string{"terminal.focus"}
+	p.Capabilities = []string{"terminal.focus", "terminal.type"}
 	return p
 }

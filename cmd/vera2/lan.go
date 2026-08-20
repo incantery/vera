@@ -45,6 +45,8 @@ type lanTransport struct {
 	// poke is the doorbell a local integration rings to say "look
 	// again". Loopback-only, carries nothing, trusted for nothing.
 	poke map[string]func()
+	// typer is the terminal.type capability, when a provider offers it.
+	typer func(ctx context.Context, text string, enter, anywhere bool) (*TerminalFocus, error)
 
 	mu   sync.Mutex
 	port string
@@ -87,6 +89,7 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("GET /status", l.status)
 	mux.HandleFunc("GET /watch", l.watchStatus)
 	mux.HandleFunc("POST /dictate", l.dictate)
+	mux.HandleFunc("POST /type", l.typeInto)
 	mux.HandleFunc("POST /poke/{who}", loopbackOnly(l.pokeHandler))
 	mux.HandleFunc("GET /pair.json", loopbackOnly(l.pairJSON))
 	mux.HandleFunc("GET /pair.png", loopbackOnly(l.pairPNG))
@@ -244,6 +247,74 @@ func (l *lanTransport) onPoke(who string, fn func()) {
 		l.poke = map[string]func(){}
 	}
 	l.poke[who] = fn
+}
+
+// Typing is a request to put words into the focused pane.
+type Typing struct {
+	Text string `json:"text"`
+	// Clean runs the dictation pass first, with the pane as context.
+	Clean bool `json:"clean,omitempty"`
+	// Enter presses Enter after the text (or alone, with empty text).
+	Enter bool `json:"enter,omitempty"`
+	// Anywhere allows a pane that is not a coding agent.
+	Anywhere bool   `json:"anywhere,omitempty"`
+	Device   string `json:"device,omitempty"`
+}
+
+// Typed is what happened.
+type Typed struct {
+	Text  string         `json:"text"`
+	Raw   bool           `json:"raw,omitempty"`
+	Into  *TerminalFocus `json:"into,omitempty"`
+	Enter bool           `json:"enter,omitempty"`
+}
+
+// typeInto is the phone's way into the terminal: the words are cleaned
+// if asked, typed into the pane rook says is in front of the person,
+// and sent only if the caller said so. The reply names the pane, so a
+// phone can show where the words went.
+func (l *lanTransport) typeInto(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var t Typing
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&t); err != nil {
+		http.Error(w, "bad typing", http.StatusBadRequest)
+		return
+	}
+	if l.typer == nil {
+		http.Error(w, "no provider offers terminal.type", http.StatusNotImplemented)
+		return
+	}
+	text := strings.TrimSpace(t.Text)
+	out := Typed{Text: text, Enter: t.Enter}
+	if t.Clean && text != "" && l.cleaner != nil {
+		app := &ObservedApp{Name: "a terminal", BundleID: "terminal"}
+		cleaned, err := l.cleaner(r.Context(), Dictation{Text: text, Device: t.Device, App: app})
+		if err != nil {
+			slog.Warn("typing cleanup failed, typing raw", "error", err.Error())
+		}
+		if cleaned.Text != "" {
+			out.Text, out.Raw = cleaned.Text, cleaned.Raw
+		}
+	} else if t.Clean {
+		out.Raw = true
+	}
+	into, err := l.typer(r.Context(), out.Text, t.Enter, t.Anywhere)
+	out.Into = into
+	switch {
+	case errors.Is(err, ErrNoTarget):
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	case errors.Is(err, ErrNotAgent):
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	case err != nil:
+		http.Error(w, "typing failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, out)
 }
 
 // dictate cleans one utterance for the cursor. It never fails the

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -246,5 +247,51 @@ func TestWatchPushesOnChange(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("no push within two seconds of a change")
+	}
+}
+
+func TestTypeRefusesWithoutATargetAndNamesThePane(t *testing.T) {
+	base, id := serveLAN(t, echo)
+	post := func(body string) (int, Typed) {
+		req, _ := http.NewRequest("POST", base+"/type", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+id.Secret)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out Typed
+		_ = json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out
+	}
+	if code, _ := post(`{"text":"hi"}`); code != http.StatusNotImplemented {
+		t.Fatalf("without a provider got %d", code)
+	}
+
+	var typed []string
+	lanUnderTest.typer = func(ctx context.Context, text string, enter, anywhere bool) (*TerminalFocus, error) {
+		if text != "" {
+			typed = append(typed, text)
+		}
+		if enter {
+			typed = append(typed, "<enter>")
+		}
+		return &TerminalFocus{Session: "vera", Window: "1", Pane: "1", Agent: "claude-code"}, nil
+	}
+	code, out := post(`{"text":"  fix the race  ","clean":true}`)
+	if code != 200 || out.Into == nil || out.Into.Session != "vera" || !out.Raw {
+		t.Fatalf("got %d %+v — echo has no cleaner, so raw should be marked", code, out)
+	}
+	if len(typed) != 1 || typed[0] != "fix the race" {
+		t.Fatalf("typed %q; Enter must not be pressed unless asked", typed)
+	}
+	post(`{"text":"","enter":true}`)
+	if len(typed) != 2 || typed[1] != "<enter>" {
+		t.Fatalf("an empty text with enter should press Enter alone: %q", typed)
+	}
+
+	lanUnderTest.typer = func(context.Context, string, bool, bool) (*TerminalFocus, error) { return nil, ErrNoTarget }
+	if code, _ := post(`{"text":"hi"}`); code != http.StatusConflict {
+		t.Fatalf("no target should be a conflict, got %d", code)
 	}
 }

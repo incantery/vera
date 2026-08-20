@@ -15,10 +15,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -79,6 +81,53 @@ type rookWatcher struct {
 	absent bool
 	poke   chan struct{}
 	hooked bool
+
+	mu sync.Mutex // guards last for readers outside run
+}
+
+// Focus is the pane currently in front of the person, or nil.
+func (w *rookWatcher) Focus() *TerminalFocus {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.last == nil {
+		return nil
+	}
+	f := *w.last
+	return &f
+}
+
+// ErrNoTarget: nothing to type into.
+var ErrNoTarget = errors.New("rook is not showing a pane to type into")
+
+// ErrNotAgent: the pane is a shell or program, not a coding agent, and
+// the caller did not say that was fine.
+var ErrNotAgent = errors.New("the focused pane is not a coding agent session")
+
+// Type is the terminal.type capability: put text into the focused pane
+// as if typed, and press Enter only if asked. Type-only is the default
+// on purpose — words typed into an agent can be read before they are
+// sent; words sent cannot be unsent.
+func (w *rookWatcher) Type(ctx context.Context, text string, enter, anywhere bool) (*TerminalFocus, error) {
+	target := w.Focus()
+	if target == nil {
+		return nil, ErrNoTarget
+	}
+	if target.Agent == "" && !anywhere {
+		return target, ErrNotAgent
+	}
+	pane := target.Session + ":" + target.Window + "." + target.Pane
+	if text != "" {
+		// -l: literal, so "Enter" in a sentence is the word, not the key.
+		if _, err := w.tmux(ctx, "send-keys", "-t", pane, "-l", text); err != nil {
+			return target, err
+		}
+	}
+	if enter {
+		if _, err := w.tmux(ctx, "send-keys", "-t", pane, "Enter"); err != nil {
+			return target, err
+		}
+	}
+	return target, nil
 }
 
 func newRookWatcher(socket, device string) *rookWatcher {
@@ -152,7 +201,9 @@ func (w *rookWatcher) run(ctx context.Context, pokeURL string, observe func(Obse
 			}
 			if w.last != nil {
 				observe(Observation{Type: "terminal.unfocused", Device: w.device, Source: "rook", At: time.Now()})
+				w.mu.Lock()
 				w.last = nil
+				w.mu.Unlock()
 			}
 		case !focus.equal(w.last):
 			if w.absent || !w.hooked {
@@ -160,7 +211,9 @@ func (w *rookWatcher) run(ctx context.Context, pokeURL string, observe func(Obse
 				w.installHooks(ctx, pokeURL)
 			}
 			w.absent = false
+			w.mu.Lock()
 			w.last = &focus
+			w.mu.Unlock()
 			observe(Observation{Type: "terminal.focus", Device: w.device, Source: "rook", At: time.Now(), Terminal: &focus})
 		}
 		select {

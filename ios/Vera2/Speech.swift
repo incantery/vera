@@ -118,6 +118,24 @@ final class Listener {
         }
     }
 
+    /// Stops the microphone now and hands back what was said once the
+    /// recogniser has finished with what it already has — the release
+    /// is instant; the wait, bounded, is here. For push-to-talk, where
+    /// the last word is usually still being recognised when the thumb
+    /// lifts.
+    func finish() async -> String? {
+        guard isListening else { return nil }
+        engine.inputNode.removeTap(onBus: 0)
+        if engine.isRunning { engine.stop() }
+        request?.endAudio()
+        let before = heard
+        for _ in 0..<15 where isListening {
+            try? await Task.sleep(for: .milliseconds(100))
+            if heard != before { break }
+        }
+        return stop() ?? (before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : before)
+    }
+
     /// Stops listening and hands back what was said, or nil if nothing
     /// was. Silence is not a message.
     @discardableResult
