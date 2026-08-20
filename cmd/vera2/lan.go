@@ -288,8 +288,9 @@ func (l *lanTransport) goTo(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Bring the terminal app forward first, so the switched pane is
-		// actually on screen.
-		if host := l.attention.TerminalHost(g.Device); host != nil {
+		// actually on screen. The host is on THIS Mac's record, not the
+		// phone's — the phone has no terminal of its own.
+		if host := l.attention.TerminalHost(l.id.Name); host != nil {
 			_ = activateApp(r.Context(), host.BundleID, host.Name)
 		}
 		if l.goer == nil {
