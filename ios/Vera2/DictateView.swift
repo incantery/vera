@@ -17,6 +17,7 @@ struct DictateView: View {
     @Environment(Conversation.self) private var conversation
     @Environment(\.dismiss) private var dismiss
     @State private var link: TerminalLink
+    @State private var feed: PaneFeed
     @State private var recorder = Recorder()
     private let client: Client
 
@@ -37,6 +38,7 @@ struct DictateView: View {
         let link = TerminalLink(client: client)
         link.pinned = pinned
         _link = State(initialValue: link)
+        _feed = State(initialValue: PaneFeed(client: client, target: pinned?.terminal))
     }
 
     var body: some View {
@@ -47,7 +49,7 @@ struct DictateView: View {
                 Spacer()
                 if let stt, stt.ready == true {
                     target
-                    Spacer()
+                    screen
                     words
                     typeRow
                     button
@@ -61,9 +63,10 @@ struct DictateView: View {
         .task {
             _ = await recorder.authorize()
             link.start()
+            feed.start()
             await refreshSTT()
         }
-        .onDisappear { link.stop(); recorder.stop() }
+        .onDisappear { link.stop(); feed.stop(); recorder.stop() }
     }
 
     // MARK: - Header
@@ -155,6 +158,29 @@ struct DictateView: View {
         guard link.watching else { return link.problem ?? "…" }
         guard let terminal = link.target?.terminal else { return "rook isn't showing a pane" }
         return terminal.describe
+    }
+
+    // MARK: - Screen (Vera's eye into the pane)
+
+    @ViewBuilder private var screen: some View {
+        if feed.live && !feed.lines.isEmpty {
+            PaneScreenView(lines: feed.lines)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+        } else {
+            // Nothing to show yet: hold the space so the button does not
+            // jump when the first read lands.
+            VStack(spacing: 8) {
+                Spacer()
+                if !feed.live {
+                    Text(pinned != nil ? "Reading the pane…" : "Reading what the Mac is looking at…")
+                        .font(N.body(13)).foregroundStyle(N.dim)
+                }
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     // MARK: - Words

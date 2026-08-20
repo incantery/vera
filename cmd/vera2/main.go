@@ -256,6 +256,7 @@ func main() {
 		lan.onPoke("rook", rook.Poke)
 		lan.typer = rook.Type
 		lan.goer = rook.GoTo
+		lan.screener = rook.Capture
 		go rook.run(ctx, "http://127.0.0.1"+portOf(*addr)+"/poke/rook", lan.attention.Observe)
 	}
 

@@ -171,6 +171,37 @@ func (w *rookWatcher) Type(ctx context.Context, text string, enter, anywhere boo
 	return target, nil
 }
 
+// Capture reads the visible rows of a pane as plain text — the screen
+// as it stands, not the scrollback. It is Vera's one eye into the
+// terminal from afar: the phone cannot see rook, so the Mac reads the
+// pane and ships the lines. Nothing is typed and nothing moves, so a
+// snapshot is safe against any pane, agent or shell — a chosen pane, or
+// whatever has focus when `at` is nil.
+func (w *rookWatcher) Capture(ctx context.Context, at *TerminalFocus) ([]string, *TerminalFocus, error) {
+	target := at
+	if target == nil {
+		target = w.Focus()
+	}
+	if target == nil {
+		return nil, nil, ErrNoTarget
+	}
+	pane := target.Session + ":" + target.Window + "." + target.Pane
+	// -p prints to stdout; the visible region only, which is the whole
+	// point — this is a glance, not the whole history. No -J: a coding
+	// agent draws boxes, and joining wrapped lines would break them.
+	out, err := w.tmux(ctx, "capture-pane", "-p", "-t", pane)
+	if err != nil {
+		return nil, target, err
+	}
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	// Trim trailing blank lines — an agent's empty input area is a lot
+	// of nothing to send down and to scroll past.
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines, target, nil
+}
+
 func newRookWatcher(socket, device string) *rookWatcher {
 	return &rookWatcher{socket: socket, device: device, every: 5 * time.Second, poke: make(chan struct{}, 1)}
 }

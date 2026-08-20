@@ -50,6 +50,9 @@ type lanTransport struct {
 	// typer is the terminal.type capability, when a provider offers it.
 	typer func(ctx context.Context, text string, enter, anywhere bool, at *TerminalFocus) (*TerminalFocus, error)
 	goer  func(ctx context.Context, session, window, pane string) error
+	// screener reads the visible rows of a pane — Vera's one eye into
+	// the terminal for a phone that cannot see rook itself.
+	screener func(ctx context.Context, at *TerminalFocus) ([]string, *TerminalFocus, error)
 	// stt transcribes audio the phone sends, and manages its own engine.
 	stt Transcriber
 
@@ -96,6 +99,7 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("POST /dictate", l.dictate)
 	mux.HandleFunc("POST /type", l.typeInto)
 	mux.HandleFunc("POST /goto", l.goTo)
+	mux.HandleFunc("POST /screen", l.screen)
 	mux.HandleFunc("POST /transcribe", l.transcribe)
 	mux.HandleFunc("GET /stt", l.sttStatus)
 	mux.HandleFunc("POST /stt/install", l.sttInstall)
@@ -311,6 +315,50 @@ func (l *lanTransport) goTo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Screen is a request for the visible contents of a pane. A nil
+// Terminal means "whatever the Mac is looking at".
+type Screen struct {
+	Terminal *TerminalFocus `json:"terminal,omitempty"`
+	Device   string         `json:"device,omitempty"`
+}
+
+// Screened is the pane as it looks right now.
+type Screened struct {
+	Lines []string       `json:"lines"`
+	Into  *TerminalFocus `json:"into,omitempty"`
+}
+
+// screen is Vera's one eye into the terminal from the phone: the Mac
+// reads the visible rows of a pane and ships them back. Read-only — it
+// types nothing and moves nothing, so any pane is fair game, agent or
+// shell. The phone polls this while a pane view is open, to see a reply
+// forming or the comment it is about to answer.
+func (l *lanTransport) screen(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.screener == nil {
+		http.Error(w, "no provider can read a pane", http.StatusNotImplemented)
+		return
+	}
+	var s Screen
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&s); err != nil {
+		http.Error(w, "bad screen", http.StatusBadRequest)
+		return
+	}
+	lines, into, err := l.screener(r.Context(), s.Terminal)
+	switch {
+	case errors.Is(err, ErrNoTarget):
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	case err != nil:
+		http.Error(w, "could not read the pane: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, Screened{Lines: lines, Into: into})
 }
 
 // Transcribed is what /transcribe returns.
