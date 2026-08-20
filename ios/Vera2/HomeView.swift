@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var link: TerminalLink
     @State private var dictating = false
     @State private var chatting = false
+    @State private var dictateTo: RankedTarget?
     private let client: Client
 
     init(client: Client) {
@@ -42,6 +43,9 @@ struct HomeView: View {
         .fullScreenCover(isPresented: $dictating) {
             DictateView(client: client).environment(conversation)
         }
+        .fullScreenCover(item: $dictateTo) { target in
+            DictateView(client: client, pinned: target).environment(conversation)
+        }
         .fullScreenCover(isPresented: $chatting) {
             NavigationStack { ConversationView().environment(conversation) }
         }
@@ -64,9 +68,7 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: 8) {
                 ForEach(link.targets) { t in
-                    Button { Task { await link.goto(t) } } label: { row(t) }
-                        .buttonStyle(.plain)
-                        .disabled(link.going != nil)
+                    row(t)
                 }
             }
             .padding(.horizontal, 16).padding(.bottom, 12)
@@ -74,26 +76,38 @@ struct HomeView: View {
     }
 
     private func row(_ t: RankedTarget) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: t.kind == "pane" ? "terminal" : "app.dashed")
-                .font(.system(size: 16))
-                .foregroundStyle(t.current == true ? N.accent300 : N.dim)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(t.label).font(N.body(15, .medium)).foregroundStyle(N.text)
-                    .lineLimit(1)
-                if t.current == true {
-                    Text("in front of you now").font(N.body(11)).foregroundStyle(N.accent300)
+        HStack(spacing: 10) {
+            // Tap the body to go there.
+            Button { Task { await link.goto(t) } } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: t.kind == "pane" ? "terminal" : "app.dashed")
+                        .font(.system(size: 16))
+                        .foregroundStyle(t.current == true ? N.accent300 : N.dim)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(t.label).font(N.body(15, .medium)).foregroundStyle(N.text).lineLimit(1)
+                        if t.current == true {
+                            Text("in front of you now").font(N.body(11)).foregroundStyle(N.accent300)
+                        }
+                    }
+                    Spacer()
+                    if link.going == t.key { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "arrow.up.forward.app").font(.system(size: 13)).foregroundStyle(N.dim) }
                 }
             }
-            Spacer()
-            if link.going == t.key {
-                ProgressView().controlSize(.small)
-            } else {
-                Image(systemName: "arrow.up.forward.app").font(.system(size: 13)).foregroundStyle(N.dim)
+            .buttonStyle(.plain)
+            .disabled(link.going != nil)
+
+            // A pane can be talked to directly, without going there.
+            if t.kind == "pane" {
+                Button { dictateTo = t } label: {
+                    Image(systemName: "mic.fill").font(.system(size: 14)).foregroundStyle(N.accent300)
+                        .frame(width: 38, height: 38)
+                        .background(N.accent.opacity(0.14), in: Circle())
+                }.buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
+        .padding(.horizontal, 14).padding(.vertical, 10)
         .background(t.current == true ? N.accent.opacity(0.14) : N.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 

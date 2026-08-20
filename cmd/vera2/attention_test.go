@@ -270,7 +270,7 @@ func TestTypeRefusesWithoutATargetAndNamesThePane(t *testing.T) {
 	}
 
 	var typed []string
-	lanUnderTest.typer = func(ctx context.Context, text string, enter, anywhere bool) (*TerminalFocus, error) {
+	lanUnderTest.typer = func(ctx context.Context, text string, enter, anywhere bool, at *TerminalFocus) (*TerminalFocus, error) {
 		if text != "" {
 			typed = append(typed, text)
 		}
@@ -291,7 +291,9 @@ func TestTypeRefusesWithoutATargetAndNamesThePane(t *testing.T) {
 		t.Fatalf("an empty text with enter should press Enter alone: %q", typed)
 	}
 
-	lanUnderTest.typer = func(context.Context, string, bool, bool) (*TerminalFocus, error) { return nil, ErrNoTarget }
+	lanUnderTest.typer = func(context.Context, string, bool, bool, *TerminalFocus) (*TerminalFocus, error) {
+		return nil, ErrNoTarget
+	}
 	if code, _ := post(`{"text":"hi"}`); code != http.StatusConflict {
 		t.Fatalf("no target should be a conflict, got %d", code)
 	}

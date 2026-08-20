@@ -67,6 +67,9 @@ struct Typed: Decodable, Sendable {
 final class TerminalLink {
     private(set) var target: Target?
     private(set) var targets: [RankedTarget] = []
+    /// When set, everything types HERE regardless of what the Mac is
+    /// looking at — the phone having chosen one specific window.
+    var pinned: RankedTarget?
     private(set) var going: String?
     private(set) var watching = false
     private(set) var problem: String?
@@ -140,7 +143,7 @@ final class TerminalLink {
                 let chunk = queue.removeFirst()
                 busy = true
                 do {
-                    let typed = try await client.type(chunk, clean: true, enter: false)
+                    let typed = try await client.type(chunk, clean: true, enter: false, at: pinned?.terminal)
                     transcript += (transcript.isEmpty ? "" : " ") + typed.text
                     lastRaw = typed.raw ?? false
                     problem = nil
@@ -165,7 +168,7 @@ final class TerminalLink {
         busy = true
         defer { busy = false }
         do {
-            _ = try await client.type("", clean: false, enter: true)
+            _ = try await client.type("", clean: false, enter: true, at: pinned?.terminal)
             transcript = ""
             problem = nil
         } catch {

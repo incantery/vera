@@ -130,12 +130,20 @@ func (w *rookWatcher) GoTo(ctx context.Context, session, window, pane string) er
 // as if typed, and press Enter only if asked. Type-only is the default
 // on purpose — words typed into an agent can be read before they are
 // sent; words sent cannot be unsent.
-func (w *rookWatcher) Type(ctx context.Context, text string, enter, anywhere bool) (*TerminalFocus, error) {
-	target := w.Focus()
+func (w *rookWatcher) Type(ctx context.Context, text string, enter, anywhere bool, at *TerminalFocus) (*TerminalFocus, error) {
+	// An explicit pane is a deliberate choice — type there whatever it
+	// runs, and do not move the person's focus to it. No target means
+	// "wherever they are looking", which must be a coding agent unless
+	// they said otherwise.
+	target := at
+	explicit := at != nil
+	if target == nil {
+		target = w.Focus()
+	}
 	if target == nil {
 		return nil, ErrNoTarget
 	}
-	if target.Agent == "" && !anywhere {
+	if target.Agent == "" && !anywhere && !explicit {
 		return target, ErrNotAgent
 	}
 	pane := target.Session + ":" + target.Window + "." + target.Pane

@@ -48,7 +48,7 @@ type lanTransport struct {
 	// again". Loopback-only, carries nothing, trusted for nothing.
 	poke map[string]func()
 	// typer is the terminal.type capability, when a provider offers it.
-	typer func(ctx context.Context, text string, enter, anywhere bool) (*TerminalFocus, error)
+	typer func(ctx context.Context, text string, enter, anywhere bool, at *TerminalFocus) (*TerminalFocus, error)
 	goer  func(ctx context.Context, session, window, pane string) error
 	// stt transcribes audio the phone sends, and manages its own engine.
 	stt Transcriber
@@ -411,8 +411,11 @@ type Typing struct {
 	// Enter presses Enter after the text (or alone, with empty text).
 	Enter bool `json:"enter,omitempty"`
 	// Anywhere allows a pane that is not a coding agent.
-	Anywhere bool   `json:"anywhere,omitempty"`
-	Device   string `json:"device,omitempty"`
+	Anywhere bool `json:"anywhere,omitempty"`
+	// Terminal, when set, is the exact pane to type into, regardless of
+	// what has focus — the phone choosing a specific window.
+	Terminal *TerminalFocus `json:"terminal,omitempty"`
+	Device   string         `json:"device,omitempty"`
 }
 
 // Typed is what happened.
@@ -455,7 +458,7 @@ func (l *lanTransport) typeInto(w http.ResponseWriter, r *http.Request) {
 	} else if t.Clean {
 		out.Raw = true
 	}
-	into, err := l.typer(r.Context(), out.Text, t.Enter, t.Anywhere)
+	into, err := l.typer(r.Context(), out.Text, t.Enter, t.Anywhere, t.Terminal)
 	out.Into = into
 	switch {
 	case errors.Is(err, ErrNoTarget):

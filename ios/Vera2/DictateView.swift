@@ -27,9 +27,16 @@ struct DictateView: View {
     @State private var installStep = ""
     @State private var checkFailed: String?
 
-    init(client: Client) {
+    /// When set, this dictates to one specific pane, chosen from the
+    /// home list, whatever the Mac is looking at.
+    private let pinned: RankedTarget?
+
+    init(client: Client, pinned: RankedTarget? = nil) {
         self.client = client
-        _link = State(initialValue: TerminalLink(client: client))
+        self.pinned = pinned
+        let link = TerminalLink(client: client)
+        link.pinned = pinned
+        _link = State(initialValue: link)
     }
 
     var body: some View {
@@ -42,6 +49,7 @@ struct DictateView: View {
                     target
                     Spacer()
                     words
+                    typeRow
                     button
                     sendRow
                 } else {
@@ -132,13 +140,18 @@ struct DictateView: View {
         .animation(.easeOut(duration: 0.2), value: link.target)
     }
 
-    private var targetOK: Bool { link.target?.terminal?.isAgent == true }
+    private var targetOK: Bool {
+        if pinned != nil { return true } // a deliberately chosen pane is always fair game
+        return link.target?.terminal?.isAgent == true
+    }
     private var targetLabel: String {
+        if pinned != nil { return "Typing into" }
         if !link.watching { return "Looking for the Mac" }
         if link.target?.terminal == nil { return "Nothing to type into" }
         return targetOK ? "Typing into" : "Not an agent"
     }
     private var targetTitle: String {
+        if let pinned { return pinned.label }
         guard link.watching else { return link.problem ?? "…" }
         guard let terminal = link.target?.terminal else { return "rook isn't showing a pane" }
         return terminal.describe
@@ -167,6 +180,38 @@ struct DictateView: View {
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity, minHeight: 80)
         .padding(.horizontal, 26).padding(.bottom, 14)
+    }
+
+    // MARK: - Type (keyboard, when talking isn't the thing)
+
+    @State private var typed = ""
+    @FocusState private var typing: Bool
+
+    private var typeRow: some View {
+        HStack(spacing: 10) {
+            TextField("", text: $typed, prompt: Text("or type…").foregroundStyle(N.dim), axis: .vertical)
+                .font(N.body(15)).foregroundStyle(N.text).tint(N.accent)
+                .lineLimit(1...4).focused($typing)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(N.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .onSubmit(sendTyped)
+            if !typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button(action: sendTyped) {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)).foregroundStyle(N.accent)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 26).padding(.bottom, 8)
+        .opacity(targetOK ? 1 : 0.45)
+        .disabled(!targetOK)
+    }
+
+    private func sendTyped() {
+        let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        typed = ""
+        typing = false
+        link.type(text)
     }
 
     // MARK: - Button

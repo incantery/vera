@@ -208,15 +208,15 @@ struct Client: Sendable {
 
     /// Put words into the pane the Mac is looking at. Enter only if
     /// asked; a pane that is not a coding agent is refused by the Mac.
-    func type(_ text: String, clean: Bool, enter: Bool) async throws -> Typed {
+    func type(_ text: String, clean: Bool, enter: Bool, at target: Target.Terminal? = nil) async throws -> Typed {
         guard let address = await resolve() else { throw ClientError.unreachable }
         var request = URLRequest(url: URL(string: "http://\(address)/type")!)
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let text: String; let clean: Bool; let enter: Bool; let device: String }
-        request.httpBody = try JSONEncoder().encode(Body(text: text, clean: clean, enter: enter, device: "phone"))
+        struct Body: Encodable { let text: String; let clean: Bool; let enter: Bool; let terminal: Target.Terminal?; let device: String }
+        request.httpBody = try JSONEncoder().encode(Body(text: text, clean: clean, enter: enter, terminal: target, device: "phone"))
         let (data, response) = try await Self.session.data(for: request)
         switch (response as? HTTPURLResponse)?.statusCode {
         case 200: return try JSONDecoder().decode(Typed.self, from: data)
