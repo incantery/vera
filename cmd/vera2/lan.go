@@ -49,6 +49,7 @@ type lanTransport struct {
 	poke map[string]func()
 	// typer is the terminal.type capability, when a provider offers it.
 	typer func(ctx context.Context, text string, enter, anywhere bool) (*TerminalFocus, error)
+	goer  func(ctx context.Context, session, window, pane string) error
 	// stt transcribes audio the phone sends, and manages its own engine.
 	stt Transcriber
 
@@ -94,6 +95,7 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("GET /watch", l.watchStatus)
 	mux.HandleFunc("POST /dictate", l.dictate)
 	mux.HandleFunc("POST /type", l.typeInto)
+	mux.HandleFunc("POST /goto", l.goTo)
 	mux.HandleFunc("POST /transcribe", l.transcribe)
 	mux.HandleFunc("GET /stt", l.sttStatus)
 	mux.HandleFunc("POST /stt/install", l.sttInstall)
@@ -254,6 +256,60 @@ func (l *lanTransport) onPoke(who string, fn func()) {
 		l.poke = map[string]func(){}
 	}
 	l.poke[who] = fn
+}
+
+// Goto asks the Mac to bring a place to the front — an app, or a rook
+// pane (which also activates the app rook runs in).
+type Goto struct {
+	Kind     string         `json:"kind"` // "app" or "pane"
+	BundleID string         `json:"bundle_id,omitempty"`
+	Name     string         `json:"name,omitempty"`
+	Terminal *TerminalFocus `json:"terminal,omitempty"`
+	Device   string         `json:"device,omitempty"`
+}
+
+// goTo is Vera and rook moving the person on their own Mac: activate the
+// app, and for a pane deep-link tmux to it. This is the phone's home
+// screen reaching across to the desk.
+func (l *lanTransport) goTo(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var g Goto
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&g); err != nil {
+		http.Error(w, "bad goto", http.StatusBadRequest)
+		return
+	}
+	switch g.Kind {
+	case "pane":
+		if g.Terminal == nil {
+			http.Error(w, "a pane goto needs the pane", http.StatusBadRequest)
+			return
+		}
+		// Bring the terminal app forward first, so the switched pane is
+		// actually on screen.
+		if host := l.attention.TerminalHost(g.Device); host != nil {
+			_ = activateApp(r.Context(), host.BundleID, host.Name)
+		}
+		if l.goer == nil {
+			http.Error(w, "no provider can move within the terminal", http.StatusNotImplemented)
+			return
+		}
+		if err := l.goer(r.Context(), g.Terminal.Session, g.Terminal.Window, g.Terminal.Pane); err != nil {
+			http.Error(w, "could not switch panes: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+	case "app":
+		if err := activateApp(r.Context(), g.BundleID, g.Name); err != nil {
+			http.Error(w, "could not bring that app forward: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+	default:
+		http.Error(w, "goto needs a kind of app or pane", http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Transcribed is what /transcribe returns.

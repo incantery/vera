@@ -82,6 +82,9 @@ type device struct {
 	FocusSince time.Time
 	// Terminal is what is inside the terminal, when rook says.
 	Terminal *TerminalFocus
+	// termHost is the macOS app the terminal runs in (Ghostty, say),
+	// remembered so a jump to a pane can bring that app to the front.
+	termHost *ObservedApp
 	// Recent is newest-last, bounded.
 	Recent []Observation
 	// Integrations maps a source ("neovim") to the last time it spoke.
@@ -208,6 +211,10 @@ func (a *Attention) Observe(o Observation) {
 				d.Focus = o.App
 				d.FocusSince = o.At
 			}
+			if isTerminal(o.App) {
+				app := *o.App
+				d.termHost = &app
+			}
 			bundle := o.App.BundleID
 			if bundle == "" {
 				bundle = o.App.Name
@@ -311,6 +318,18 @@ func (a *Attention) Describe(now time.Time, speaking string) string {
 		b.WriteString("\n")
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// TerminalHost is the macOS app rook runs inside on a device, if known —
+// what a pane jump must bring to the front.
+func (a *Attention) TerminalHost(device string) *ObservedApp {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if d := a.devices[device]; d != nil && d.termHost != nil {
+		h := *d.termHost
+		return &h
+	}
+	return nil
 }
 
 // isTerminal says whether an app is the kind rook would be running in.

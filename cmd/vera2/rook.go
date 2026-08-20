@@ -109,6 +109,23 @@ var ErrNoTarget = errors.New("rook is not showing a pane to type into")
 // the caller did not say that was fine.
 var ErrNotAgent = errors.New("the focused pane is not a coding agent session")
 
+// GoTo brings a pane to the front within rook: select it, its window,
+// and switch the focused client to it. Activating the terminal app
+// itself is the caller's job — rook only moves within tmux.
+func (w *rookWatcher) GoTo(ctx context.Context, session, window, pane string) error {
+	target := session + ":" + window + "." + pane
+	if _, err := w.tmux(ctx, "select-pane", "-t", target); err != nil {
+		return err
+	}
+	if _, err := w.tmux(ctx, "select-window", "-t", session+":"+window); err != nil {
+		return err
+	}
+	// switch-client moves whichever client is focused to that session;
+	// select-window/pane above decide where it lands inside it.
+	_, err := w.tmux(ctx, "switch-client", "-t", target)
+	return err
+}
+
 // Type is the terminal.type capability: put text into the focused pane
 // as if typed, and press Enter only if asked. Type-only is the default
 // on purpose — words typed into an agent can be read before they are

@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 )
@@ -57,4 +58,19 @@ func detectRook() ProviderStatus {
 	// Connections view and a future router read the same answer.
 	p.Capabilities = []string{"terminal.focus", "terminal.type"}
 	return p
+}
+
+// activateApp brings a macOS app to the front by bundle id, falling
+// back to its name. `open` is the least surprising way — it is what a
+// double-click does.
+func activateApp(ctx context.Context, bundleID, name string) error {
+	if bundleID != "" {
+		if err := run(ctx, "open", "-b", bundleID); err == nil {
+			return nil
+		}
+	}
+	if name != "" {
+		return run(ctx, "open", "-a", name)
+	}
+	return fmt.Errorf("nothing to activate")
 }
