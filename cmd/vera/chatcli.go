@@ -17,6 +17,9 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/term"
 )
 
 const (
@@ -48,7 +51,7 @@ func chatMain(args []string) {
 	if s := os.Getenv("ROOK_SESSION"); s != "" {
 		fmt.Printf("%s · with you in %s%s", cliDim, s, cliOff)
 	}
-	fmt.Printf("%s · q closes%s\n\n", cliDim, cliOff)
+	fmt.Printf("%s · esc closes%s\n\n", cliDim, cliOff)
 
 	if resp, err := get("/api/chat"); err == nil {
 		var turns []chatTurn
@@ -64,20 +67,14 @@ func chatMain(args []string) {
 		fmt.Printf("  %svera is not answering at %s%s\n\n", cliDim, *addr, cliOff)
 	}
 
-	in := bufio.NewScanner(os.Stdin)
+	read := lineReader()
 	for {
 		fmt.Printf("%syou ▸%s ", cliAccent, cliOff)
-		if !in.Scan() {
+		text, quit := read()
+		if quit {
 			fmt.Println()
 			return
 		}
-		// A stray Esc or arrow key must not become a message.
-		text := strings.Map(func(r rune) rune {
-			if r < 32 {
-				return -1
-			}
-			return r
-		}, in.Text())
 		text = strings.TrimSpace(text)
 		if text == "" {
 			continue
@@ -113,6 +110,126 @@ func chatMain(args []string) {
 		printTurn("vera", rep.Reply)
 		for _, id := range rep.Applied {
 			fmt.Printf("  %s→ sent to %s%s\n", cliAccent, id, cliOff)
+		}
+	}
+}
+
+// lineReader picks the input discipline: on a real terminal, a raw
+// reader where lone Esc closes instantly (the popup convention rook
+// users live in — fzf taught the muscle memory); on a pipe, a plain
+// scanner so scripts and tests keep working.
+func lineReader() func() (string, bool) {
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		sc := bufio.NewScanner(os.Stdin)
+		return func() (string, bool) {
+			if !sc.Scan() {
+				return "", true
+			}
+			return sc.Text(), false
+		}
+	}
+	return readLineRaw
+}
+
+// stdinFeed is the one reader of stdin's bytes, started on first use:
+// a blocking tty read cannot carry a deadline (SetReadDeadline is not
+// supported there), so lone-Esc detection selects on this channel with
+// a timer instead.
+var stdinFeed chan byte
+
+func stdinBytes() chan byte {
+	if stdinFeed == nil {
+		stdinFeed = make(chan byte, 64)
+		go func() {
+			buf := make([]byte, 1)
+			for {
+				n, err := os.Stdin.Read(buf)
+				if n > 0 {
+					stdinFeed <- buf[0]
+				}
+				if err != nil {
+					close(stdinFeed)
+					return
+				}
+			}
+		}()
+	}
+	return stdinFeed
+}
+
+// readLineRaw is one line in raw mode: printable bytes echo, backspace
+// erases, ctrl-u clears, enter submits; Esc alone, ctrl-c or ctrl-d
+// quits. An escape SEQUENCE (arrow keys) is told from a lone Esc by a
+// short wait, then swallowed.
+func readLineRaw() (string, bool) {
+	old, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		sc := bufio.NewScanner(os.Stdin)
+		if !sc.Scan() {
+			return "", true
+		}
+		return sc.Text(), false
+	}
+	defer term.Restore(int(os.Stdin.Fd()), old)
+
+	ch := stdinBytes()
+	next := func(wait time.Duration) (byte, bool) {
+		if wait == 0 {
+			b, ok := <-ch
+			return b, ok
+		}
+		select {
+		case b, ok := <-ch:
+			return b, ok
+		case <-time.After(wait):
+			return 0, false
+		}
+	}
+
+	var line []byte
+	for {
+		b, ok := next(0)
+		if !ok {
+			return "", true
+		}
+		switch {
+		case b == 0x1b: // Esc — or the start of a key's escape sequence
+			seq, more := next(60 * time.Millisecond)
+			if !more {
+				fmt.Print("\r\n")
+				return "", true // a lone Esc: the owner is done
+			}
+			// Swallow the rest of the sequence (CSI ends on 0x40-0x7e).
+			if seq == '[' || seq == 'O' {
+				for {
+					b, more := next(60 * time.Millisecond)
+					if !more || (b >= 0x40 && b <= 0x7e) {
+						break
+					}
+				}
+			}
+		case b == 0x03 || b == 0x04: // ctrl-c / ctrl-d
+			fmt.Print("\r\n")
+			return "", true
+		case b == '\r' || b == '\n':
+			fmt.Print("\r\n")
+			return string(line), false
+		case b == 0x7f || b == 0x08: // backspace
+			if len(line) > 0 {
+				// Trim one rune; erase one cell (multibyte width is
+				// approximated at one, good enough for a popup).
+				_, size := utf8.DecodeLastRune(line)
+				line = line[:len(line)-size]
+				fmt.Print("\b \b")
+			}
+		case b == 0x15: // ctrl-u — clear the line
+			for range utf8.RuneCount(line) {
+				fmt.Print("\b \b")
+			}
+			line = line[:0]
+		case b >= 0x20:
+			line = append(line, b)
+			os.Stdout.Write([]byte{b})
 		}
 	}
 }
