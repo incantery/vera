@@ -2,20 +2,30 @@ import SwiftUI
 
 // The phone as a microphone for the Mac.
 //
-// Hold the button, talk, let go: the words are typed into whatever the
-// Mac is looking at — a Claude Code session, usually — and they sit
-// there until you press Send. Pacing the room is the point; reading the
-// agent's reply is not, that is what the Mac is for. The screen's one
-// job is to say WHERE the words will go before they go there.
+// Tap the mic, walk, talk. What is said is typed into whatever the Mac
+// is looking at — a Claude Code session, usually — in chunks as the
+// recogniser settles them, and it sits there until you press Send.
+// Pacing the room is the point; reading the agent's reply is not, that
+// is what the Mac is for. The screen's one job is to say WHERE the
+// words will go before they go there.
+//
+// Chunks, because Apple's recogniser ends a session by itself after
+// about a minute or a long pause. Each ending is typed and listening
+// starts again, so a long thought is a paragraph in the agent's input
+// rather than a sentence and a silence.
 
 struct DictateView: View {
     @Environment(Conversation.self) private var conversation
     @Environment(\.dismiss) private var dismiss
     @State private var link: TerminalLink
     @State private var listener = Listener()
-    @State private var holding = false
+    /// The mic is on: listening, and restarting whenever the recogniser
+    /// stops by itself.
+    @State private var on = false
     @State private var heard = ""
     @State private var finishing = false
+    /// What this session has typed so far, for the screen.
+    @State private var typedSoFar = ""
 
     init(client: Client) {
         _link = State(initialValue: TerminalLink(client: client))
@@ -41,6 +51,15 @@ struct DictateView: View {
         .onDisappear { link.stop(); listener.stop() }
         .onChange(of: listener.heard) { _, now in
             if listener.isListening { heard = now }
+        }
+        .onChange(of: listener.isListening) { _, listening in
+            // The recogniser hung up on its own while the mic is meant
+            // to be on: type what it settled and carry on.
+            guard on, !listening, !finishing else { return }
+            let said = listener.heard.trimmingCharacters(in: .whitespacesAndNewlines)
+            heard = ""
+            listener.start()
+            if !said.isEmpty { Task { await typeChunk(said) } }
         }
     }
 
@@ -98,17 +117,20 @@ struct DictateView: View {
             if let problem = link.problem, link.watching {
                 Text(problem).font(N.body(13)).foregroundStyle(N.accent300)
             }
-            if holding || finishing {
+            if on || finishing {
+                if !typedSoFar.isEmpty {
+                    Text(typedSoFar).font(N.body(14)).foregroundStyle(N.dim).lineLimit(4)
+                }
                 Text(heard.isEmpty ? (finishing ? "…" : "Listening") : heard)
                     .font(N.body(16)).foregroundStyle(N.text)
-            } else if let typed = link.lastTyped {
+            } else if !typedSoFar.isEmpty {
                 VStack(spacing: 4) {
                     Text("Typed" + (link.lastRaw ? " · as heard" : ""))
                         .font(N.body(11)).foregroundStyle(N.dim)
-                    Text(typed).font(N.body(16)).foregroundStyle(N.text)
+                    Text(typedSoFar).font(N.body(16)).foregroundStyle(N.text).lineLimit(6)
                 }
             } else {
-                Text("Hold to talk").font(N.body(14)).foregroundStyle(N.dim)
+                Text("Tap to talk").font(N.body(14)).foregroundStyle(N.dim)
             }
         }
         .multilineTextAlignment(.center)
@@ -118,53 +140,59 @@ struct DictateView: View {
     }
 
     private var button: some View {
-        ZStack {
-            Circle()
-                .fill(holding ? N.accent : N.surface)
-                .frame(width: 112, height: 112)
-            Circle()
-                .strokeBorder(N.accent300.opacity(holding ? 0.6 : 0), lineWidth: 3)
-                .frame(width: 126, height: 126)
-            Image(systemName: "mic.fill")
-                .font(.system(size: 38))
-                .foregroundStyle(holding ? .white : N.accent300)
+        Button {
+            on ? end() : begin()
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(on ? N.accent : N.surface)
+                    .frame(width: 112, height: 112)
+                Circle()
+                    .strokeBorder(N.accent300.opacity(on ? 0.6 : 0), lineWidth: 3)
+                    .frame(width: 126, height: 126)
+                Image(systemName: on ? "stop.fill" : "mic.fill")
+                    .font(.system(size: on ? 32 : 38))
+                    .foregroundStyle(on ? .white : N.accent300)
+            }
         }
-        .scaleEffect(holding ? 1.06 : 1)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: holding)
-        .sensoryFeedback(.impact(weight: .medium), trigger: holding)
-        .opacity(targetOK && !finishing ? 1 : 0.45)
-        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
-            pressing ? begin() : end()
-        }, perform: {})
-        .disabled(!targetOK || finishing)
+        .buttonStyle(.plain)
+        .scaleEffect(on ? 1.06 : 1)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: on)
+        .sensoryFeedback(.impact(weight: .medium), trigger: on)
+        .opacity((targetOK || on) && !finishing ? 1 : 0.45)
+        .disabled((!targetOK && !on) || finishing)
         .padding(.bottom, 22)
     }
 
     private var sendRow: some View {
         Button {
-            Task { await link.send() }
+            Task {
+                await link.send()
+                if link.problem == nil { typedSoFar = "" }
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "return")
                 Text("Send")
             }
             .font(N.body(15, .medium))
-            .foregroundStyle(link.lastTyped == nil ? N.dim : .white)
+            .foregroundStyle(typedSoFar.isEmpty || on ? N.dim : .white)
             .padding(.horizontal, 22)
             .padding(.vertical, 12)
-            .background(link.lastTyped == nil ? N.surface : N.accent, in: Capsule())
+            .background(typedSoFar.isEmpty || on ? N.surface : N.accent, in: Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(link.lastTyped == nil || link.busy || !targetOK)
+        .disabled(typedSoFar.isEmpty || on || link.busy || !targetOK)
         .padding(.bottom, 30)
     }
 
     // MARK: - Doing
 
     private func begin() {
-        guard !holding, !finishing else { return }
-        holding = true
+        guard !on, !finishing else { return }
+        on = true
         heard = ""
+        typedSoFar = ""
         if listener.authorized {
             listener.start()
         } else {
@@ -172,16 +200,24 @@ struct DictateView: View {
         }
     }
 
+    /// Mic off: the last chunk is typed once the recogniser has settled
+    /// it; the Send button then has something to send.
     private func end() {
-        guard holding else { return }
-        holding = false
+        guard on else { return }
+        on = false
         finishing = true
         Task {
             let said = await listener.finish()
             finishing = false
-            guard let said else { return }
-            heard = said
-            await link.type(said)
+            heard = ""
+            if let said { await typeChunk(said) }
+        }
+    }
+
+    private func typeChunk(_ said: String) async {
+        await link.type(said)
+        if let typed = link.lastTyped {
+            typedSoFar += (typedSoFar.isEmpty ? "" : " ") + typed
         }
     }
 }
