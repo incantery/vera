@@ -173,7 +173,11 @@ struct DictateView: View {
             // jump when the first read lands.
             VStack(spacing: 8) {
                 Spacer()
-                if !feed.live {
+                if let problem = feed.problem {
+                    Text(problem)
+                        .font(N.body(13)).foregroundStyle(N.accent300)
+                        .multilineTextAlignment(.center).padding(.horizontal, 40)
+                } else {
                     Text(pinned != nil ? "Reading the pane…" : "Reading what the Mac is looking at…")
                         .font(N.body(13)).foregroundStyle(N.dim)
                 }
