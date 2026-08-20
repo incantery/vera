@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -89,6 +90,14 @@ type rookWatcher struct {
 	// running into it.
 	typedAt   time.Time
 	typedInto string
+
+	// mobWin is the window the phone has narrowed to its own width while
+	// dictating, or "". mobAt is bumped on every poll; if it goes stale
+	// the run loop restores the window, so a dropped phone can never
+	// strand the desk at phone width. Guarded by mu.
+	mobWin  string
+	mobCols int
+	mobAt   time.Time
 }
 
 // Focus is the pane currently in front of the person, or nil.
@@ -202,6 +211,86 @@ func (w *rookWatcher) Capture(ctx context.Context, at *TerminalFocus) ([]string,
 	return lines, target, nil
 }
 
+// Mobile narrows a pane's window to the phone's width while dictating,
+// or restores it. The window is shared with the desktop terminal, so
+// this reflows there too — inherent to one tmux window having one size,
+// and the whole point: the phone sees the agent laid out for the phone.
+//
+// want=true is sent on every /screen poll while the view is open; each
+// call bumps a deadline the run loop watches, so silence restores the
+// desk. want=false leaves at once, for a snappy snap-back on close.
+func (w *rookWatcher) Mobile(ctx context.Context, at *TerminalFocus, cols int, want bool) error {
+	if !want {
+		return w.unmobile(ctx)
+	}
+	target := at
+	if target == nil {
+		target = w.Focus()
+	}
+	if target == nil {
+		return ErrNoTarget
+	}
+	win := target.Session + ":" + target.Window
+	if cols < 20 || cols > 300 {
+		cols = 52
+	}
+	w.mu.Lock()
+	cur, curCols := w.mobWin, w.mobCols
+	w.mu.Unlock()
+	if cur == win && curCols == cols {
+		w.mu.Lock()
+		w.mobAt = time.Now()
+		w.mu.Unlock()
+		return nil
+	}
+	if cur != "" && cur != win {
+		_ = w.restoreWin(ctx, cur) // the phone moved to another pane
+	}
+	// resize-window -x auto-sets window-size manual for the window.
+	if _, err := w.tmux(ctx, "resize-window", "-t", win, "-x", strconv.Itoa(cols)); err != nil {
+		return err
+	}
+	w.mu.Lock()
+	w.mobWin, w.mobCols, w.mobAt = win, cols, time.Now()
+	w.mu.Unlock()
+	return nil
+}
+
+// unmobile restores whatever window we narrowed, if any. Safe to call
+// when nothing is narrowed.
+func (w *rookWatcher) unmobile(ctx context.Context) error {
+	w.mu.Lock()
+	win := w.mobWin
+	w.mobWin, w.mobCols = "", 0
+	w.mu.Unlock()
+	if win == "" {
+		return nil
+	}
+	return w.restoreWin(ctx, win)
+}
+
+// restoreWin returns a window to following the desktop again: -A snaps
+// it to the largest (desktop) client's width, then unsetting the option
+// lets it auto-follow that client from here on, as it did before.
+func (w *rookWatcher) restoreWin(ctx context.Context, win string) error {
+	if _, err := w.tmux(ctx, "resize-window", "-t", win, "-A"); err != nil {
+		return err
+	}
+	_, err := w.tmux(ctx, "set-option", "-uw", "-t", win, "window-size")
+	return err
+}
+
+// mobileStale restores the narrowed window if the phone has gone quiet.
+// Called from the run loop; the deadline is a few polls of slack.
+func (w *rookWatcher) mobileStale(ctx context.Context) {
+	w.mu.Lock()
+	stale := w.mobWin != "" && time.Since(w.mobAt) > 4*time.Second
+	w.mu.Unlock()
+	if stale {
+		_ = w.unmobile(ctx)
+	}
+}
+
 func newRookWatcher(socket, device string) *rookWatcher {
 	return &rookWatcher{socket: socket, device: device, every: 5 * time.Second, poke: make(chan struct{}, 1)}
 }
@@ -260,9 +349,16 @@ func (w *rookWatcher) removeHooks() {
 func (w *rookWatcher) run(ctx context.Context, pokeURL string, observe func(Observation)) {
 	w.installHooks(ctx, pokeURL)
 	defer w.removeHooks()
+	// Never leave the desk at phone width because the process is going.
+	defer func() {
+		rc, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = w.unmobile(rc)
+	}()
 	t := time.NewTicker(w.every)
 	defer t.Stop()
 	for {
+		w.mobileStale(ctx)
 		focus, err := w.read(ctx)
 		switch {
 		case err != nil:

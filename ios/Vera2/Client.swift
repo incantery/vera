@@ -231,15 +231,15 @@ struct Client: Sendable {
     /// Read the visible rows of a pane — the Mac's one eye into the
     /// terminal. Read-only, and polled while a pane view is open. A nil
     /// target reads whatever the Mac is looking at.
-    func screen(at target: Target.Terminal?) async throws -> [String] {
+    func screen(at target: Target.Terminal?, mobile: Bool = false, cols: Int = 0) async throws -> [String] {
         guard let address = await resolve() else { throw ClientError.unreachable }
         var request = URLRequest(url: URL(string: "http://\(address)/screen")!)
         request.httpMethod = "POST"
         request.timeoutInterval = 8
         request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let terminal: Target.Terminal?; let device: String }
-        request.httpBody = try JSONEncoder().encode(Body(terminal: target, device: "phone"))
+        struct Body: Encodable { let terminal: Target.Terminal?; let device: String; let mobile: Bool; let cols: Int }
+        request.httpBody = try JSONEncoder().encode(Body(terminal: target, device: "phone", mobile: mobile, cols: cols))
         let (data, response) = try await Self.session.data(for: request)
         switch (response as? HTTPURLResponse)?.statusCode {
         case 200:

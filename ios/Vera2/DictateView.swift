@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // The phone as a microphone for the Mac.
 //
@@ -38,7 +39,19 @@ struct DictateView: View {
         let link = TerminalLink(client: client)
         link.pinned = pinned
         _link = State(initialValue: link)
-        _feed = State(initialValue: PaneFeed(client: client, target: pinned?.terminal))
+        _feed = State(initialValue: PaneFeed(client: client, target: pinned?.terminal, cols: Self.mobileCols))
+    }
+
+    /// How many monospaced columns fit the pane panel on this phone, so
+    /// the Mac can lay the agent out to match. Measured from the actual
+    /// font, less the panel's padding (20 around the view, 12 inside).
+    private static var mobileCols: Int {
+        let char = ("0" as NSString).size(withAttributes: [
+            .font: UIFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        ]).width
+        let width = UIScreen.main.bounds.width - 64
+        guard char > 0 else { return 52 }
+        return max(24, min(120, Int(width / char)))
     }
 
     var body: some View {

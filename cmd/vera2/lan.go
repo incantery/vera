@@ -53,6 +53,9 @@ type lanTransport struct {
 	// screener reads the visible rows of a pane — Vera's one eye into
 	// the terminal for a phone that cannot see rook itself.
 	screener func(ctx context.Context, at *TerminalFocus) ([]string, *TerminalFocus, error)
+	// narrower reshapes a pane's window to the phone's width while it is
+	// dictating, and restores it after — nil if no provider offers it.
+	narrower func(ctx context.Context, at *TerminalFocus, cols int, want bool) error
 	// stt transcribes audio the phone sends, and manages its own engine.
 	stt Transcriber
 
@@ -322,6 +325,11 @@ func (l *lanTransport) goTo(w http.ResponseWriter, r *http.Request) {
 type Screen struct {
 	Terminal *TerminalFocus `json:"terminal,omitempty"`
 	Device   string         `json:"device,omitempty"`
+	// Mobile asks the Mac to hold this pane's window at the phone's
+	// width while the phone keeps polling; Cols is that width. The
+	// window reflows on the desk too — one window, one size.
+	Mobile bool `json:"mobile,omitempty"`
+	Cols   int  `json:"cols,omitempty"`
 }
 
 // Screened is the pane as it looks right now.
@@ -348,6 +356,12 @@ func (l *lanTransport) screen(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&s); err != nil {
 		http.Error(w, "bad screen", http.StatusBadRequest)
 		return
+	}
+	// Shape the window first, so the rows we read back are already laid
+	// out for the phone. Best-effort: a pane that will not resize still
+	// reads fine, just wider.
+	if l.narrower != nil {
+		_ = l.narrower(r.Context(), s.Terminal, s.Cols, s.Mobile)
 	}
 	lines, into, err := l.screener(r.Context(), s.Terminal)
 	switch {

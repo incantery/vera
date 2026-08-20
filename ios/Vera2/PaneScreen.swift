@@ -30,10 +30,15 @@ final class PaneFeed {
     /// The pane to read; nil means whatever the Mac is looking at, which
     /// follows focus on its own — the Mac resolves it each read.
     @ObservationIgnored private let target: Target.Terminal?
+    /// The width, in columns, to hold the pane at while this is open, so
+    /// the agent lays itself out for the phone. The Mac reflows the
+    /// window to this and restores it when the polls stop.
+    @ObservationIgnored private let cols: Int
 
-    init(client: Client, target: Target.Terminal? = nil) {
+    init(client: Client, target: Target.Terminal? = nil, cols: Int = 0) {
         self.client = client
         self.target = target
+        self.cols = cols
     }
 
     func start() {
@@ -41,7 +46,7 @@ final class PaneFeed {
         poller = Task { [weak self] in
             while !Task.isCancelled, let self {
                 do {
-                    lines = try await client.screen(at: target)
+                    lines = try await client.screen(at: target, mobile: cols > 0, cols: cols)
                     live = true
                     problem = nil
                 } catch is CancellationError {
@@ -55,7 +60,17 @@ final class PaneFeed {
         }
     }
 
-    func stop() { poller?.cancel(); poller = nil; live = false }
+    func stop() {
+        poller?.cancel()
+        poller = nil
+        live = false
+        // Snap the desk back to full width now, rather than wait for the
+        // Mac's own timeout to notice the polls stopped. Best-effort; the
+        // timeout is the guarantee.
+        guard cols > 0 else { return }
+        let client = client, target = target
+        Task { try? await client.screen(at: target, mobile: false, cols: cols) }
+    }
 }
 
 // The pane, drawn as text. Monospaced, scrollable both ways because an
