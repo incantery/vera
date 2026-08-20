@@ -163,10 +163,12 @@ final class Listener: Transcriber {
         engine.inputNode.removeTap(onBus: 0)
         if engine.isRunning { engine.stop() }
         request?.endAudio()
+        // Wait for the recogniser's FINAL result — it stops us itself
+        // when it arrives — not merely for the next partial, which is
+        // how half a sentence gets typed and the rest said again.
         let before = heard
-        for _ in 0..<15 where isListening {
+        for _ in 0..<20 where isListening {
             try? await Task.sleep(for: .milliseconds(100))
-            if heard != before { break }
         }
         return stop() ?? (before.isEmpty ? nil : before)
     }

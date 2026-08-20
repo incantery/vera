@@ -83,6 +83,12 @@ type rookWatcher struct {
 	hooked bool
 
 	mu sync.Mutex // guards last for readers outside run
+
+	// typedAt / typedInto: the last typing, so the next one into the
+	// same pane within a minute begins with a space rather than
+	// running into it.
+	typedAt   time.Time
+	typedInto string
 }
 
 // Focus is the pane currently in front of the person, or nil.
@@ -117,6 +123,12 @@ func (w *rookWatcher) Type(ctx context.Context, text string, enter, anywhere boo
 	}
 	pane := target.Session + ":" + target.Window + "." + target.Pane
 	if text != "" {
+		w.mu.Lock()
+		if w.typedInto == pane && time.Since(w.typedAt) < time.Minute && !strings.HasPrefix(text, " ") {
+			text = " " + text
+		}
+		w.typedAt, w.typedInto = time.Now(), pane
+		w.mu.Unlock()
 		// -l: literal, so "Enter" in a sentence is the word, not the key.
 		if _, err := w.tmux(ctx, "send-keys", "-t", pane, "-l", text); err != nil {
 			return target, err
@@ -126,6 +138,10 @@ func (w *rookWatcher) Type(ctx context.Context, text string, enter, anywhere boo
 		if _, err := w.tmux(ctx, "send-keys", "-t", pane, "Enter"); err != nil {
 			return target, err
 		}
+		// Sent: the next words start a new line, not a continuation.
+		w.mu.Lock()
+		w.typedInto = ""
+		w.mu.Unlock()
 	}
 	return target, nil
 }
