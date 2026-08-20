@@ -2,3 +2,6 @@
 # Anchored: a bare "vera" would match every cmd/vera, gen/vera and
 # proto/vera directory too, and silently swallow new source files.
 /vera
+macos/build/
+/vera2
+macos/Vera.xcodeproj/xcuserdata/

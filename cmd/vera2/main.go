@@ -65,6 +65,7 @@ func main() {
 	usageEvery := flag.Duration("usage-interval", 15*time.Minute, "how often to report Claude Code subscription usage (0 to stop)")
 	showUsage := flag.Bool("usage", false, "print what is left of the Claude Code subscription, and exit")
 	toolTimeout := flag.Duration("tool-timeout", 10*time.Minute, "how long a delegated task may run")
+	rookTmux := flag.String("rook-tmux", "rook", "rook's tmux server name, for terminal focus (\"\" to disable)")
 	showMemory := flag.Bool("memories", false, "print what Vera remembers, and exit")
 	forget := flag.String("forget", "", "forget fact ids (\"3,7\"), or \"all\", and exit")
 	flag.Parse()
@@ -84,7 +85,8 @@ func main() {
 	// the one that works at home and can be watched with curl; peer is
 	// the one that survives a network which refuses to route between
 	// its own clients.
-	transports := []Transport{newLAN(*addr, id)}
+	lan := newLAN(*addr, id)
+	transports := []Transport{lan}
 	var radio *peerTransport
 	peering := "off (--no-peer)"
 	if !*noPeer {
@@ -214,6 +216,14 @@ func main() {
 	}
 
 	answer, mind, how := chooseMind(*echoOnly, *model, *apiBase, *keyFile, generations, preface, memory, hands)
+	lan.how = how
+	if mind != nil {
+		// The Mac app reports where attention is over the LAN transport
+		// and the mind reads it from there; the two meet here and
+		// nowhere else.
+		mind.Attention = lan.attention
+		lan.cleaner = mind.clean
+	}
 
 	if *evalSuite != "" {
 		// The scorers grade the model, so the run should say which one
@@ -234,6 +244,14 @@ func main() {
 	// account state, and the only way to it is to ask.
 	if *usageEvery > 0 && telemetryConfigured() && !*noTools {
 		go watchUsage(ctx, *usageEvery)
+	}
+
+	// Rook, as an observer: which pane is in front of the person. This
+	// machine is the device; the Mac app reports under the same name.
+	if *rookTmux != "" {
+		rook := newRookWatcher(*rookTmux, id.Name)
+		lan.onPoke("rook", rook.Poke)
+		go rook.run(ctx, "http://127.0.0.1"+portOf(*addr)+"/poke/rook", lan.attention.Observe)
 	}
 
 	go func() {

@@ -28,6 +28,11 @@ type Message struct {
 	// It is what groups exchanges together in agent observability, and
 	// it is the seam history will eventually be threaded through.
 	Conversation string `json:"conversation,omitempty"`
+
+	// Device is which machine the person spoke to — "seths-mbp" — so
+	// the answer can lean on what that machine has reported about
+	// where their attention is. A phone leaves it empty.
+	Device string `json:"device,omitempty"`
 }
 
 // Frame is one piece of the reply. A reply is a sequence of Deltas

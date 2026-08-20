@@ -37,6 +37,33 @@ codes, headers or URL paths to smuggle. Nothing above that line moved
 when `echo` became `think`, and nothing should move when `lan` becomes
 `peer`.
 
+## Attention
+
+The Mac app (`macos/`) reports what has focus, and Vera Core keeps that
+per device in `attention.go`:
+
+```
+POST /observe   {"type":"app.focused","device":"work-mac","app":{"name":"Ghostty","bundle_id":"…"}}
+GET  /status    what Vera knows: devices, their focus, providers, integrations
+```
+
+The model reads it as a paragraph appended after the system prompt —
+"On work-mac: Ghostty has had focus for 2 minutes. Before that: Chrome."
+— with an explicit note that this names the application in front of
+the person and says nothing about what is inside it. That limit is the
+design: an app with no integration is *opaque*, and opaque is a true
+thing to tell a model. When an editor or browser integration reports
+`editor.selection` or the like, the envelope is the same and the
+`source` field is what makes the Connections view say "connected".
+
+`providers` is where capability providers answer "what can you do".
+Rook's first answer is `terminal.focus`: `rook.go` is the adapter — the
+one file that knows rook is a tmux server today — and it reports which
+session and pane are in front of the person, and whether a coding agent
+is running there, as a `terminal.focus` observation with `source: rook`.
+Ghostty stops being opaque: "Inside it, rook shows Claude Code session
+\"Vera native macOS surface\" (vera:1)". `--rook-tmux ""` turns it off.
+
 ## Pairing
 
 The QR code carries an **identity and a secret**, and mentions addresses

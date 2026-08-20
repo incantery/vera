@@ -13,10 +13,15 @@ import (
 
 // serveLAN starts a transport on a port nobody else is using and hands
 // back its base URL.
+// lanUnderTest is the most recent transport serveLAN started, for tests
+// that need to reach behind the wire.
+var lanUnderTest *lanTransport
+
 func serveLAN(t *testing.T, h Handler) (string, Identity) {
 	t.Helper()
 	id := Identity{Peer: "peer-under-test", Secret: "s3cret", Name: "test-mac"}
 	lan := newLAN("127.0.0.1:0", id)
+	lanUnderTest = lan
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

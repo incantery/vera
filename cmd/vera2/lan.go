@@ -17,6 +17,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -31,12 +32,26 @@ type lanTransport struct {
 	runs   *Runs
 	server *http.Server
 
+	// attention is what the devices have reported; /observe writes it,
+	// /status reads it, and the mind recites it.
+	attention *Attention
+	// how names the mind, for /status — the same phrase the startup
+	// banner prints.
+	how   string
+	since time.Time
+	// cleaner tidies dictation; nil (echo mode, no key) means the words
+	// go back as they came.
+	cleaner func(context.Context, Dictation) (Cleaned, error)
+	// poke is the doorbell a local integration rings to say "look
+	// again". Loopback-only, carries nothing, trusted for nothing.
+	poke map[string]func()
+
 	mu   sync.Mutex
 	port string
 }
 
 func newLAN(addr string, id Identity) *lanTransport {
-	return &lanTransport{addr: addr, id: id, runs: newRuns()}
+	return &lanTransport{addr: addr, id: id, runs: newRuns(), attention: newAttention(), since: time.Now()}
 }
 
 func (l *lanTransport) Name() string { return "lan" }
@@ -68,6 +83,11 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("POST /say", l.say(h))
 	mux.HandleFunc("GET /resume", l.resume)
 	mux.HandleFunc("GET /ping", l.ping)
+	mux.HandleFunc("POST /observe", l.observe)
+	mux.HandleFunc("GET /status", l.status)
+	mux.HandleFunc("GET /watch", l.watchStatus)
+	mux.HandleFunc("POST /dictate", l.dictate)
+	mux.HandleFunc("POST /poke/{who}", loopbackOnly(l.pokeHandler))
 	mux.HandleFunc("GET /pair.json", loopbackOnly(l.pairJSON))
 	mux.HandleFunc("GET /pair.png", loopbackOnly(l.pairPNG))
 	mux.HandleFunc("GET /{$}", loopbackOnly(l.page))
@@ -184,7 +204,162 @@ func (l *lanTransport) watch(w http.ResponseWriter, r *http.Request, run *Run, f
 // ping lets a phone with several address hints find out which one is
 // this machine without spending an exchange or a secret on it.
 func (l *lanTransport) ping(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]string{"peer": l.id.Peer, "name": l.id.Name})
+	writeJSON(w, map[string]string{"peer": l.id.Peer, "name": l.id.Name, "version": version})
+}
+
+// observe takes one context event from a device. It is fire-and-forget
+// on purpose: an observation is a fact about a moment that has already
+// passed, and nothing useful can be said back about it.
+func (l *lanTransport) observe(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var o Observation
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&o); err != nil || o.Type == "" {
+		http.Error(w, "bad observation", http.StatusBadRequest)
+		return
+	}
+	l.attention.Observe(o)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (l *lanTransport) pokeHandler(w http.ResponseWriter, r *http.Request) {
+	l.mu.Lock()
+	fn := l.poke[r.PathValue("who")]
+	l.mu.Unlock()
+	if fn == nil {
+		http.Error(w, "nobody by that name", http.StatusNotFound)
+		return
+	}
+	fn()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// onPoke registers a doorbell.
+func (l *lanTransport) onPoke(who string, fn func()) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.poke == nil {
+		l.poke = map[string]func(){}
+	}
+	l.poke[who] = fn
+}
+
+// dictate cleans one utterance for the cursor. It never fails the
+// caller: the worst answer is the raw text, marked as such.
+func (l *lanTransport) dictate(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var d Dictation
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&d); err != nil {
+		http.Error(w, "bad dictation", http.StatusBadRequest)
+		return
+	}
+	if l.cleaner == nil {
+		writeJSON(w, Cleaned{Text: strings.TrimSpace(d.Text), Raw: true})
+		return
+	}
+	out, err := l.cleaner(r.Context(), d)
+	if err != nil {
+		slog.Warn("dictation cleanup failed, returning raw", "error", err.Error())
+	}
+	writeJSON(w, out)
+}
+
+// Status is what a device sees when it asks how Vera is. It doubles as
+// the heartbeat: a device that polls it is a device that is still here.
+type Status struct {
+	Version      string              `json:"version"`
+	Name         string              `json:"name"`
+	Peer         string              `json:"peer"`
+	Mind         string              `json:"mind"`
+	Since        time.Time           `json:"since"`
+	RunsInFlight int                 `json:"runs_in_flight"`
+	Devices      []DeviceStatus      `json:"devices"`
+	Providers    []ProviderStatus    `json:"providers"`
+	Integrations []IntegrationStatus `json:"integrations"`
+}
+
+func (l *lanTransport) status(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, l.snapshot(r.URL.Query().Get("device")))
+}
+
+// snapshot is the Status of this moment. Naming a device is the
+// heartbeat for it.
+func (l *lanTransport) snapshot(device string) Status {
+	now := time.Now()
+	l.attention.Seen(device, now)
+	devices, integrations := l.attention.Snapshot(now, 20)
+	if devices == nil {
+		devices = []DeviceStatus{}
+	}
+	return Status{
+		Version:      version,
+		Name:         l.id.Name,
+		Peer:         l.id.Peer,
+		Mind:         l.how,
+		Since:        l.since,
+		RunsInFlight: l.runs.inFlight(),
+		Devices:      devices,
+		Providers:    detectProviders(),
+		Integrations: integrations,
+	}
+}
+
+// watchStatus pushes Status: once now, then after every change, and
+// every fifteen seconds so both ends know the other is alive. A device
+// holding this open is present; the app stops asking and starts being
+// told, which is the difference between "a few seconds" and "now".
+func (l *lanTransport) watchStatus(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	device := r.URL.Query().Get("device")
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	rc := http.NewResponseController(w)
+	enc := json.NewEncoder(w)
+
+	changes, stop := l.attention.Watch()
+	defer stop()
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
+	send := func() bool {
+		if err := enc.Encode(l.snapshot(device)); err != nil {
+			return false
+		}
+		return rc.Flush() == nil
+	}
+	if !send() {
+		return
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-heartbeat.C:
+		case <-changes:
+			// Coalesce: a focus change is often two observations
+			// (unfocused, focused) a millisecond apart.
+			time.Sleep(30 * time.Millisecond)
+			for len(changes) > 0 {
+				<-changes
+			}
+		}
+		if !send() {
+			return
+		}
+	}
 }
 
 func (l *lanTransport) authed(r *http.Request) bool {

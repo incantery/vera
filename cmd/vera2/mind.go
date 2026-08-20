@@ -56,6 +56,9 @@ type Mind struct {
 	Memory   *Memory
 	Delegate *Delegate
 	Gen      *agento11y.Client
+	// Attention is what the devices have reported about where the
+	// person is looking. Nil is fine: a mind with no senses.
+	Attention *Attention
 
 	instruments
 
@@ -121,7 +124,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	ctx, x := m.begin(ctx, msg, text, len(prior))
 
 	messages := make([]chatMessage, 0, len(prior)+2+2*maxRounds)
-	messages = append(messages, chatMessage{Role: "system", Content: m.preface()})
+	messages = append(messages, chatMessage{Role: "system", Content: m.preface() + m.present(msg.Device)})
 	for _, t := range prior {
 		messages = append(messages, chatMessage{Role: t.Role, Content: t.Content})
 	}
@@ -490,4 +493,26 @@ func (m *Mind) preface() string {
 	}
 	return base + "\n\nWhat you know about them, from earlier conversations:\n" +
 		known + "\nUse this only when it is relevant. Do not mention it, list it, or bring it up unprompted."
+}
+
+// present is the paragraph about this moment — which application has
+// their attention on which machine. It is appended after the preface
+// rather than folded into it because the preface is a stable prompt
+// worth caching and evaluating, and this changes every minute.
+//
+// The wording tells the model the limits of what is known. "Ghostty has
+// focus" is a fact; what is in that terminal is not, unless something
+// reported it, and the model is told not to pretend otherwise.
+func (m *Mind) present(device string) string {
+	if m.Attention == nil {
+		return ""
+	}
+	now := m.Attention.Describe(time.Now(), device)
+	if now == "" {
+		return ""
+	}
+	return "\n\nWhere their attention is right now, as reported by their devices:\n" + now +
+		"\nThis tells you which application is in front of them, not what is inside it. " +
+		"When they say \"this\" or \"here\", it most likely refers to that application. " +
+		"Do not describe or guess at its contents unless they were reported above. Do not recite this unprompted."
 }
