@@ -46,6 +46,12 @@ import (
 var webFS embed.FS
 
 func main() {
+	// `vera chat` is a client, not the daemon: the terminal face of
+	// the standing conversation, made for rook's companion popup.
+	if len(os.Args) > 1 && os.Args[1] == "chat" {
+		chatMain(os.Args[2:])
+		return
+	}
 	addr := flag.String("addr", "127.0.0.1:4770", "listen address (\":4770\" opens it to your LAN)")
 	dir := flag.String("dir", "", "projects directory (default ~/.claude/projects)")
 	window := flag.Duration("window", 48*time.Hour, "how far back sessions are shown")
@@ -156,6 +162,7 @@ func main() {
 		uploads:     defaultUploadsDir(),
 		sched:       &schedStore{path: defaultSchedulePath()},
 		report:      &reportStore{path: defaultReportPath()},
+		chat:        newChatStore(defaultChatPath()),
 		hub:         newHub(),
 	}
 	// The semantic log rides the hub it pokes, so it is built after the
@@ -232,6 +239,8 @@ func main() {
 	mux.HandleFunc("POST /api/workspaces", s.handleWorkspaceCreate)
 	mux.HandleFunc("DELETE /api/workspaces/{name}", s.handleWorkspaceDelete)
 	mux.HandleFunc("GET /api/report", s.handleReport)
+	mux.HandleFunc("GET /api/chat", s.handleChatGet)
+	mux.HandleFunc("POST /api/chat", s.handleChatPost)
 	mux.HandleFunc("POST /api/steward/look", s.handleStewardLook)
 	mux.HandleFunc("GET /api/schedule", s.handleScheduleList)
 	mux.HandleFunc("POST /api/schedule", s.handleScheduleAdd)
@@ -357,6 +366,7 @@ type server struct {
 	sched   *schedStore    // scheduled work; nil = schedule off
 	report  *reportStore   // the daily account; nil = report off
 	steward *stewardSystem // the thinking pass; nil = steward off (no "look now")
+	chat    *chatStore     // the standing conversation with the owner
 
 	spendPath   string // spend journal; "" = remember only while running
 	digestPath  string // digest journal; same deal
