@@ -20,6 +20,9 @@ import SwiftUI
 @MainActor
 final class PaneFeed {
     private(set) var lines: [String] = []
+    /// Which pane the last read actually landed in — the live source of
+    /// truth for "is this Claude Code", more current than frecency.
+    private(set) var into: Target.Terminal?
     private(set) var problem: String?
     /// True once a read has landed; false while the first is in flight
     /// or after one fails, so the view can tell "waiting" from "empty".
@@ -46,7 +49,9 @@ final class PaneFeed {
         poller = Task { [weak self] in
             while !Task.isCancelled, let self {
                 do {
-                    lines = try await client.screen(at: target, mobile: cols > 0, cols: cols)
+                    let screen = try await client.screen(at: target, mobile: cols > 0, cols: cols)
+                    lines = screen.lines
+                    into = screen.into
                     live = true
                     problem = nil
                 } catch is CancellationError {

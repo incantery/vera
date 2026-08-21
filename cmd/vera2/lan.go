@@ -56,6 +56,8 @@ type lanTransport struct {
 	// narrower reshapes a pane's window to the phone's width while it is
 	// dictating, and restores it after — nil if no provider offers it.
 	narrower func(ctx context.Context, at *TerminalFocus, cols int, want bool) error
+	// agenter runs a coding agent's own command (compact, ...) in a pane.
+	agenter func(ctx context.Context, action string, at *TerminalFocus) (*TerminalFocus, error)
 	// stt transcribes audio the phone sends, and manages its own engine.
 	stt Transcriber
 
@@ -103,6 +105,7 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("POST /type", l.typeInto)
 	mux.HandleFunc("POST /goto", l.goTo)
 	mux.HandleFunc("POST /screen", l.screen)
+	mux.HandleFunc("POST /agent", l.agentCmd)
 	mux.HandleFunc("POST /transcribe", l.transcribe)
 	mux.HandleFunc("GET /stt", l.sttStatus)
 	mux.HandleFunc("POST /stt/install", l.sttInstall)
@@ -373,6 +376,46 @@ func (l *lanTransport) screen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, Screened{Lines: lines, Into: into})
+}
+
+// AgentCmd asks a coding agent to run one of its own commands — compact,
+// for now — in a pane it is running.
+type AgentCmd struct {
+	Action   string         `json:"action"`
+	Terminal *TerminalFocus `json:"terminal,omitempty"`
+	Device   string         `json:"device,omitempty"`
+}
+
+// agentCmd is the phone's buttons for a Claude Code session: it sends
+// the agent one of its own commands as keystrokes. Refused on anything
+// that is not a recognised agent — these are not shell commands.
+func (l *lanTransport) agentCmd(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.agenter == nil {
+		http.Error(w, "no provider can run an agent command", http.StatusNotImplemented)
+		return
+	}
+	var a AgentCmd
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&a); err != nil {
+		http.Error(w, "bad agent command", http.StatusBadRequest)
+		return
+	}
+	into, err := l.agenter(r.Context(), a.Action, a.Terminal)
+	switch {
+	case errors.Is(err, ErrNoTarget):
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	case errors.Is(err, ErrNotAgent):
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	case err != nil:
+		http.Error(w, "agent command failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, Typed{Into: into})
 }
 
 // Transcribed is what /transcribe returns.

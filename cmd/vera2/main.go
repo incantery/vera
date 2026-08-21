@@ -258,6 +258,7 @@ func main() {
 		lan.goer = rook.GoTo
 		lan.screener = rook.Capture
 		lan.narrower = rook.Mobile
+		lan.agenter = rook.Agent
 		go rook.run(ctx, "http://127.0.0.1"+portOf(*addr)+"/poke/rook", lan.attention.Observe)
 	}
 

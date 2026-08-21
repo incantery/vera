@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os/exec"
 	"regexp"
@@ -289,6 +290,43 @@ func (w *rookWatcher) mobileStale(ctx context.Context) {
 	if stale {
 		_ = w.unmobile(ctx)
 	}
+}
+
+// Agent runs a coding agent's own command in a pane — the phone's
+// buttons for the session it is looking at. Only a recognised agent is a
+// valid target: "/compact" is meaningless in a shell, and firing it into
+// one would just type a stray line. Unlike Type, nothing is ever
+// prepended — a command must begin with its slash to be a command.
+func (w *rookWatcher) Agent(ctx context.Context, action string, at *TerminalFocus) (*TerminalFocus, error) {
+	target := at
+	if target == nil {
+		target = w.Focus()
+	}
+	if target == nil {
+		return nil, ErrNoTarget
+	}
+	if target.Agent != "claude-code" {
+		return target, ErrNotAgent
+	}
+	var keys string
+	switch action {
+	case "compact":
+		keys = "/compact"
+	default:
+		return target, fmt.Errorf("unknown agent action %q", action)
+	}
+	pane := target.Session + ":" + target.Window + "." + target.Pane
+	if _, err := w.tmux(ctx, "send-keys", "-t", pane, "-l", keys); err != nil {
+		return target, err
+	}
+	if _, err := w.tmux(ctx, "send-keys", "-t", pane, "Enter"); err != nil {
+		return target, err
+	}
+	// A command was sent; the next dictation starts a fresh line.
+	w.mu.Lock()
+	w.typedInto = ""
+	w.mu.Unlock()
+	return target, nil
 }
 
 func newRookWatcher(socket, device string) *rookWatcher {

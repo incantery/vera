@@ -28,6 +28,8 @@ struct DictateView: View {
     @State private var installing = false
     @State private var installStep = ""
     @State private var checkFailed: String?
+    @State private var compacting = false
+    @State private var actionNote: String?
 
     /// When set, this dictates to one specific pane, chosen from the
     /// home list, whatever the Mac is looking at.
@@ -62,6 +64,7 @@ struct DictateView: View {
                 Spacer()
                 if let stt, stt.ready == true {
                     target
+                    actions
                     screen
                     words
                     typeRow
@@ -89,10 +92,70 @@ struct DictateView: View {
             Text(conversation.pairing?.name ?? "Vera")
                 .font(N.body(13, .medium)).foregroundStyle(N.dim)
             Spacer()
+            if pinned != nil {
+                Button { if let p = pinned { Task { await link.goto(p) } } } label: {
+                    HStack(spacing: 5) {
+                        if link.going != nil { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "arrow.up.forward.app").font(.system(size: 13)) }
+                        Text("Open on Mac").font(N.body(13, .medium))
+                    }.foregroundStyle(N.dim)
+                }.buttonStyle(.plain).padding(.trailing, 16)
+            }
             Button("Done") { dismiss() }
                 .font(N.body(14, .medium)).foregroundStyle(N.accent300).buttonStyle(.plain)
         }
         .padding(.horizontal, 26).padding(.top, 18)
+    }
+
+    // MARK: - Session actions (what this pane can do)
+
+    /// The pane this panel is bound to, live: what /screen actually read,
+    /// falling back to the pinned choice before the first read lands.
+    private var session: Target.Terminal? { feed.into ?? pinned?.terminal ?? link.target?.terminal }
+    private var isClaude: Bool { session?.agent == "claude-code" }
+
+    @ViewBuilder private var actions: some View {
+        if isClaude {
+            HStack(spacing: 10) {
+                actionButton("Compact", system: "rectangle.compress.vertical", busy: compacting) { compact() }
+                Spacer()
+                if let note = actionNote {
+                    Text(note).font(N.body(12)).foregroundStyle(N.dim).lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 26).padding(.top, 12)
+        }
+    }
+
+    private func actionButton(_ title: String, system: String, busy: Bool, _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            HStack(spacing: 6) {
+                if busy { ProgressView().controlSize(.small) }
+                else { Image(systemName: system).font(.system(size: 13)) }
+                Text(title).font(N.body(13, .medium))
+            }
+            .foregroundStyle(N.accent300)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(N.accent.opacity(0.14), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .sensoryFeedback(.impact(weight: .light), trigger: busy)
+    }
+
+    private func compact() {
+        guard let t = session else { return }
+        compacting = true
+        actionNote = nil
+        Task {
+            defer { compacting = false }
+            do {
+                try await client.agent("compact", at: t)
+                actionNote = "Compacting the session…"
+            } catch {
+                actionNote = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Engine setup

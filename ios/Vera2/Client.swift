@@ -231,7 +231,14 @@ struct Client: Sendable {
     /// Read the visible rows of a pane — the Mac's one eye into the
     /// terminal. Read-only, and polled while a pane view is open. A nil
     /// target reads whatever the Mac is looking at.
-    func screen(at target: Target.Terminal?, mobile: Bool = false, cols: Int = 0) async throws -> [String] {
+    /// What a pane read back: its visible rows, and which pane it was —
+    /// `into.agent` is how the panel knows it is looking at Claude Code.
+    struct Screen: Decodable, Sendable {
+        let lines: [String]
+        let into: Target.Terminal?
+    }
+
+    func screen(at target: Target.Terminal?, mobile: Bool = false, cols: Int = 0) async throws -> Screen {
         guard let address = await resolve() else { throw ClientError.unreachable }
         var request = URLRequest(url: URL(string: "http://\(address)/screen")!)
         request.httpMethod = "POST"
@@ -242,13 +249,33 @@ struct Client: Sendable {
         request.httpBody = try JSONEncoder().encode(Body(terminal: target, device: "phone", mobile: mobile, cols: cols))
         let (data, response) = try await Self.session.data(for: request)
         switch (response as? HTTPURLResponse)?.statusCode {
-        case 200:
-            struct R: Decodable { let lines: [String] }
-            return try JSONDecoder().decode(R.self, from: data).lines
+        case 200: return try JSONDecoder().decode(Screen.self, from: data)
         case 401: throw ClientError.refused
         case 409: throw ClientError.broken("There's no pane to show.")
         case 501: throw ClientError.broken("That Mac has no terminal to read.")
         case let code?: throw ClientError.broken("The Mac answered \(code) to screen.")
+        case nil: throw ClientError.broken("The Mac answered with nothing at all.")
+        }
+    }
+
+    /// Run one of a coding agent's own commands (compact, ...) in a pane.
+    /// The Mac refuses anything that is not a recognised agent.
+    func agent(_ action: String, at target: Target.Terminal?) async throws {
+        guard let address = await resolve() else { throw ClientError.unreachable }
+        var request = URLRequest(url: URL(string: "http://\(address)/agent")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        struct Body: Encodable { let action: String; let terminal: Target.Terminal?; let device: String }
+        request.httpBody = try JSONEncoder().encode(Body(action: action, terminal: target, device: "phone"))
+        let (data, response) = try await Self.session.data(for: request)
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 200, 204: return
+        case 401: throw ClientError.refused
+        case 409: throw ClientError.broken(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+        case 501: throw ClientError.broken("That Mac has nothing to run the command in.")
+        case let code?: throw ClientError.broken("The Mac answered \(code) to the command.")
         case nil: throw ClientError.broken("The Mac answered with nothing at all.")
         }
     }
