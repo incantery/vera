@@ -242,7 +242,7 @@ struct SettingsView: View {
             Section {
                 TextField("Address", text: $settings.coreAddress)
                     .onSubmit { station.applyCoreAddress() }
-                Text("Loopback only. Vera Core is `go run ./cmd/vera2` on this machine.")
+                Text("Loopback only. Vera Core is `go run ./cmd/vera` on this machine.")
                     .font(.caption).foregroundStyle(.secondary)
             } header: {
                 Text("Vera Core")

@@ -3,7 +3,7 @@ import Observation
 
 // Talking to Vera Core.
 //
-// The same wire the phone speaks (cmd/vera2/lan.go), over loopback. The
+// The same wire the phone speaks (cmd/vera/lan.go), over loopback. The
 // one thing this app has that a phone does not is a seat at the machine,
 // which is exactly what the loopback-only /pair.json is for: it hands
 // out the identity and secret to whoever is sitting here. So pairing is
@@ -15,7 +15,7 @@ struct Pairing: Codable, Sendable {
     let name: String
 }
 
-/// What /status reports. Mirrors cmd/vera2/lan.go `Status`.
+/// What /status reports. Mirrors cmd/vera/lan.go `Status`.
 struct CoreStatus: Decodable, Sendable {
     struct Device: Decodable, Sendable, Identifiable {
         struct App: Decodable, Sendable {
@@ -84,7 +84,7 @@ struct CoreStatus: Decodable, Sendable {
     }
 }
 
-/// One piece of an answer. Mirrors cmd/vera2/transport.go `Frame`.
+/// One piece of an answer. Mirrors cmd/vera/transport.go `Frame`.
 struct Frame: Decodable, Sendable {
     var delta: String?
     var done: Bool?
@@ -148,7 +148,7 @@ final class Core {
 
     var address: String
     /// The name this Mac reports itself as. Once paired it is the core's
-    /// own name for this machine — the rook adapter inside vera2 reports
+    /// own name for this machine — the rook adapter inside Vera Core reports
     /// under that name, and the two must agree or the Mac appears twice.
     var device: String { pairing?.name ?? hostname }
     private let hostname: String

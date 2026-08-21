@@ -5,7 +5,7 @@ import Speech
 
 // Hearing.
 //
-// The same arrangement as the phone (ios/Vera2/Speech.swift): the
+// The same arrangement as the phone (ios/Vera/Speech.swift): the
 // microphone feeds Apple's recogniser, on-device when macOS offers it,
 // and only the words leave this process. Vera Core never sees audio.
 //

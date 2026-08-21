@@ -2,12 +2,12 @@
 
 The Mac's senses and face. Native Swift — SwiftUI for the windows, AppKit
 where macOS needs to be spoken to directly — and no intelligence of its
-own: everything it hears goes to Vera Core (`cmd/vera2`) as text, and
+own: everything it hears goes to Vera Core (`cmd/vera`) as text, and
 everything it learns about where your attention is goes there as an
 observation.
 
 ```
-go run ./cmd/vera2 --echo --no-peer     # Vera Core, in another terminal
+go run ./cmd/vera --echo --no-peer     # Vera Core, in another terminal
 ./macos/run.sh                          # build + launch Vera.app
 ```
 

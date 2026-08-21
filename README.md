@@ -1,91 +1,86 @@
 # vera
 
-The smallest useful piece of vera: one binary, no install, no account.
-It watches every Claude Code session on your machine and gives you the
-**membrane** — live session states on a local web page, and a *drive*:
-hand a session a goal, and a supervisor agent keeps the conversation
-going — prompt, judge the reply, prompt again — until the goal is met
-or the turn budget runs out.
+A voice and a pair of hands between your phone and your Mac.
+
+Vera is a persistent assistant that lives on your machine and answers to
+your phone. You talk; the Mac listens, thinks, and acts — dictating into
+whatever you are working in, showing you what it is looking at, and
+driving the apps in front of you. Speech never leaves your machines.
+
+Three pieces, one small contract between them:
+
+- **Vera Core** (`cmd/vera`, Go, `:4780`) — the loop. It pairs with your
+  phone over the LAN, holds the conversation, keeps an attention model of
+  what is in front of you (which app, which terminal pane), reads panes,
+  and exposes a **capability surface** the phone renders and drives.
+- **Vera.app** (`macos/`) — the Mac's senses and hands. It reports which
+  app is focused, transcribes your voice locally, and carries out
+  commands the core hands down (bring an app forward, press a shortcut).
+- **The phone** (`ios/`) — the remote. Tap into anything on the Mac, see
+  it, talk into it, and press its buttons — Compact a Claude Code
+  session, Build in Xcode — from your pocket.
 
 ```
-go run github.com/incantery/vera/cmd/vera@latest
+go run github.com/incantery/vera/cmd/vera        # Vera Core, on this Mac
 ```
 
-Open http://localhost:4770. That's it. (First ride: QUICKSTART.md.)
+Then run **Vera.app** (`macos/run.sh`) so the Mac has senses, and pair
+the phone by scanning the QR at `http://localhost:4780/`. First ride:
+**QUICKSTART.md**.
 
 ## What you get
 
-- **The board is the home screen.** Tell vera what needs doing; it
-  keeps a kanban of tasks per agent — captured, driven, judged, and
-  proposed back to you, every transition an audited event. The agents
-  rail on the left switches boards; `chat →` opens the conversation.
-- **Every session, honestly.** States are derived from Claude Code's
-  own transcripts (`~/.claude/projects`), read-only: *needs you*,
-  *blocked?*, *working*, *idle* — plus titles, branches, and context
-  occupancy. Nothing is installed into anything; stop the binary and
-  no trace remains.
-- **The drive.** The example that started this: someone went back and
-  forth five times to get Claude to *hypothesize* about its own
-  behavior — it kept deflecting with "I don't have access to that."
-  A drive automates exactly that persistence. Type the goal; the loop
-  prompts the session, an LLM judge reads each reply against the goal,
-  and either declares it met or writes the next push. Bounded turns,
-  every round on the record, stop button.
-- **Forks, never keystrokes.** Drives run `claude -p --resume` — each
-  turn continues the conversation in a *fork*, so your live terminal
-  is never typed into and the original session is never touched. When
-  a drive finishes, the page hands you `claude --resume <fork-id>` to
-  take the wheel back with the drive's progress in context.
+- **Your phone is a microphone for the Mac.** Pace the room and talk;
+  the words are transcribed *on the Mac* (Parakeet, a one-time local
+  download) and typed into whatever rook is looking at. Type-only by
+  default — nothing is sent until you press Send, because words typed
+  into an agent can be unsent and words sent cannot.
+- **One eye into the terminal.** Tap a pane and watch it live on the
+  phone — the agent's reply forming, the comment you are about to
+  answer. Read-only; reading the reply is what the Mac is for.
+- **Control, not just sight.** The phone asks the Mac *"what can I do
+  here?"* and draws whatever it is handed. A Claude Code pane offers
+  **Compact**; Xcode offers **Build / Run / Stop / Test**; Chrome offers
+  **Reload / New Tab**. Teaching Vera a new app is a descriptor on the
+  Mac — the phone never changes. See `cmd/vera/capability.go`.
+- **Attention you can jump to.** The home screen is the places on the
+  Mac, ranked by frecency, the one in front of you marked. Tap to go
+  there — the Mac follows you, and the phone follows the Mac.
 
-## The judge
+## Speech stays home
 
-Drives need an OpenAI-compatible endpoint for the judge (the watcher
-works without one). In order: `$OPENAI_API_KEY`, then
-`~/.config/vera/openai_key`, or point `--api-base` at any compatible
-server — ollama and friends need no key.
+Transcription runs on the Mac, not in a cloud. The phone records and
+hands the audio across the paired, loopback-or-LAN channel; the Mac
+recognises it locally. **Your voice never leaves your machines.**
+
+## Capabilities and rook
+
+rook — the native terminal (a separate project, [rookide.com](https://rookide.com))
+— is Vera's first capability *provider*: Vera Core talks to it over
+`tmux -L rook` to read panes, type, switch, and run a coding agent's own
+commands. It is one provider among many; app control (Xcode, Chrome, …)
+rides the same capability contract without rook. Run Core with
+`--rook-tmux ""` to disable the terminal provider.
 
 ## Flags
 
 ```
---addr 127.0.0.1:4770   listen address (":4770" opens it to your LAN — your call)
---dir  ~/.claude/projects
---turns 4               prompts a drive may send before giving up
---model gpt-5.6-luna    judge model
---api-base              judge endpoint (default OpenAI)
---claude                the claude binary (default: from PATH)
---world <dir>           sandbox world (see below)
+--addr 127.0.0.1:4780   listen address (":4780" opens it to your LAN)
+--echo                  answer by repeating — no model key needed
+--no-peer               LAN only; skip the phone-to-Mac peer sidecar
+--rook-tmux rook        rook's tmux server name ("" to disable)
+--state <file>          identity file (default ~/.local/state/vera/identity.json)
 ```
 
-## Worlds
-
-`vera --world /tmp/w1` stands up a disposable sandbox: the board,
-task journals, spend meters, key, and scratch workspaces all live
-under `/tmp/w1`, and the board shows only sessions working inside it.
-The real machine's vera is untouched — run both at once on different
-ports. Workers are real (real claude, real tools, real spend); the
-*world* is what's fake and resettable: `rm -rf /tmp/w1` and it never
-happened. A seeded world is a test scenario; an empty one is a fresh
-user.
-
-## Hacking on the UI
-
-The page is a SvelteKit SPA (Svelte 5 + Tailwind 4) under
-`cmd/vera/web`, built to `web/build` and embedded into the binary
-— the build output is committed so `go run` needs no node. The loop:
+## The pieces in this repo
 
 ```
-cd engine/cmd/vera/web
-npm install
-npm run dev      # live-reloads against a running vera (proxies /api to :4770)
-npm run build    # then rebuild the Go binary to re-embed
+cmd/vera/     Vera Core — the loop, attention, capabilities, rook adapter
+macos/        Vera.app — senses (app focus, STT) and hands (AppDriver)
+ios/          the phone app (SwiftUI)
+cmd/ladder/   a drive-loop benchmark corpus (research tooling)
+drive/ route/ shared libraries
 ```
 
-## The rest of vera
-
-vera is the on-ramp, not the destination. The same membrane runs
-richer inside the [vera terminal](https://rookide.com) — live pane
-telemetry sharpens the states, drives type into real sessions under
-human-wins gates, digests summarize finished turns — and
-[vera-cloud](https://cloud.rookide.com) puts it on your phone. Every
-piece speaks the schemas in this repository; use as much or as little
-as you like.
+Every piece speaks the same small schemas; use as much or as little as
+you like.

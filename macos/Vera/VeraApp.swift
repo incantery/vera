@@ -6,7 +6,7 @@ import SwiftUI
 // This app is the Mac's senses and face: it knows which application is
 // in front of you, it hears you when you ask it to, and it shows a small
 // surface with the answer. It holds no model, no memory and no opinion —
-// all of that is Vera Core (cmd/vera2), one HTTP hop away on this
+// all of that is Vera Core (cmd/vera), one HTTP hop away on this
 // machine. Everything this app learns goes there as an observation;
 // everything it says comes back from there as frames.
 
