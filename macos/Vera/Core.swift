@@ -109,6 +109,20 @@ enum CoreError: LocalizedError {
     }
 }
 
+/// One thing for the Mac to carry out, handed down the /commands stream.
+/// Today: bring an app forward and press a shortcut.
+struct Command: Decodable, Sendable {
+    let type: String
+    let bundleID: String?
+    let name: String?
+    let key: String?
+    let mods: [String]?
+    enum CodingKeys: String, CodingKey {
+        case type, name, key, mods
+        case bundleID = "bundle_id"
+    }
+}
+
 @Observable
 @MainActor
 final class Core {
@@ -149,7 +163,12 @@ final class Core {
     /// mostly.
     var onConnected: () -> Void = {}
 
+    /// Told when the core hands down a command to carry out on the desk —
+    /// a phone tap that becomes a keystroke on another app.
+    var onCommand: (Command) -> Void = { _ in }
+
     @ObservationIgnored private var poll: Task<Void, Never>?
+    @ObservationIgnored private var cmdPoll: Task<Void, Never>?
     @ObservationIgnored private let log: EventLog
 
     nonisolated private static let session: URLSession = {
@@ -199,6 +218,7 @@ final class Core {
     /// Pairs first if needed; reconnects with a short backoff; a stream
     /// that ends is a disconnection, whatever the reason.
     func start() {
+        pumpCommands()
         poll?.cancel()
         poll = Task { [weak self] in
             var backoff: Duration = .seconds(1)
@@ -232,9 +252,62 @@ final class Core {
         }
     }
 
+    /// Holds the /commands downlink open in parallel with /watch. Waits
+    /// for pairing, reconnects with the same short backoff. Kept separate
+    /// so a busy or broken command stream never stalls the status one.
+    private func pumpCommands() {
+        cmdPoll?.cancel()
+        cmdPoll = Task { [weak self] in
+            var backoff: Duration = .seconds(1)
+            while !Task.isCancelled {
+                guard let self else { return }
+                guard pairing != nil else {
+                    try? await Task.sleep(for: .seconds(1))
+                    continue
+                }
+                do {
+                    try await commands()
+                    backoff = .seconds(1)
+                } catch {
+                    // A dropped downlink is not worth logging every time.
+                }
+                try? await Task.sleep(for: backoff)
+                backoff = min(backoff * 2, .seconds(5))
+            }
+        }
+    }
+
+    private func commands() async throws {
+        var request = try authed("/commands?device=\(device)")
+        request.timeoutInterval = 60 * 60 * 24
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do {
+            (bytes, response) = try await Self.session.bytes(for: request)
+        } catch {
+            throw CoreError.unreachable(address)
+        }
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw CoreError.unreachable(address)
+        }
+        do {
+            for try await line in bytes.lines {
+                guard !line.isEmpty else { continue } // heartbeat
+                if let c = try? Self.decoder.decode(Command.self, from: Data(line.utf8)) {
+                    onCommand(c)
+                }
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            throw CoreError.unreachable(address)
+        }
+    }
+
     func stop() {
         poll?.cancel()
         poll = nil
+        cmdPoll?.cancel()
+        cmdPoll = nil
     }
 
     /// One open stream of Status snapshots. Returns when the server

@@ -18,7 +18,9 @@ struct DictateView: View {
     @Environment(Conversation.self) private var conversation
     @Environment(\.dismiss) private var dismiss
     @State private var link: TerminalLink
-    @State private var feed: PaneFeed
+    /// A pane has a live screen worth watching; an app does not, so this
+    /// is nil for app targets.
+    @State private var feed: PaneFeed?
     @State private var recorder = Recorder()
     private let client: Client
 
@@ -28,8 +30,13 @@ struct DictateView: View {
     @State private var installing = false
     @State private var installStep = ""
     @State private var checkFailed: String?
-    @State private var compacting = false
+    /// Which action id is in flight, so its button shows a spinner.
+    @State private var running: String?
     @State private var actionNote: String?
+    @State private var settingUpVoice = false
+    /// What this target can do, as the Mac describes it. nil until the
+    /// first fetch lands; the panel draws its buttons from here.
+    @State private var capability: Client.Capability?
 
     /// When set, this dictates to one specific pane, chosen from the
     /// home list, whatever the Mac is looking at.
@@ -41,7 +48,12 @@ struct DictateView: View {
         let link = TerminalLink(client: client)
         link.pinned = pinned
         _link = State(initialValue: link)
-        _feed = State(initialValue: PaneFeed(client: client, target: pinned?.terminal, cols: Self.mobileCols))
+        // Only a pane has a screen to mirror; an app is controls-only.
+        if pinned?.kind == "pane" {
+            _feed = State(initialValue: PaneFeed(client: client, target: pinned?.terminal, cols: Self.mobileCols))
+        } else {
+            _feed = State(initialValue: nil)
+        }
     }
 
     /// How many monospaced columns fit the pane panel on this phone, so
@@ -62,16 +74,29 @@ struct DictateView: View {
             VStack(spacing: 0) {
                 header
                 Spacer()
-                if let stt, stt.ready == true {
-                    target
-                    actions
-                    screen
-                    words
-                    typeRow
-                    button
-                    sendRow
+                // Everything the panel shows comes from the target's
+                // capability: its name, its buttons, and — only if it has
+                // them — a live screen and a way to type. An app is buttons
+                // only; a pane adds the screen and dictation. Voice is the
+                // one extra that needs the Mac's speech engine.
+                target
+                actions
+                if capability?.hasScreen == true { screen }
+                if capability?.takesText == true {
+                    if stt?.ready == true {
+                        words
+                        typeRow
+                        button
+                        sendRow
+                    } else if settingUpVoice {
+                        engineSetup
+                        Spacer()
+                    } else {
+                        typeRow
+                        sendRow
+                        voiceHint
+                    }
                 } else {
-                    engineSetup
                     Spacer()
                 }
             }
@@ -79,10 +104,16 @@ struct DictateView: View {
         .task {
             _ = await recorder.authorize()
             link.start()
-            feed.start()
+            feed?.start()
+            // Entering something on the phone brings the Mac to it too, so
+            // what you see here and what is on the desk stay the same.
+            if let p = pinned {
+                await link.goto(p)
+                capability = try? await client.capabilities(for: p)
+            }
             await refreshSTT()
         }
-        .onDisappear { link.stop(); feed.stop(); recorder.stop() }
+        .onDisappear { link.stop(); feed?.stop(); recorder.stop() }
     }
 
     // MARK: - Header
@@ -92,38 +123,35 @@ struct DictateView: View {
             Text(conversation.pairing?.name ?? "Vera")
                 .font(N.body(13, .medium)).foregroundStyle(N.dim)
             Spacer()
-            if pinned != nil {
-                Button { if let p = pinned { Task { await link.goto(p) } } } label: {
-                    HStack(spacing: 5) {
-                        if link.going != nil { ProgressView().controlSize(.small) }
-                        else { Image(systemName: "arrow.up.forward.app").font(.system(size: 13)) }
-                        Text("Open on Mac").font(N.body(13, .medium))
-                    }.foregroundStyle(N.dim)
-                }.buttonStyle(.plain).padding(.trailing, 16)
-            }
             Button("Done") { dismiss() }
                 .font(N.body(14, .medium)).foregroundStyle(N.accent300).buttonStyle(.plain)
         }
         .padding(.horizontal, 26).padding(.top, 18)
     }
 
-    // MARK: - Session actions (what this pane can do)
+    // MARK: - Actions (whatever this target can do)
 
-    /// The pane this panel is bound to, live: what /screen actually read,
-    /// falling back to the pinned choice before the first read lands.
-    private var session: Target.Terminal? { feed.into ?? pinned?.terminal ?? link.target?.terminal }
-    private var isClaude: Bool { session?.agent == "claude-code" }
-
+    // The buttons the Mac says this target offers — Compact for a Claude
+    // pane, Build/Run/Stop for Xcode, and so on. The phone does not know
+    // what any of them mean; it draws them and calls /do on a tap. They
+    // scroll sideways because an app can offer more than fit a phone.
     @ViewBuilder private var actions: some View {
-        if isClaude {
-            HStack(spacing: 10) {
-                actionButton("Compact", system: "rectangle.compress.vertical", busy: compacting) { compact() }
-                Spacer()
+        let acts = capability?.acts ?? []
+        if !acts.isEmpty {
+            VStack(spacing: 8) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(acts) { a in
+                            actionButton(a.title, system: a.icon ?? "bolt", busy: running == a.id) { run(a) }
+                        }
+                    }
+                    .padding(.horizontal, 26)
+                }
                 if let note = actionNote {
                     Text(note).font(N.body(12)).foregroundStyle(N.dim).lineLimit(1)
                 }
             }
-            .padding(.horizontal, 26).padding(.top, 12)
+            .padding(.top, 12)
         }
     }
 
@@ -139,22 +167,47 @@ struct DictateView: View {
             .background(N.accent.opacity(0.14), in: Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(busy)
+        .disabled(running != nil)
         .sensoryFeedback(.impact(weight: .light), trigger: busy)
     }
 
-    private func compact() {
-        guard let t = session else { return }
-        compacting = true
+    private func run(_ a: Client.Action) {
+        guard let t = pinned else { return }
+        running = a.id
         actionNote = nil
         Task {
-            defer { compacting = false }
+            defer { running = nil }
             do {
-                try await client.agent("compact", at: t)
-                actionNote = "Compacting the session…"
+                try await client.perform(a.id, on: t)
+                actionNote = "\(a.title) sent"
             } catch {
                 actionNote = error.localizedDescription
             }
+        }
+    }
+
+    // MARK: - Voice (opt-in; typing works without it)
+
+    // A slim line under the type row: you can already type into this pane,
+    // and if you want to talk instead, this is the way in. It stays out of
+    // the way so a non-agent pane you just want to watch or type into is
+    // never blocked behind a 600 MB download.
+    @ViewBuilder private var voiceHint: some View {
+        if stt == nil && checkFailed == nil {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Checking voice on the Mac…").font(N.body(12)).foregroundStyle(N.dim)
+            }
+            .padding(.bottom, 26)
+        } else {
+            Button { settingUpVoice = true } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.badge.plus").font(.system(size: 13))
+                    Text("Set up voice dictation").font(N.body(13, .medium))
+                }.foregroundStyle(N.accent300)
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 26)
         }
     }
 
@@ -192,6 +245,11 @@ struct DictateView: View {
             } else {
                 ProgressView().tint(N.accent)
             }
+            if !installing {
+                Button("Not now") { settingUpVoice = false }
+                    .font(N.body(13)).foregroundStyle(N.dim).buttonStyle(.plain)
+                    .padding(.top, 4)
+            }
         }
     }
 
@@ -205,7 +263,9 @@ struct DictateView: View {
 
     private var target: some View {
         VStack(spacing: 8) {
-            Text(targetLabel).font(N.body(12)).foregroundStyle(N.dim)
+            if !targetLabel.isEmpty {
+                Text(targetLabel).font(N.body(12)).foregroundStyle(N.dim)
+            }
             Text(targetTitle)
                 .font(N.body(22, .semibold))
                 .foregroundStyle(targetOK ? N.text : N.dim)
@@ -224,6 +284,10 @@ struct DictateView: View {
         return link.target?.terminal?.isAgent == true
     }
     private var targetLabel: String {
+        // An app is controls-only — nothing is being typed into it.
+        if let cap = capability, !cap.takesText {
+            return pinned?.kind == "app" ? "On the Mac" : ""
+        }
         if pinned != nil { return "Typing into" }
         if !link.watching { return "Looking for the Mac" }
         if link.target?.terminal == nil { return "Nothing to type into" }
@@ -239,7 +303,7 @@ struct DictateView: View {
     // MARK: - Screen (Vera's eye into the pane)
 
     @ViewBuilder private var screen: some View {
-        if feed.live && !feed.lines.isEmpty {
+        if let feed, feed.live && !feed.lines.isEmpty {
             PaneScreenView(lines: feed.lines)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 20)
@@ -249,7 +313,7 @@ struct DictateView: View {
             // jump when the first read lands.
             VStack(spacing: 8) {
                 Spacer()
-                if let problem = feed.problem {
+                if let problem = feed?.problem {
                     Text(problem)
                         .font(N.body(13)).foregroundStyle(N.accent300)
                         .multilineTextAlignment(.center).padding(.horizontal, 40)

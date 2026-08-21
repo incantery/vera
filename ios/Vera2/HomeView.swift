@@ -75,9 +75,10 @@ struct HomeView: View {
 
     private func row(_ t: RankedTarget) -> some View {
         Button {
-            // A pane you enter; an app you bring forward.
-            if t.kind == "pane" { dictateTo = t }
-            else { Task { await link.goto(t) } }
+            // Tap anything to go into it: the Mac follows you there, and
+            // the panel shows whatever that thing can do — a pane's screen
+            // and dictation, or an app's buttons.
+            dictateTo = t
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: t.kind == "pane" ? "terminal" : "app.dashed")

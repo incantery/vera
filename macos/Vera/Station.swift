@@ -81,6 +81,7 @@ final class Station {
             send(.plain("device.connected", device: core.device))
             if let app = focus.current { send(.focused(app, device: core.device)) }
         }
+        core.onCommand = { AppDriver.perform($0) }
         core.start()
 
         focus.onFocus = { [weak self] app in self?.send(.focused(app, device: self?.core.device ?? "")) }

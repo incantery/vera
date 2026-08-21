@@ -58,6 +58,10 @@ type lanTransport struct {
 	narrower func(ctx context.Context, at *TerminalFocus, cols int, want bool) error
 	// agenter runs a coding agent's own command (compact, ...) in a pane.
 	agenter func(ctx context.Context, action string, at *TerminalFocus) (*TerminalFocus, error)
+	// commands is the downlink to the Mac's own app (Vera.app), which
+	// carries out actions on other apps — a tap on the phone becomes a
+	// keystroke on the desk.
+	commands *cmdHub
 	// stt transcribes audio the phone sends, and manages its own engine.
 	stt Transcriber
 
@@ -66,7 +70,7 @@ type lanTransport struct {
 }
 
 func newLAN(addr string, id Identity) *lanTransport {
-	return &lanTransport{addr: addr, id: id, runs: newRuns(), attention: newAttention(), since: time.Now()}
+	return &lanTransport{addr: addr, id: id, runs: newRuns(), attention: newAttention(), commands: newCmdHub(), since: time.Now()}
 }
 
 func (l *lanTransport) Name() string { return "lan" }
@@ -106,6 +110,9 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("POST /goto", l.goTo)
 	mux.HandleFunc("POST /screen", l.screen)
 	mux.HandleFunc("POST /agent", l.agentCmd)
+	mux.HandleFunc("POST /capabilities", l.capabilities)
+	mux.HandleFunc("POST /do", l.do)
+	mux.HandleFunc("GET /commands", l.watchCommands)
 	mux.HandleFunc("POST /transcribe", l.transcribe)
 	mux.HandleFunc("GET /stt", l.sttStatus)
 	mux.HandleFunc("POST /stt/install", l.sttInstall)

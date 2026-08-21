@@ -258,23 +258,76 @@ struct Client: Sendable {
         }
     }
 
-    /// Run one of a coding agent's own commands (compact, ...) in a pane.
-    /// The Mac refuses anything that is not a recognised agent.
-    func agent(_ action: String, at target: Target.Terminal?) async throws {
+    /// What the phone can do with whatever it is pointed at. The Mac
+    /// decides — the phone just draws the buttons it is handed and shows
+    /// a screen or a text box if this target has one. Teaching Vera a new
+    /// app happens on the Mac; none of these types change.
+    struct Action: Decodable, Sendable, Identifiable {
+        let id: String
+        let title: String
+        let icon: String?
+        let destructive: Bool?
+    }
+    struct Capability: Decodable, Sendable {
+        let label: String?
+        let actions: [Action]?
+        let screen: Bool?
+        let accepts_text: Bool?
+
+        var acts: [Action] { actions ?? [] }
+        var hasScreen: Bool { screen ?? false }
+        var takesText: Bool { accepts_text ?? false }
+    }
+
+    /// A tiny encodable mirror of a target, for /capabilities and /do.
+    private struct TargetBody: Encodable {
+        let kind: String
+        let bundle_id: String?
+        let name: String?
+        let terminal: Target.Terminal?
+        init(_ t: RankedTarget) {
+            kind = t.kind; bundle_id = t.bundleID; name = t.label; terminal = t.terminal
+        }
+    }
+
+    /// Ask the Mac what this target can do. Called on entering a panel.
+    func capabilities(for t: RankedTarget) async throws -> Capability {
         guard let address = await resolve() else { throw ClientError.unreachable }
-        var request = URLRequest(url: URL(string: "http://\(address)/agent")!)
+        var request = URLRequest(url: URL(string: "http://\(address)/capabilities")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 8
+        request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(TargetBody(t))
+        let (data, response) = try await Self.session.data(for: request)
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 200: return try JSONDecoder().decode(Capability.self, from: data)
+        case 401: throw ClientError.refused
+        case let code?: throw ClientError.broken("The Mac answered \(code) to capabilities.")
+        case nil: throw ClientError.broken("The Mac answered with nothing at all.")
+        }
+    }
+
+    /// Run one action against one target — a coding agent's command in a
+    /// pane, or a shortcut in an app. The Mac routes it to whoever can.
+    func perform(_ action: String, on t: RankedTarget) async throws {
+        guard let address = await resolve() else { throw ClientError.unreachable }
+        var request = URLRequest(url: URL(string: "http://\(address)/do")!)
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        struct Body: Encodable { let action: String; let terminal: Target.Terminal?; let device: String }
-        request.httpBody = try JSONEncoder().encode(Body(action: action, terminal: target, device: "phone"))
+        struct Body: Encodable { let action: String; let target: TargetBody }
+        request.httpBody = try JSONEncoder().encode(Body(action: action, target: TargetBody(t)))
         let (data, response) = try await Self.session.data(for: request)
+        func text() -> String { String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) }
         switch (response as? HTTPURLResponse)?.statusCode {
         case 200, 204: return
         case 401: throw ClientError.refused
-        case 409: throw ClientError.broken(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
-        case 501: throw ClientError.broken("That Mac has nothing to run the command in.")
+        case 404: throw ClientError.broken("That action isn't available here anymore.")
+        case 409: throw ClientError.broken(text())
+        case 501: throw ClientError.broken("That Mac has nothing to run this in.")
+        case 503: throw ClientError.broken(text().isEmpty ? "The Mac's app isn't running to carry that out." : text())
         case let code?: throw ClientError.broken("The Mac answered \(code) to the command.")
         case nil: throw ClientError.broken("The Mac answered with nothing at all.")
         }
