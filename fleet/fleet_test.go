@@ -105,8 +105,8 @@ func TestFleetLifecycle(t *testing.T) {
 	var events []Event
 	f := New(m, store)
 	f.Harness = []string{"fake-agent"}
-	f.TurnEndedURL = func(id, inc string) string {
-		return "http://127.0.0.1:1/fleet/" + id + "/turn-ended?incarnation=" + inc
+	f.HookURL = func(id, inc string) string {
+		return "http://127.0.0.1:1/fleet/" + id + "/hook?incarnation=" + inc
 	}
 	f.StatusURL = func(id string) string { return "http://127.0.0.1:1/fleet/" + id + "/status" }
 	f.Trust = func(project, worktree string) error { return nil }
@@ -157,8 +157,17 @@ func TestFleetLifecycle(t *testing.T) {
 		}
 	}
 	settings, _ := os.ReadFile(filepath.Join(store.TaskDir(task.ID), "claude.json"))
-	if !strings.Contains(string(settings), "turn-ended?incarnation="+task.Incarnation) {
-		t.Errorf("hook settings: %s", settings)
+	for _, want := range []string{"hook?incarnation=" + task.Incarnation, `"Stop"`, `"Notification"`, `"Bash(curl -s -X POST http://127.0.0.1:1/fleet/` + task.ID + `/status*)"`} {
+		if !strings.Contains(string(settings), want) {
+			t.Errorf("hook settings missing %q:\n%s", want, settings)
+		}
+	}
+	// Vera picked the model; the harness did not inherit one.
+	if cmd := strings.Join(m.argv[task.Pane], " "); !strings.Contains(cmd, "--model opus") {
+		t.Errorf("argv: %q", cmd)
+	}
+	if def := New(m, store).Harness; strings.Join(def, " ") != "claude --permission-mode auto" {
+		t.Errorf("default harness: %q", def)
 	}
 
 	f.sweep(ctx)
@@ -169,6 +178,21 @@ func TestFleetLifecycle(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatal("unchanged state reported again")
 	}
+
+	// A permission prompt in the harness is "blocked", in its words.
+	if err := f.Hook(task.ID, task.Incarnation, HookEvent{Name: "Notification", NotificationType: "permission_prompt", Message: "Claude needs your permission to use Bash"}); err != nil {
+		t.Fatal(err)
+	}
+	f.sweep(ctx)
+	if events[len(events)-1].State != Decision {
+		t.Fatalf("a permission prompt should read as a decision, got %s", events[len(events)-1].State)
+	}
+	// The person answers it; the log moves on.
+	if err := f.Answer(ctx, task.ID, "1"); err != nil {
+		t.Fatal(err)
+	}
+	m.touch(task.Pane, time.Now())
+	f.sweep(ctx)
 
 	// The Stop hook rings: waiting on a person. A stale incarnation is
 	// ignored.
@@ -189,7 +213,7 @@ func TestFleetLifecycle(t *testing.T) {
 	if err := f.Answer(ctx, task.ID, "use the second option"); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(m.typed, "") != "use the second option\n" {
+	if strings.Join(m.typed, "") != "1\nuse the second option\n" {
 		t.Errorf("typed %q", m.typed)
 	}
 	m.touch(task.Pane, time.Now())
@@ -208,10 +232,10 @@ func TestFleetLifecycle(t *testing.T) {
 	}
 	os.WriteFile(store.ReportPath(task.ID), []byte("# Findings\n\nthe thing\n"), 0o644)
 	views, _ := f.Tasks(ctx)
-	if len(views) != 1 || views[0].State != Decision || len(views[0].Unread) != 3 || views[0].Report != "# Findings\n\nthe thing" {
+	if len(views) != 1 || views[0].State != Decision || len(views[0].Unread) != 5 || views[0].Report != "# Findings\n\nthe thing" {
 		t.Fatalf("views %+v", views)
 	}
-	store.Present(task.ID, 3)
+	store.Present(task.ID, 5)
 	views, _ = f.Tasks(ctx)
 	if len(views[0].Unread) != 0 {
 		t.Error("presented lines still unread")

@@ -52,7 +52,7 @@ Verbs: working (what you are on now), blocked (you need a decision or informatio
 
 `, statusURL)
 	}
-	b.WriteString("Do not ask the person for permission to proceed on ordinary steps; make the routine calls yourself and reserve blocked for real forks in the road.")
+	b.WriteString("Do not ask the person for permission to proceed on ordinary steps; make the routine calls yourself and reserve blocked for real forks in the road. Your terminal's own permission prompts are answered by Vera or the person, but every one of them stalls you: prefer commands the project already uses.")
 	return b.String()
 }
 

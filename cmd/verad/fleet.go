@@ -28,6 +28,7 @@ func (l *lanTransport) fleetRoutes(mux *http.ServeMux) {
 	// Loopback, no secret: the harness's Stop hook and the agent's own
 	// status line. They ring a bell and say a word; the supervisor
 	// re-reads the truth either way.
+	mux.HandleFunc("POST /fleet/{id}/hook", loopbackOnly(l.fleetHook))
 	mux.HandleFunc("POST /fleet/{id}/turn-ended", loopbackOnly(l.fleetTurnEnded))
 	mux.HandleFunc("POST /fleet/{id}/status", loopbackOnly(l.fleetStatus))
 }
@@ -125,6 +126,21 @@ func (l *lanTransport) fleetSeen(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := l.fleet.Store.Present(id, len(all)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// fleetHook is the harness's event JSON, verbatim from its hook's
+// stdin. Which event it is rides inside.
+func (l *lanTransport) fleetHook(w http.ResponseWriter, r *http.Request) {
+	var ev fleet.HookEvent
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&ev); err != nil {
+		http.Error(w, "bad event", http.StatusBadRequest)
+		return
+	}
+	if err := l.fleet.Hook(r.PathValue("id"), r.URL.Query().Get("incarnation"), ev); err != nil {
+		http.Error(w, err.Error(), fleetStatusCode(err))
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

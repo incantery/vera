@@ -67,6 +67,7 @@ func main() {
 	usageEvery := flag.Duration("usage-interval", 15*time.Minute, "how often to report Claude Code subscription usage (0 to stop)")
 	showUsage := flag.Bool("usage", false, "print what is left of the Claude Code subscription, and exit")
 	toolTimeout := flag.Duration("tool-timeout", 10*time.Minute, "how long a delegated task may run")
+	fleetModel := flag.String("fleet-model", "", "the model every fleet task runs on (default: opus for ship, sonnet for scout)")
 	muxKind := flag.String("mux", "auto", "the multiplexer: rook (its socket), tmux (rook's -L socket), auto, or off")
 	showMemory := flag.Bool("memories", false, "print what Vera remembers, and exit")
 	forget := flag.String("forget", "", "forget fact ids (\"3,7\"), or \"all\", and exit")
@@ -288,8 +289,11 @@ func main() {
 	// them. It needs a mux to put a pane in; without one it is off.
 	if term != nil && !*noTools {
 		f := fleet.New(term, fleet.NewStore(filepath.Join(stateDir(), "vera", "fleet")))
-		f.TurnEndedURL = func(task, incarnation string) string {
-			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/turn-ended?incarnation=" + incarnation
+		f.HookURL = func(task, incarnation string) string {
+			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/hook?incarnation=" + incarnation
+		}
+		if *fleetModel != "" {
+			f.Model = func(*fleet.Task) string { return *fleetModel }
 		}
 		f.StatusURL = func(task string) string {
 			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/status"

@@ -20,11 +20,15 @@ type Fleet struct {
 	Mux   mux.Mux
 	Store *Store
 	// Harness is argv for the coding agent; the brief is appended as
-	// the first prompt. Default: claude.
+	// the first prompt. Default: claude in auto mode.
 	Harness []string
-	// TurnEndedURL builds the loopback URL the harness's Stop hook
-	// POSTs to for a task and incarnation.
-	TurnEndedURL func(id, incarnation string) string
+	// Model picks the harness's model for a task. Vera chooses, always:
+	// an agent nobody is watching must not inherit whatever the person
+	// last used at their own terminal. Nil means the harness default.
+	Model func(t *Task) string
+	// HookURL builds the loopback URL the harness's hooks POST their
+	// event JSON to, for a task and incarnation.
+	HookURL func(id, incarnation string) string
 	// StatusURL builds the loopback URL the agent reports its status
 	// verbs to; empty leaves the instructions out of the brief.
 	StatusURL func(id string) string
@@ -80,10 +84,13 @@ func New(m mux.Mux, store *Store) *Fleet {
 	return &Fleet{
 		Mux:   m,
 		Store: store,
-		// acceptEdits: nobody is at this terminal to click through
-		// edits, and everything else still asks — which the brief tells
-		// the agent to avoid needing.
-		Harness:    []string{"claude", "--permission-mode", "acceptEdits"},
+		// auto: nobody is at this terminal to approve anything, and
+		// the first thing acceptEdits asked about was the status curl
+		// the brief itself requested. auto runs Claude Code's own
+		// classifier over each call; the brief still says to reserve
+		// "blocked" for real forks.
+		Harness:    []string{"claude", "--permission-mode", "auto"},
+		Model:      DefaultModel,
 		Trust:      inheritTrust,
 		Thresholds: DefaultThresholds,
 		Every:      15 * time.Second,
@@ -151,16 +158,21 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 		}
 	}
 	argv := append([]string{}, f.Harness...)
-	if f.TurnEndedURL != nil {
-		settings, err := writeHarnessSettings(f.Store.TaskDir(id), f.TurnEndedURL(id, t.Incarnation))
-		if err != nil {
-			return nil, err
+	if f.Model != nil {
+		if model := f.Model(t); model != "" {
+			argv = append(argv, "--model", model)
 		}
-		argv = append(argv, "--settings", settings)
 	}
 	statusURL := ""
 	if f.StatusURL != nil {
 		statusURL = f.StatusURL(id)
+	}
+	if f.HookURL != nil {
+		settings, err := writeHarnessSettings(f.Store.TaskDir(id), f.HookURL(id, t.Incarnation), statusURL)
+		if err != nil {
+			return nil, err
+		}
+		argv = append(argv, "--settings", settings)
 	}
 	argv = append(argv, scaffold(t, statusURL, f.Store.ReportPath(id)))
 	env := []string{"VERA_TASK=" + id}
@@ -199,9 +211,12 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 	return t, nil
 }
 
-// TurnEnded is the harness's Stop hook arriving. The incarnation must
-// match; a hook from an earlier life of the task says nothing.
-func (f *Fleet) TurnEnded(id, incarnation string) error {
+// Hook is the harness's event arriving. The incarnation must match; a
+// hook from an earlier life of the task says nothing. Stop marks the
+// turn ended. A Notification that wants a person — a permission
+// prompt, an idle prompt — is recorded as blocked, in the harness's
+// words, so the picture says "needs you" instead of "running".
+func (f *Fleet) Hook(id, incarnation string, ev HookEvent) error {
 	t, err := f.Store.Load(id)
 	if err != nil {
 		return err
@@ -209,12 +224,38 @@ func (f *Fleet) TurnEnded(id, incarnation string) error {
 	if t.Incarnation != incarnation {
 		return errors.New("stale incarnation")
 	}
-	t.TurnEnded = time.Now()
-	if err := f.Store.Save(t); err != nil {
-		return err
+	switch ev.Name {
+	case "Stop":
+		t.TurnEnded = time.Now()
+		if err := f.Store.Save(t); err != nil {
+			return err
+		}
+	case "Notification":
+		switch ev.NotificationType {
+		case "permission_prompt", "idle_prompt", "elicitation_dialog":
+			text := strings.TrimSpace(ev.Message)
+			if text == "" {
+				text = ev.NotificationType
+			}
+			_ = f.Store.Append(id, Status{Verb: Blocked, Text: "the agent's terminal is asking: " + text, By: "harness"})
+		}
 	}
 	f.Poke()
 	return nil
+}
+
+// TurnEnded is the Stop hook, for callers that speak only that.
+func (f *Fleet) TurnEnded(id, incarnation string) error {
+	return f.Hook(id, incarnation, HookEvent{Name: "Stop"})
+}
+
+// DefaultModel is Vera's choice when nobody said: the capable one for
+// work that changes code, the quick one for reading.
+func DefaultModel(t *Task) string {
+	if t.Kind == Scout {
+		return "sonnet"
+	}
+	return "opus"
 }
 
 // Report appends a status line — the agent's own word, or a person's.
