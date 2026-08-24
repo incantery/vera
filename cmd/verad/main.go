@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -42,6 +43,10 @@ import (
 const version = "0.1.0"
 
 func main() {
+	// Telemetry and the like are configured by files, not by whichever
+	// shell happened to start this: ~/.config/vera/*.env, KEY=VALUE,
+	// never overriding what the environment already says.
+	loadEnvFiles()
 	addr := flag.String("addr", ":4780", "listen address")
 	noPeer := flag.Bool("no-peer", false, "do not advertise over peer-to-peer")
 	state := flag.String("state", "", "identity file (default ~/.local/state/vera/identity.json)")
@@ -542,4 +547,38 @@ func quantity(n int, one, many string) string {
 		return "1 " + one
 	}
 	return fmt.Sprintf("%d %s", n, many)
+}
+
+// loadEnvFiles reads every ~/.config/vera/*.env into the environment.
+// `vera start` and launchd both start verad without a login shell, so
+// this is how grafana.env reaches it.
+func loadEnvFiles() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	files, _ := filepath.Glob(filepath.Join(home, ".config", "vera", "*.env"))
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "export "))
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			k, v, ok := strings.Cut(line, "=")
+			if !ok || strings.TrimSpace(k) == "" {
+				continue
+			}
+			k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+			if u, err := strconv.Unquote(v); err == nil {
+				v = u
+			}
+			if os.Getenv(k) == "" {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}
 }

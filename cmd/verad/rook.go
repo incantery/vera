@@ -54,7 +54,11 @@ var claudeProcess = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 // which program is a coding agent.
 func focusOf(p *mux.Pane) TerminalFocus {
 	f := TerminalFocus{Session: p.ID.Session, Window: p.ID.Window, Pane: p.ID.Pane, Command: p.Command, Title: p.Title, Path: p.Path}
-	if f.Command == "claude" || claudeProcess.MatchString(f.Command) || strings.HasPrefix(f.Title, "✳") {
+	// "versions": Claude Code's binary is ~/.local/share/claude/versions/
+	// 2.1.241, and rook names a versioned binary by the directory above
+	// it, which here is one short of the product. Until rook climbs one
+	// more, that word means Claude Code.
+	if f.Command == "claude" || f.Command == "versions" || claudeProcess.MatchString(f.Command) || strings.HasPrefix(f.Title, "✳") {
 		f.Agent = "claude-code"
 	}
 	return f
