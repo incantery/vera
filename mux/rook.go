@@ -731,3 +731,13 @@ func (r *Rook) Side(ctx context.Context, frame []byte) error {
 		}
 	}
 }
+
+// CloseSession hangs up every pane in a workspace; rook reaps it.
+func (r *Rook) CloseSession(ctx context.Context, name string) error {
+	c, err := r.dial(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	return send(c, c2sSession, append([]byte{'k'}, name...))
+}

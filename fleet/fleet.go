@@ -403,6 +403,7 @@ func (f *Fleet) Land(ctx context.Context, id string) error {
 		_ = f.Mux.Kill(ctx, t.Pane)
 		_ = f.Store.Append(id, Status{Verb: Done, Text: "closed", By: "vera"})
 	}
+	f.closeRoom(ctx, t)
 	return f.close(t)
 }
 
@@ -426,8 +427,22 @@ func (f *Fleet) Teardown(ctx context.Context, id string, force bool) error {
 		}
 	}
 	_ = f.Mux.Kill(ctx, t.Pane)
+	f.closeRoom(ctx, t)
 	_ = f.Store.Append(id, Status{Verb: Failed, Text: "torn down", By: "vera"})
 	return f.close(t)
+}
+
+// closeRoom takes down the task's own workspace — the one made for
+// it, never a shared one — on a mux that can.
+func (f *Fleet) closeRoom(ctx context.Context, t *Task) {
+	if t.Kind != Ship || t.Session == "" {
+		return
+	}
+	if sc, ok := f.Mux.(mux.SessionCloser); ok {
+		if err := sc.CloseSession(ctx, t.Session); err != nil {
+			slog.Warn("fleet: could not close the task's workspace", "task", t.ID, "session", t.Session, "error", err.Error())
+		}
+	}
 }
 
 func (f *Fleet) close(t *Task) error {

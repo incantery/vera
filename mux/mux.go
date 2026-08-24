@@ -166,3 +166,10 @@ type Sider interface {
 	// Side pushes one frame, one JSON line, to the rail.
 	Side(ctx context.Context, frame []byte) error
 }
+
+// SessionCloser is a mux that can close a whole session/workspace —
+// the room the fleet made for a task, once the task is over. Optional;
+// without it the pane is killed and the session is left to the mux.
+type SessionCloser interface {
+	CloseSession(ctx context.Context, name string) error
+}

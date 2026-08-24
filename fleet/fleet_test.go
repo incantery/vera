@@ -16,6 +16,7 @@ import (
 type fakeMux struct {
 	mu      sync.Mutex
 	panes   map[mux.ID]mux.Pane
+	closed  []string            // sessions closed
 	spawned map[mux.ID]string   // the last argv element: the brief
 	argv    map[mux.ID][]string // the whole command
 	typed   []string
@@ -89,6 +90,17 @@ func (f *fakeMux) Watch(ctx context.Context, _ func(mux.Event)) error {
 	return ctx.Err()
 }
 func (f *fakeMux) Poke() {}
+func (f *fakeMux) CloseSession(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = append(f.closed, name)
+	for id := range f.panes {
+		if id.Session == name {
+			delete(f.panes, id)
+		}
+	}
+	return nil
+}
 
 func (f *fakeMux) touch(id mux.ID, at time.Time) {
 	f.mu.Lock()
@@ -253,6 +265,9 @@ func TestFleetLifecycle(t *testing.T) {
 	}
 	if _, ok := m.panes[task.Pane]; ok {
 		t.Error("pane not killed")
+	}
+	if len(m.closed) != 1 || m.closed[0] != task.Session {
+		t.Errorf("the task's workspace should be closed on land: %v", m.closed)
 	}
 	views, _ = f.Tasks(ctx)
 	if views[0].State != Closed || !views[0].Closed {
