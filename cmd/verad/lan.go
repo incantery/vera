@@ -78,6 +78,22 @@ func newLAN(addr string, id Identity) *lanTransport {
 
 func (l *lanTransport) Name() string { return "lan" }
 
+// bound waits until the listener is up, or ctx ends, or the wait runs
+// out — false means it did not bind (yet).
+func (l *lanTransport) bound(ctx context.Context, wait time.Duration) bool {
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) && ctx.Err() == nil {
+		l.mu.Lock()
+		port := l.port
+		l.mu.Unlock()
+		if port != "" {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return false
+}
+
 func (l *lanTransport) Hints() []string {
 	l.mu.Lock()
 	port := l.port

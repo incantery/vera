@@ -312,15 +312,6 @@ func main() {
 		announce(transports[0], id, *addr, how, telemetry, conversations, memory, hands, peering)
 	}()
 
-	// Leave a note of where this process is, for `vera` to find it —
-	// only now, on the way into serving: the exit-early modes above
-	// (--usage, --check-telemetry) are not the daemon and must not
-	// write over its note.
-	if err := writeRunfile(*addr); err != nil {
-		slog.Warn("verad: cannot record runfile", "error", err.Error())
-	}
-	defer removeRunfile()
-
 	// Every transport carries the same handler. A failure in the radio
 	// is reported and does not take the LAN down — losing the radio
 	// should not cost you the wifi. The LAN is different: it is the
@@ -345,10 +336,20 @@ func main() {
 			}
 		}(t)
 	}
+	// Leave a note of where this process is, for `vera` to find it —
+	// only once the LAN is actually bound. Written any earlier, a verad
+	// that then fails to bind (the port is an older verad's) would have
+	// written over the live daemon's note; and the exit-early modes
+	// above never reach here at all.
+	if lan.bound(ctx, 5*time.Second) {
+		if err := writeRunfile(*addr); err != nil {
+			slog.Warn("verad: cannot record runfile", "error", err.Error())
+		}
+		defer removeRunfile()
+	}
 	wg.Wait()
 	select {
 	case err := <-failed:
-		removeRunfile()
 		fmt.Fprintln(os.Stderr, "verad: "+err.Error())
 		os.Exit(1)
 	default:
