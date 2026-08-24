@@ -49,8 +49,8 @@ func fleetTool() map[string]any {
 					},
 					"project": map[string]any{
 						"type": "string",
-						"description": "start: a path inside the repository. Leave empty for the one in front " +
-							"of them right now.",
+						"description": "start: the repository's path — one of the repositories listed in the " +
+							"prompt when they name one. Leave empty only when they mean the one in front of them.",
 					},
 					"kind": map[string]any{
 						"type":        "string",
@@ -133,8 +133,12 @@ func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Started task %s in %s on branch %s. It is working now and will keep going after this conversation; "+
-			"they can ask how it is going later. Tell them it has started, in a sentence.", t.ID, shortPath(t.Project), t.Branch), nil
+		where := "in " + shortPath(t.Project)
+		if t.Branch != "" {
+			where += " on branch " + t.Branch
+		}
+		return fmt.Sprintf("Started task %s %s. It is working now and will keep going after this conversation; "+
+			"they can ask how it is going later. Tell them it has started, in a sentence.", t.ID, where), nil
 
 	case "answer":
 		if args.Task == "" || strings.TrimSpace(args.Text) == "" {
@@ -183,7 +187,11 @@ func describeFleet(views []fleet.View, now time.Time) string {
 			continue
 		}
 		shown++
-		fmt.Fprintf(&b, "Task %s (%s, %s): %s — %s.", v.ID, shortPath(v.Project), v.Branch, trim(firstSentence(v.Brief), 120), fleetPhrase(v, now))
+		where := shortPath(v.Project)
+		if v.Branch != "" {
+			where += ", " + v.Branch
+		}
+		fmt.Fprintf(&b, "Task %s (%s): %s — %s.", v.ID, where, trim(firstSentence(v.Brief), 120), fleetPhrase(v, now))
 		if len(v.Unread) > 0 {
 			b.WriteString(" Since they last looked:")
 			for _, s := range v.Unread {
@@ -191,6 +199,11 @@ func describeFleet(views []fleet.View, now time.Time) string {
 			}
 		}
 		b.WriteString("\n")
+		// The report is the deliverable; when the task is at rest and
+		// the person has not seen it, it is what they are asking for.
+		if v.Report != "" && (v.State == fleet.Finished || v.State == fleet.Broken || v.State == fleet.Decision) && len(v.Unread) > 0 {
+			b.WriteString("Its report:\n" + trim(v.Report, 3000) + "\n")
+		}
 	}
 	closed := len(views) - shown
 	if shown == 0 {

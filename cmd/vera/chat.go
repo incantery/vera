@@ -165,6 +165,7 @@ type chatModel struct {
 	thinking bool
 
 	tasks  []fleet.View
+	states map[string]fleet.State // last state per task, to notice changes
 	belief *Status
 	debug  bool
 
@@ -197,6 +198,7 @@ func newChatModel(c *chatClient, debug bool) *chatModel {
 		vp:           viewport.New(80, 20),
 		debug:        debug,
 		frames:       make(chan tea.Msg, 64),
+		states:       map[string]fleet.State{},
 	}
 }
 
@@ -312,6 +314,7 @@ func (m *chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tasksMsg:
 		m.tasks = msg.v
+		m.notice(msg.v)
 		m.layout()
 		return m, nil
 
@@ -336,6 +339,27 @@ func (m *chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// notice says, in the transcript, when a task's state changed to one
+// that needs the person — the nudge the strip alone cannot give. The
+// first sighting of a task is not news.
+func (m *chatModel) notice(views []fleet.View) {
+	for _, v := range views {
+		prev, seen := m.states[v.ID]
+		m.states[v.ID] = v.State
+		if !seen || prev == v.State || !v.State.Actionable() {
+			continue
+		}
+		line := fmt.Sprintf("● %s %s — %s", v.ID, fleetPhrase(v, time.Now()), trim(firstSentence(v.Brief), 60))
+		if v.Last != nil && v.Last.Text != "" {
+			line += ": " + trim(v.Last.Text, 200)
+		}
+		if v.Report != "" {
+			line += "  (/report " + v.ID + ")"
+		}
+		m.note(line)
+	}
+}
+
 // command runs a slash command. These are the fleet verbs by hand —
 // the same calls the mind's fleet tool makes, for when you know
 // exactly what you want and do not need to say it in prose.
@@ -356,7 +380,7 @@ func (m *chatModel) command(text string) tea.Cmd {
 	}
 	switch verb {
 	case "help", "?":
-		m.note("/tasks · /start <brief> · /scout <brief> · /answer <id> <text> · /land <id> · /stop <id> [force] · /seen <id> · /new (conversation) · /debug (F2) · /quit")
+		m.note("/tasks · /start <brief> · /scout <brief> · /report <id> · /answer <id> <text> · /land <id> · /stop <id> [force] · /seen <id> · /new (conversation) · /debug (F2) · /quit")
 	case "quit", "q":
 		return tea.Quit
 	case "tasks", "t":
@@ -401,6 +425,23 @@ func (m *chatModel) command(text string) tea.Cmd {
 			path += "?force=1"
 		}
 		return post(path, nil, "stopped "+id)
+	case "report", "r":
+		if id == "" {
+			m.fail("/report <id>")
+			return nil
+		}
+		for _, v := range m.tasks {
+			if v.ID == id {
+				if v.Report == "" {
+					m.note(id + " has written no report yet")
+				} else {
+					m.note("report from " + id + ":\n" + v.Report)
+				}
+				return nil
+			}
+		}
+		m.fail("no task " + id)
+		return nil
 	case "seen":
 		if id == "" {
 			m.fail("/seen <id>")
@@ -575,4 +616,34 @@ func (m *chatModel) View() string {
 	b.WriteString(ruleStyle.Render(strings.Repeat("─", max(m.width, 20))) + "\n")
 	b.WriteString(m.input.View())
 	return b.String()
+}
+
+// fleetPhrase says what is believed, in words a person would use —
+// the same phrasing verad gives the mind.
+func fleetPhrase(v fleet.View, now time.Time) string {
+	switch v.State {
+	case fleet.Running:
+		return "working"
+	case fleet.Quiet:
+		return "working, quiet for a bit"
+	case fleet.Stale:
+		return "has gone quiet — worth a look"
+	case fleet.Waiting:
+		if !v.TurnEnded.IsZero() {
+			return "waiting on you for " + roughDuration(now.Sub(v.TurnEnded))
+		}
+		return "waiting on you"
+	case fleet.Decision:
+		return "blocked on a decision from you"
+	case fleet.Held:
+		return "paused on something external"
+	case fleet.Finished:
+		return "finished — ready to land"
+	case fleet.Broken:
+		return "failed"
+	case fleet.Gone:
+		return "its terminal is gone"
+	default:
+		return string(v.State)
+	}
 }

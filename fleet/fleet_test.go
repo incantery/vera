@@ -206,8 +206,9 @@ func TestFleetLifecycle(t *testing.T) {
 	if events[len(events)-1].State != Decision {
 		t.Fatalf("expected decision, got %s", events[len(events)-1].State)
 	}
+	os.WriteFile(store.ReportPath(task.ID), []byte("# Findings\n\nthe thing\n"), 0o644)
 	views, _ := f.Tasks(ctx)
-	if len(views) != 1 || views[0].State != Decision || len(views[0].Unread) != 3 {
+	if len(views) != 1 || views[0].State != Decision || len(views[0].Unread) != 3 || views[0].Report != "# Findings\n\nthe thing" {
 		t.Fatalf("views %+v", views)
 	}
 	store.Present(task.ID, 3)

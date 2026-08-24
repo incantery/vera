@@ -61,7 +61,10 @@ type Mind struct {
 	// Fleet is where work that outlives the conversation goes. Nil
 	// when there is no multiplexer to put a pane in.
 	Fleet *fleet.Fleet
-	Gen   *agento11y.Client
+	// Projects knows which repositories have a pane open, so "the rook
+	// repo" is a path the fleet can be pointed at. Nil is fine.
+	Projects *fleet.Projects
+	Gen      *agento11y.Client
 	// Attention is what the devices have reported about where the
 	// person is looking. Nil is fine: a mind with no senses.
 	Attention *Attention
@@ -518,15 +521,25 @@ func (m *Mind) preface() string {
 // focus" is a fact; what is in that terminal is not, unless something
 // reported it, and the model is told not to pretend otherwise.
 func (m *Mind) present(device string) string {
-	if m.Attention == nil {
-		return ""
+	var b strings.Builder
+	if m.Attention != nil {
+		if now := m.Attention.Describe(time.Now(), device); now != "" {
+			b.WriteString("\n\nWhere their attention is right now, as reported by their devices:\n" + now +
+				"\nThis tells you which application is in front of them, not what is inside it. " +
+				"When they say \"this\" or \"here\", it most likely refers to that application. " +
+				"Do not describe or guess at its contents unless they were reported above. Do not recite this unprompted.")
+		}
 	}
-	now := m.Attention.Describe(time.Now(), device)
-	if now == "" {
-		return ""
+	if m.Projects != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		repos := m.Projects.Known(ctx)
+		cancel()
+		if len(repos) > 0 {
+			b.WriteString("\n\nRepositories they have open in their terminal, by name and path — when they name one of these, pass its path as the fleet task's project:")
+			for _, r := range repos {
+				b.WriteString("\n- " + r.Name + ": " + r.Root)
+			}
+		}
 	}
-	return "\n\nWhere their attention is right now, as reported by their devices:\n" + now +
-		"\nThis tells you which application is in front of them, not what is inside it. " +
-		"When they say \"this\" or \"here\", it most likely refers to that application. " +
-		"Do not describe or guess at its contents unless they were reported above. Do not recite this unprompted."
+	return b.String()
 }

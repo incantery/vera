@@ -72,6 +72,8 @@ type View struct {
 	State  State    `json:"state"`
 	Last   *Status  `json:"last,omitempty"`
 	Unread []Status `json:"unread,omitempty"`
+	// Report is what the task wrote to its report file, if anything.
+	Report string `json:"report,omitempty"`
 }
 
 func New(m mux.Mux, store *Store) *Fleet {
@@ -160,7 +162,7 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 	if f.StatusURL != nil {
 		statusURL = f.StatusURL(id)
 	}
-	argv = append(argv, scaffold(t, statusURL))
+	argv = append(argv, scaffold(t, statusURL, f.Store.ReportPath(id)))
 	env := []string{"VERA_TASK=" + id}
 	if f.Env != nil {
 		env = append(env, f.Env(t)...)
@@ -321,6 +323,7 @@ func (f *Fleet) Tasks(ctx context.Context) ([]View, error) {
 		v := View{Task: t}
 		v.Last, _ = f.Store.Last(t.ID)
 		v.Unread, _ = f.Store.Unread(t.ID)
+		v.Report = f.Store.Report(t.ID)
 		v.State = f.classify(t, v.Last, panes)
 		if t.Closed {
 			closed = append(closed, v)

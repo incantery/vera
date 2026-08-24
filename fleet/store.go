@@ -150,6 +150,20 @@ func (s *Store) Last(id string) (*Status, error) {
 	return &all[len(all)-1], nil
 }
 
+// ReportPath is where a task writes what it found or did — the
+// brief asks for it, and it is what a person reads when the task is
+// finished. firstmate's data/<id>/report.md.
+func (s *Store) ReportPath(id string) string { return filepath.Join(s.taskDir(id), "report.md") }
+
+// Report is the report's text, "" if none was written.
+func (s *Store) Report(id string) string {
+	b, err := os.ReadFile(s.ReportPath(id))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
 // Cursor is how many status lines a person has been shown. Unread is
 // everything past it — the "what changed since you looked" a returning
 // phone renders, and the reason the log is never rewritten.

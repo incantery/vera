@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/incantery/vera/fleet"
 )
 
 // fakeVerad is enough of the wire to test the client: /say streams an
@@ -113,5 +114,32 @@ func TestChatModelStreamsAndRenders(t *testing.T) {
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if !strings.Contains(m.View(), "/answer <id> <text>") {
 		t.Error("usage not reported")
+	}
+}
+
+func TestChatNoticesWhenATaskNeedsYou(t *testing.T) {
+	m := newChatModel(&chatClient{}, false)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	running := fleet.View{Task: &fleet.Task{ID: "a1", Brief: "Scout the panel"}, State: fleet.Running}
+	m.Update(tasksMsg{[]fleet.View{running}})
+	if len(m.lines) != 0 {
+		t.Fatal("first sighting is not news")
+	}
+	done := running
+	done.State = fleet.Finished
+	done.Last = &fleet.Status{Verb: fleet.Done, Text: "report written"}
+	done.Report = "# Findings"
+	m.Update(tasksMsg{[]fleet.View{done}})
+	if len(m.lines) != 1 || !strings.Contains(m.lines[0].text, "a1 finished") || !strings.Contains(m.lines[0].text, "/report a1") {
+		t.Fatalf("lines: %+v", m.lines)
+	}
+	m.Update(tasksMsg{[]fleet.View{done}})
+	if len(m.lines) != 1 {
+		t.Fatal("unchanged state is not news")
+	}
+	m.input.SetValue("/report a1")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !strings.Contains(m.View(), "# Findings") {
+		t.Error("report not shown")
 	}
 }

@@ -299,6 +299,7 @@ func main() {
 		lan.fleet = f
 		if mind != nil {
 			mind.Fleet = f
+			mind.Projects = &fleet.Projects{Mux: term}
 		}
 		go func() { _ = f.Supervise(ctx) }()
 	}

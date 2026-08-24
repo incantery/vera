@@ -10,18 +10,18 @@ import (
 
 func TestScaffold(t *testing.T) {
 	ship := &Task{Kind: Ship, Mode: DirectPR, Brief: "Add dark mode.", Worktree: "/w/repo--dm", Branch: "dm", Project: "/w/repo"}
-	s := scaffold(ship, "http://127.0.0.1:4780/fleet/x/status")
+	s := scaffold(ship, "http://127.0.0.1:4780/fleet/x/status", "/state/fleet/x/report.md")
 	if !strings.HasPrefix(s, "Add dark mode.") {
 		t.Error("the person's words come first")
 	}
-	for _, want := range []string{"/w/repo--dm", "never cd into /w/repo", "gh pr create", "Do not merge", "curl -s -X POST http://127.0.0.1:4780/fleet/x/status", "blocked", "done"} {
+	for _, want := range []string{"/w/repo--dm", "never cd into /w/repo", "gh pr create", "Do not merge", "summary of what you changed", "/state/fleet/x/report.md", "curl -s -X POST http://127.0.0.1:4780/fleet/x/status", "blocked", "done"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
 	scout := &Task{Kind: Scout, Brief: "Why is it slow?", Worktree: "/w/repo"}
-	s = scaffold(scout, "")
-	if !strings.Contains(s, "Do not modify files") || strings.Contains(s, "curl") {
+	s = scaffold(scout, "", "/state/fleet/y/report.md")
+	if !strings.Contains(s, "Do not modify files") || strings.Contains(s, "curl") || !strings.Contains(s, "Write your report") {
 		t.Errorf("scout scaffold: %s", s)
 	}
 }

@@ -16,7 +16,7 @@ import (
 // do, and how to say where it stands.
 
 // scaffold appends the standing terms to a brief.
-func scaffold(t *Task, statusURL string) string {
+func scaffold(t *Task, statusURL, reportPath string) string {
 	var b strings.Builder
 	b.WriteString(strings.TrimSpace(t.Brief))
 	b.WriteString("\n\n---\n\n")
@@ -34,6 +34,14 @@ func scaffold(t *Task, statusURL string) string {
 		}
 	case Scout:
 		fmt.Fprintf(&b, "You are in %s to investigate and report. Do not modify files, do not commit, do not run anything with side effects.\n\n", t.Worktree)
+	}
+	if reportPath != "" {
+		switch t.Kind {
+		case Scout:
+			fmt.Fprintf(&b, "Write your report — findings, evidence with file paths, and a recommendation — as markdown to %s. That file is the deliverable; what you print in this terminal is not kept. Write it before you report done.\n\n", reportPath)
+		default:
+			fmt.Fprintf(&b, "When you are done, write a short summary of what you changed and why — with anything the person should know or decide — as markdown to %s. Write it before you report done.\n\n", reportPath)
+		}
 	}
 	if statusURL != "" {
 		fmt.Fprintf(&b, `Report where you stand by running this whenever it changes — it is how Vera knows without reading your screen:

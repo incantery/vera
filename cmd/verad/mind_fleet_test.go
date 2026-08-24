@@ -15,9 +15,10 @@ func TestDescribeFleetSpeaksInTheirNouns(t *testing.T) {
 			State: fleet.Waiting, Unread: []fleet.Status{{Verb: fleet.Blocked, Text: "which palette?"}}},
 		{Task: &fleet.Task{ID: "b2", Project: "/x/rook", Branch: "fix", Brief: "Fix the crash", Closed: true}, State: fleet.Closed},
 		{Task: &fleet.Task{ID: "c3", Project: "/x/vera", Branch: "docs", Brief: "Write docs"}, State: fleet.Running},
+		{Task: &fleet.Task{ID: "d4", Project: "/x/rook", Brief: "Scout the rail"}, State: fleet.Finished, Report: "# Findings\n\nIt is a placeholder in chrome.zig.", Unread: []fleet.Status{{Verb: fleet.Done, Text: "report written"}}},
 	}
 	got := describeFleet(views, now)
-	for _, want := range []string{"Task a1 (vera, feat): Add dark mode — WAITING ON THEM for 7 minutes", "[blocked] which palette?", "Task c3", "working", "1 earlier task(s) are finished"} {
+	for _, want := range []string{"Task a1 (vera, feat): Add dark mode — WAITING ON THEM for 7 minutes", "[blocked] which palette?", "Task c3", "working", "Task d4 (rook): Scout the rail", "1 earlier task(s) are finished", "Its report:\n# Findings", "placeholder in chrome.zig"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
