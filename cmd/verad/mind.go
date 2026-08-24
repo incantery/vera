@@ -127,15 +127,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	}
 
 	prior := m.History.recall(msg.Conversation)
-	ctx, x := m.begin(ctx, msg, text, len(prior))
-
-	messages := make([]chatMessage, 0, len(prior)+2+2*maxRounds)
-	messages = append(messages, chatMessage{Role: "system", Content: m.preface() + m.present(msg.Device)})
-	for _, t := range prior {
-		messages = append(messages, chatMessage{Role: t.Role, Content: t.Content})
-	}
-	messages = append(messages, chatMessage{Role: "user", Content: text})
-
+	system := m.preface() + m.present(msg.Device)
 	var tools []map[string]any
 	if m.Delegate != nil {
 		tools = append(tools, m.Delegate.tool(m.Fleet != nil))
@@ -143,6 +135,14 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	if m.Fleet != nil {
 		tools = append(tools, fleetTool())
 	}
+	ctx, x := m.begin(ctx, msg, text, len(prior), system, tools)
+
+	messages := make([]chatMessage, 0, len(prior)+2+2*maxRounds)
+	messages = append(messages, chatMessage{Role: "system", Content: system})
+	for _, t := range prior {
+		messages = append(messages, chatMessage{Role: t.Role, Content: t.Content})
+	}
+	messages = append(messages, chatMessage{Role: "user", Content: text})
 
 	var answer strings.Builder
 	var used usage
@@ -170,9 +170,11 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		}
 
 		messages = append(messages, chatMessage{Role: "assistant", ToolCalls: calls})
+		x.asked(calls)
 		for _, call := range calls {
 			result := m.invoke(ctx, msg.Conversation, msg.Device, x, call, reply)
 			delegations++
+			x.answered(call, result)
 			messages = append(messages, chatMessage{
 				Role:       "tool",
 				ToolCallID: call.ID,

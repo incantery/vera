@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"time"
@@ -53,6 +54,11 @@ func newGenerationExport() (*agento11y.Client, error) {
 type exchange struct {
 	rec  *agento11y.GenerationRecorder
 	span trace.Span
+	// rounds is what happened between the question and the answer:
+	// the tool calls the model asked for and what each one said back,
+	// in order. The Conversations view shows an exchange as the model
+	// lived it only if these are in the record.
+	rounds []agento11y.Message
 
 	mind    *Mind
 	labels  []attribute.KeyValue
@@ -62,7 +68,7 @@ type exchange struct {
 	trace   string
 }
 
-func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int) (context.Context, *exchange) {
+func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int, system string, tools []map[string]any) (context.Context, *exchange) {
 	x := &exchange{mind: m, started: time.Now()}
 	x.labels = []attribute.KeyValue{
 		attribute.String("gen_ai.operation.name", "chat"),
@@ -76,7 +82,10 @@ func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int) (
 			AgentName:      serviceName,
 			AgentVersion:   version,
 			Model:          agento11y.ModelRef{Provider: "openai", Name: m.Model},
-			SystemPrompt:   m.preface(),
+			// The whole prompt, attention paragraph included: the point
+			// of the record is to see what the model saw.
+			SystemPrompt: system,
+			Tools:        toolDefinitions(tools),
 		})
 		// The recorder does not expose its span, but the context it
 		// hands back carries it, and the log line wants the id.
@@ -128,9 +137,13 @@ func (x *exchange) finish(ctx context.Context, said, answered string, used usage
 	elapsed := time.Since(x.started)
 
 	if x.rec != nil {
+		output := append([]agento11y.Message{}, x.rounds...)
+		if answered != "" || len(output) == 0 {
+			output = append(output, agento11y.AssistantTextMessage(answered))
+		}
 		x.rec.SetResult(agento11y.Generation{
 			Input:  []agento11y.Message{agento11y.UserTextMessage(said)},
-			Output: []agento11y.Message{agento11y.AssistantTextMessage(answered)},
+			Output: output,
 			Usage: agento11y.TokenUsage{
 				InputTokens:  int64(used.Prompt),
 				OutputTokens: int64(used.Completion),
@@ -256,4 +269,54 @@ func (m *Mind) recordSecondary(ctx context.Context, operation string, used usage
 			append(append([]attribute.KeyValue{}, labels...),
 				attribute.String("gen_ai.token.type", "output"))...))
 	}
+}
+
+// asked records a round of tool calls the model made.
+func (x *exchange) asked(calls []toolCall) {
+	if x.rec == nil || len(calls) == 0 {
+		return
+	}
+	parts := make([]agento11y.Part, 0, len(calls))
+	for _, c := range calls {
+		parts = append(parts, agento11y.ToolCallPart(agento11y.ToolCall{
+			ID:        c.ID,
+			Name:      c.Function.Name,
+			InputJSON: json.RawMessage(c.Function.Arguments),
+		}))
+	}
+	x.rounds = append(x.rounds, agento11y.Message{Role: agento11y.RoleAssistant, Parts: parts})
+}
+
+// answered records what a tool said back.
+func (x *exchange) answered(call toolCall, result string) {
+	if x.rec == nil {
+		return
+	}
+	x.rounds = append(x.rounds, agento11y.Message{
+		Role: agento11y.RoleTool,
+		Parts: []agento11y.Part{agento11y.ToolResultPart(agento11y.ToolResult{
+			ToolCallID: call.ID,
+			Name:       call.Function.Name,
+			Content:    result,
+		})},
+	})
+}
+
+// toolDefinitions is the OpenAI tool list in the record's shape.
+func toolDefinitions(tools []map[string]any) []agento11y.ToolDefinition {
+	var out []agento11y.ToolDefinition
+	for _, t := range tools {
+		fn, _ := t["function"].(map[string]any)
+		if fn == nil {
+			continue
+		}
+		d := agento11y.ToolDefinition{Type: "function"}
+		d.Name, _ = fn["name"].(string)
+		d.Description, _ = fn["description"].(string)
+		if schema, err := json.Marshal(fn["parameters"]); err == nil {
+			d.InputSchema = schema
+		}
+		out = append(out, d)
+	}
+	return out
 }
