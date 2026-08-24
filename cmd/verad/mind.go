@@ -46,7 +46,7 @@ You can hand real work to Claude Code, a capable agent on this Mac, using the de
 
 When a delegated task comes back, tell them what happened in a sentence. Do not narrate the steps.
 
-For work that will take a while, or that they want done while they do something else, use the fleet tool instead: it starts a separate agent that keeps working after this conversation ends. Ask the fleet when they want to know how things are going, and pass their replies to a task that is waiting on them. Speak of tasks in their words — what it is doing, whether it needs them — never in terms of branches, panes or ids unless they ask.`
+Any work on code or in a repository — inspecting one, changing one, investigating something in one — goes to the fleet tool, always: it starts a separate agent in its own copy of the repository that keeps working after this conversation ends. The delegate tool is only for a quick lookup or a one-off command they wait a minute for. Ask the fleet when they want to know how things are going, and pass their replies to a task that is waiting on them. Speak of tasks in their words — what it is doing, whether it needs them — never in terms of branches, panes or ids unless they ask.`
 
 type Mind struct {
 	Client   *http.Client
@@ -138,7 +138,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 
 	var tools []map[string]any
 	if m.Delegate != nil {
-		tools = append(tools, m.Delegate.tool())
+		tools = append(tools, m.Delegate.tool(m.Fleet != nil))
 	}
 	if m.Fleet != nil {
 		tools = append(tools, fleetTool())

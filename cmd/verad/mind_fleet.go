@@ -27,11 +27,12 @@ func fleetTool() map[string]any {
 		"type": "function",
 		"function": map[string]any{
 			"name": "fleet",
-			"description": "Start, check on, answer, land or stop long-running coding tasks. Each task is a " +
-				"separate Claude Code agent working in its own copy of a repository, in its own terminal pane, " +
-				"and it keeps going after this conversation ends. Use `start` for work that will take more than " +
-				"a couple of minutes or that the person wants done in the background; use `delegate` instead " +
-				"for something quick they are waiting on. Use `list` whenever they ask how things are going. " +
+			"description": "The way to get work done on code or in a repository: start, check on, answer, land " +
+				"or stop tasks. Each task is a separate Claude Code agent working in its own copy of a " +
+				"repository, in its own terminal pane, and it keeps going after this conversation ends. Use " +
+				"`start` for ANY work in a repository — inspecting, changing, investigating — and for anything " +
+				"that will take more than a couple of minutes; `delegate` is only for a quick lookup they wait " +
+				"on. Use `list` whenever they ask how things are going. " +
 				"Use `answer` to pass their reply to a task that is waiting on them. `land` merges a finished " +
 				"task; `stop` abandons one — only when they clearly said so.",
 			"parameters": map[string]any{

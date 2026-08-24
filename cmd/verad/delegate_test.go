@@ -57,7 +57,7 @@ func TestWorkspaceDefaultsSomewhereOfItsOwn(t *testing.T) {
 // between answering and delegating.
 func TestTheToolDescribesWhenToUseIt(t *testing.T) {
 	d := &Delegate{}
-	tool := d.tool()
+	tool := d.tool(false)
 	fn, ok := tool["function"].(map[string]any)
 	if !ok {
 		t.Fatal("the tool has no function")

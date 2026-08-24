@@ -36,7 +36,7 @@ func TestFleetToolIsOfferedOnlyWithAFleet(t *testing.T) {
 	m := &Mind{}
 	var tools []map[string]any
 	if m.Delegate != nil {
-		tools = append(tools, m.Delegate.tool())
+		tools = append(tools, m.Delegate.tool(m.Fleet != nil))
 	}
 	if m.Fleet != nil {
 		tools = append(tools, fleetTool())
@@ -47,5 +47,17 @@ func TestFleetToolIsOfferedOnlyWithAFleet(t *testing.T) {
 	fn := fleetTool()["function"].(map[string]any)
 	if fn["name"] != "fleet" {
 		t.Fatal(fn["name"])
+	}
+}
+
+func TestDelegateReadsAsTheSmallToolBesideTheFleet(t *testing.T) {
+	d := &Delegate{}
+	alone := d.tool(false)["function"].(map[string]any)["description"].(string)
+	beside := d.tool(true)["function"].(map[string]any)["description"].(string)
+	if !strings.Contains(beside, "NOT in any repository") || !strings.Contains(beside, "fleet tool") {
+		t.Errorf("beside a fleet, delegate must point repository work at the fleet:\n%s", beside)
+	}
+	if strings.Contains(alone, "fleet") {
+		t.Error("without a fleet there is nothing to point at")
 	}
 }

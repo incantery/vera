@@ -53,16 +53,28 @@ type Delegate struct {
 // load-bearing — it is the entire basis on which the model decides
 // between answering and delegating, so it says what the delegate is
 // GOOD at rather than what it is.
-func (d *Delegate) tool() map[string]any {
+func (d *Delegate) tool(withFleet bool) map[string]any {
+	description := "Hand a task to Claude Code, a capable coding agent running on this Mac. " +
+		"It can read and write files, run shell commands, use git, search the web, and work " +
+		"through a multi-step task on its own. Use it when answering requires DOING something " +
+		"on the machine, or looking something up that you cannot know. Do not use it for " +
+		"conversation, opinions, or anything you can simply answer."
+	if withFleet {
+		// Beside the fleet, this is the SMALL tool, and it must read as
+		// the small tool or the model will keep reaching for it: a
+		// task it saw first, that returns a result it can quote.
+		description = "Hand a QUICK job to Claude Code — a lookup, a one-off command, a small fact " +
+			"about this machine — that finishes within a minute or two while the person waits. " +
+			"It runs in a scratch directory, NOT in any repository, and the person waits for the " +
+			"result. Never use it for work on code, work in a repository, or anything that will " +
+			"take more than a couple of minutes: that is the fleet tool's job. Do not use it for " +
+			"conversation, opinions, or anything you can simply answer."
+	}
 	return map[string]any{
 		"type": "function",
 		"function": map[string]any{
-			"name": "delegate",
-			"description": "Hand a task to Claude Code, a capable coding agent running on this Mac. " +
-				"It can read and write files, run shell commands, use git, search the web, and work " +
-				"through a multi-step task on its own. Use it when answering requires DOING something " +
-				"on the machine, or looking something up that you cannot know. Do not use it for " +
-				"conversation, opinions, or anything you can simply answer.",
+			"name":        "delegate",
+			"description": description,
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
