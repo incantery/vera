@@ -18,6 +18,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/mux"
 	"log/slog"
 	"net/http"
 	"os"
@@ -243,17 +245,33 @@ func main() {
 		go watchUsage(ctx, *usageEvery)
 	}
 
-	// Rook, as an observer: which pane is in front of the person. This
-	// machine is the device; the Mac app reports under the same name.
+	// The terminal, as an observer: which pane is in front of the
+	// person. This machine is the device; the Mac app reports under the
+	// same name. tmux on rook's socket is the backend today; the Mux
+	// interface is where rook's own socket goes when it answers.
+	var term mux.Mux
 	if *rookTmux != "" {
-		rook := newRookWatcher(*rookTmux, id.Name)
-		lan.onPoke("rook", rook.Poke)
-		lan.typer = rook.Type
-		lan.goer = rook.GoTo
-		lan.screener = rook.Capture
-		lan.narrower = rook.Mobile
-		lan.agenter = rook.Agent
-		go rook.run(ctx, "http://127.0.0.1"+portOf(*addr)+"/poke/rook", lan.attention.Observe)
+		term = mux.NewTmux(*rookTmux, "http://127.0.0.1"+portOf(*addr)+"/poke/rook")
+		t := newTerminal(term, id.Name)
+		lan.onPoke("rook", t.Poke)
+		lan.typer = t.Type
+		lan.goer = t.GoTo
+		lan.screener = t.Capture
+		lan.narrower = t.Mobile
+		lan.agenter = t.Agent
+		go t.run(ctx, lan.attention.Observe)
+	}
+
+	// The fleet: rooms Vera opens for coding agents, and the watch over
+	// them. It needs a mux to put a pane in; without one it is off.
+	if term != nil && !*noTools {
+		f := fleet.New(term, fleet.NewStore(filepath.Join(stateDir(), "vera", "fleet")))
+		f.TurnEndedURL = func(task, incarnation string) string {
+			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/turn-ended?incarnation=" + incarnation
+		}
+		f.Observe = func(ev fleet.Event) { lan.attention.Observe(fleetObservation(id.Name, ev)) }
+		lan.fleet = f
+		go func() { _ = f.Supervise(ctx) }()
 	}
 
 	go func() {

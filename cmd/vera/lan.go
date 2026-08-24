@@ -17,6 +17,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"github.com/incantery/vera/fleet"
 	"io"
 	"log/slog"
 	"net"
@@ -64,6 +65,8 @@ type lanTransport struct {
 	commands *cmdHub
 	// stt transcribes audio the phone sends, and manages its own engine.
 	stt Transcriber
+	// fleet is the supervisor, when one is running.
+	fleet *fleet.Fleet
 
 	mu   sync.Mutex
 	port string
@@ -117,6 +120,9 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("GET /stt", l.sttStatus)
 	mux.HandleFunc("POST /stt/install", l.sttInstall)
 	mux.HandleFunc("POST /poke/{who}", loopbackOnly(l.pokeHandler))
+	if l.fleet != nil {
+		l.fleetRoutes(mux)
+	}
 	mux.HandleFunc("GET /pair.json", loopbackOnly(l.pairJSON))
 	mux.HandleFunc("GET /pair.png", loopbackOnly(l.pairPNG))
 	mux.HandleFunc("GET /{$}", loopbackOnly(l.page))

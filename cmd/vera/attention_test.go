@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/incantery/vera/mux"
 	"net/http"
 	"strings"
 	"testing"
@@ -174,14 +175,14 @@ func TestTerminalFocusIsDescribedOnlyInsideATerminal(t *testing.T) {
 	}
 }
 
-func TestPickClientPrefersTheFocusedOne(t *testing.T) {
-	out := "attached\tsethlowie\t100\nattached,focused\tvera\t50\nattached\ttmux\t200\n"
-	if got := pickClient(out); got != "vera" {
-		t.Fatalf("got %q", got)
+func TestFocusOfRecognisesClaudeCode(t *testing.T) {
+	f := focusOf(&mux.Pane{ID: mux.ID{Session: "vera", Window: "1", Pane: "0"}, Command: "2.1.0", Path: "/x/vera"})
+	if f.Agent != "claude-code" {
+		t.Fatalf("a versioned process name is Claude Code, got %+v", f)
 	}
-	out = "attached\tsethlowie\t100\nattached\ttmux\t200\n"
-	if got := pickClient(out); got != "tmux" {
-		t.Fatalf("without a focused flag the most recently active wins, got %q", got)
+	f = focusOf(&mux.Pane{ID: mux.ID{Session: "vera", Window: "1", Pane: "0"}, Command: "zsh", Path: "/x/vera"})
+	if f.Agent != "" || f.Describe() != "zsh in vera (vera:1)" {
+		t.Fatalf("got %+v / %q", f, f.Describe())
 	}
 }
 

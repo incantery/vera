@@ -22,6 +22,8 @@ history.go     what was said a moment ago, bounded
 telemetry.go   OTel traces and metrics
 generation.go  generation export — what feeds the Conversations view
 delegate.go    handing work to Claude Code
+rook.go        the terminal adapter: what is inside the terminal, over mux.Mux
+fleet.go       the fleet over the wire
 usage.go       what is left of the Claude Code subscription
 usage_meter.go reporting that on a timer
 memory.go      what survives a restart
@@ -29,6 +31,9 @@ remember.go    deciding what was worth keeping
 eval.go        the suite runner and its scorers
 evals/         the cases themselves
 main.go        wiring
+
+../mux/        the multiplexer as Vera sees it; tmux backend
+../fleet/      rooms Vera opens for coding agents, and the watch over them
 ```
 
 `Transport` is message-shaped rather than HTTP-shaped, because the next
@@ -63,6 +68,53 @@ session and pane are in front of the person, and whether a coding agent
 is running there, as a `terminal.focus` observation with `source: rook`.
 Ghostty stops being opaque: "Inside it, rook shows Claude Code session
 \"Vera native macOS surface\" (vera:1)". `--rook-tmux ""` turns it off.
+
+## Fleet
+
+Vera owns *what work exists and who is doing it*; the multiplexer owns
+*where it is drawn and how you reach it*. `mux.Mux` is the line between
+them — find the focused pane, spawn one, type into it, read its screen,
+bring it forward, hear when something changed — written to what Vera
+wants from a mux rather than to what tmux offers. `mux.Tmux` (rook's
+socket, today) is deliberately lossy against it; rook's own socket is
+the next backend and nothing above the line moves.
+
+`fleet/` is firstmate's supervisor
+(github.com/kunchenguid/firstmate) as a Go package instead of forty
+shell scripts. A **task** is a room: a git worktree beside the repo
+(`<repo>--<name>`, branch of the same name, `rook.toml` copy/link
+conventions honoured), a pane in the session of the same name running
+`claude` with the brief, and a directory under
+`~/.local/state/vera/fleet/<id>/` holding the record, an append-only
+status log, and a cursor for how much of it a person has seen.
+
+What Vera believes about a task is never stored; it is classified from
+evidence every look:
+
+| evidence | source |
+| --- | --- |
+| pane alive, last output | the mux |
+| newest write under the worktree | a bounded scan — a quiet pane while files change is an agent working, not a stall |
+| turn ended | Claude Code's Stop hook, `POST /fleet/{id}/turn-ended` (loopback, carries only the incarnation) |
+| the agent's own word | `POST /fleet/{id}/status` with one of `working paused blocked resolved done failed` |
+
+which yields `running · quiet · stale · waiting · held · decision ·
+finished · broken · gone · closed`. A change of belief is one
+observation (`task.waiting`, source `fleet`) through the same door the
+Mac app uses, so the mind's preface and `/status` carry it.
+
+```
+GET  /fleet                    every task with state, last word, unread lines
+POST /fleet                    {"project","name","kind":"ship|scout","mode","brief"}
+POST /fleet/{id}/answer        {"text"} — typed and sent into the pane; logged as resolved
+POST /fleet/{id}/land          local-only: merge home, remove worktree+branch, close
+POST /fleet/{id}/teardown      ?force=1 to discard unlanded work — never Vera's call
+POST /fleet/{id}/seen          the phone rendered the log this far
+```
+
+Every hook is a doorbell, not a fact: the supervisor re-reads the pane
+and the worktree after it rings, and a hook that stops firing degrades
+to polling.
 
 ## Pairing
 
