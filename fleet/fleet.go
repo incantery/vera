@@ -25,6 +25,13 @@ type Fleet struct {
 	// TurnEndedURL builds the loopback URL the harness's Stop hook
 	// POSTs to for a task and incarnation.
 	TurnEndedURL func(id, incarnation string) string
+	// StatusURL builds the loopback URL the agent reports its status
+	// verbs to; empty leaves the instructions out of the brief.
+	StatusURL func(id string) string
+	// Trust pre-answers the harness's "trust this folder?" for a new
+	// worktree. Nil skips it; the default inherits Claude Code's
+	// answer for the main checkout.
+	Trust func(project, worktree string) error
 	// Observe hears every change of belief. Nil is fine.
 	Observe    func(Event)
 	Thresholds Thresholds
@@ -64,9 +71,13 @@ type View struct {
 
 func New(m mux.Mux, store *Store) *Fleet {
 	return &Fleet{
-		Mux:        m,
-		Store:      store,
-		Harness:    []string{"claude"},
+		Mux:   m,
+		Store: store,
+		// acceptEdits: nobody is at this terminal to click through
+		// edits, and everything else still asks — which the brief tells
+		// the agent to avoid needing.
+		Harness:    []string{"claude", "--permission-mode", "acceptEdits"},
+		Trust:      inheritTrust,
 		Thresholds: DefaultThresholds,
 		Every:      15 * time.Second,
 		poke:       make(chan struct{}, 1),
@@ -127,6 +138,11 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 		return nil, fmt.Errorf("unknown task kind %q", req.Kind)
 	}
 
+	if req.Kind == Ship && f.Trust != nil {
+		if err := f.Trust(repo.Root, t.Worktree); err != nil {
+			slog.Warn("fleet: could not pre-trust the worktree; the agent may wait on a dialog", "task", id, "error", err.Error())
+		}
+	}
 	argv := append([]string{}, f.Harness...)
 	if f.TurnEndedURL != nil {
 		settings, err := writeHarnessSettings(f.Store.TaskDir(id), f.TurnEndedURL(id, t.Incarnation))
@@ -135,7 +151,11 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 		}
 		argv = append(argv, "--settings", settings)
 	}
-	argv = append(argv, req.Brief)
+	statusURL := ""
+	if f.StatusURL != nil {
+		statusURL = f.StatusURL(id)
+	}
+	argv = append(argv, scaffold(t, statusURL))
 	pane, err := f.Mux.Spawn(ctx, mux.Spawn{
 		Session: t.Session,
 		Name:    name,

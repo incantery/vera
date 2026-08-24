@@ -14,14 +14,17 @@ import (
 
 // fakeMux is a mux in memory: enough to spawn, type, and be listed.
 type fakeMux struct {
-	mu    sync.Mutex
-	panes map[mux.ID]mux.Pane
-	typed []string
-	next  int
-	down  bool
+	mu      sync.Mutex
+	panes   map[mux.ID]mux.Pane
+	spawned map[mux.ID]string // the last argv element: the brief
+	typed   []string
+	next    int
+	down    bool
 }
 
-func newFakeMux() *fakeMux { return &fakeMux{panes: map[mux.ID]mux.Pane{}} }
+func newFakeMux() *fakeMux {
+	return &fakeMux{panes: map[mux.ID]mux.Pane{}, spawned: map[mux.ID]string{}}
+}
 
 func (f *fakeMux) Name() string { return "fake" }
 func (f *fakeMux) Focus(context.Context) (*mux.Pane, error) {
@@ -54,6 +57,7 @@ func (f *fakeMux) Spawn(_ context.Context, s mux.Spawn) (*mux.Pane, error) {
 	f.next++
 	p := mux.Pane{ID: mux.ID{Session: s.Session, Window: string(rune('0' + f.next)), Pane: "0"}, Command: s.Command[0], Path: s.Dir, Active: time.Now()}
 	f.panes[p.ID] = p
+	f.spawned[p.ID] = s.Command[len(s.Command)-1]
 	return &p, nil
 }
 func (f *fakeMux) Kill(_ context.Context, id mux.ID) error {
@@ -102,6 +106,8 @@ func TestFleetLifecycle(t *testing.T) {
 	f.TurnEndedURL = func(id, inc string) string {
 		return "http://127.0.0.1:1/fleet/" + id + "/turn-ended?incarnation=" + inc
 	}
+	f.StatusURL = func(id string) string { return "http://127.0.0.1:1/fleet/" + id + "/status" }
+	f.Trust = func(project, worktree string) error { return nil }
 	f.Observe = func(e Event) { events = append(events, e) }
 	f.Thresholds = Thresholds{Quiet: time.Minute, Stale: 10 * time.Minute}
 	ctx := context.Background()
@@ -121,6 +127,12 @@ func TestFleetLifecycle(t *testing.T) {
 	p := m.panes[task.Pane]
 	if p.Path != task.Worktree || p.Command != "fake-agent" {
 		t.Errorf("pane %+v", p)
+	}
+	brief := m.spawned[task.Pane]
+	for _, want := range []string{"add a thing", task.Worktree, "branch feat", "Do not merge", "/fleet/" + task.ID + "/status", "blocked"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("brief missing %q:\n%s", want, brief)
+		}
 	}
 	settings, _ := os.ReadFile(filepath.Join(store.TaskDir(task.ID), "claude.json"))
 	if !strings.Contains(string(settings), "turn-ended?incarnation="+task.Incarnation) {
@@ -209,6 +221,7 @@ func TestFleetGoneAndTeardown(t *testing.T) {
 	m := newFakeMux()
 	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
 	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
 	ctx := context.Background()
 	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "scout it", Kind: Scout})
 	if err != nil {
@@ -235,6 +248,7 @@ func TestFleetSpawnCleansUpOnMuxFailure(t *testing.T) {
 	r := newRepo(t)
 	m := newFakeMux()
 	f := New(&failingMux{m}, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Trust = nil
 	if _, err := f.Spawn(context.Background(), Request{Project: r.Root, Name: "x", Brief: "b"}); err == nil {
 		t.Fatal("expected spawn error")
 	}

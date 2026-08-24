@@ -284,6 +284,9 @@ func main() {
 		f.TurnEndedURL = func(task, incarnation string) string {
 			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/turn-ended?incarnation=" + incarnation
 		}
+		f.StatusURL = func(task string) string {
+			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/status"
+		}
 		f.Observe = func(ev fleet.Event) { lan.attention.Observe(fleetObservation(id.Name, ev)) }
 		lan.fleet = f
 		if mind != nil {
