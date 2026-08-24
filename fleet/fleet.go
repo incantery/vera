@@ -28,6 +28,11 @@ type Fleet struct {
 	// StatusURL builds the loopback URL the agent reports its status
 	// verbs to; empty leaves the instructions out of the brief.
 	StatusURL func(id string) string
+	// Env is extra environment for the harness — telemetry, mostly. It
+	// goes through a private file the pane's shell sources, never
+	// through the pane's screen: a token typed into a terminal is a
+	// token in its scrollback.
+	Env func(t *Task) []string
 	// Trust pre-answers the harness's "trust this folder?" for a new
 	// worktree. Nil skips it; the default inherits Claude Code's
 	// answer for the main checkout.
@@ -156,12 +161,23 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 		statusURL = f.StatusURL(id)
 	}
 	argv = append(argv, scaffold(t, statusURL))
+	env := []string{"VERA_TASK=" + id}
+	if f.Env != nil {
+		env = append(env, f.Env(t)...)
+	}
+	envFile, err := writeEnvFile(f.Store.TaskDir(id), env)
+	if err != nil {
+		return nil, err
+	}
+	// The shell sources the file, then becomes the harness: the pane's
+	// foreground program is the agent, and the file's contents never
+	// cross the screen.
+	command := append([]string{"sh", "-c", `set -a; . "$0"; set +a; exec "$@"`, envFile}, argv...)
 	pane, err := f.Mux.Spawn(ctx, mux.Spawn{
 		Session: t.Session,
 		Name:    name,
 		Dir:     t.Worktree,
-		Command: argv,
-		Env:     []string{"VERA_TASK=" + id},
+		Command: command,
 	})
 	if err != nil {
 		if req.Kind == Ship {

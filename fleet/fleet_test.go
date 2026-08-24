@@ -16,14 +16,15 @@ import (
 type fakeMux struct {
 	mu      sync.Mutex
 	panes   map[mux.ID]mux.Pane
-	spawned map[mux.ID]string // the last argv element: the brief
+	spawned map[mux.ID]string   // the last argv element: the brief
+	argv    map[mux.ID][]string // the whole command
 	typed   []string
 	next    int
 	down    bool
 }
 
 func newFakeMux() *fakeMux {
-	return &fakeMux{panes: map[mux.ID]mux.Pane{}, spawned: map[mux.ID]string{}}
+	return &fakeMux{panes: map[mux.ID]mux.Pane{}, spawned: map[mux.ID]string{}, argv: map[mux.ID][]string{}}
 }
 
 func (f *fakeMux) Name() string { return "fake" }
@@ -58,6 +59,7 @@ func (f *fakeMux) Spawn(_ context.Context, s mux.Spawn) (*mux.Pane, error) {
 	p := mux.Pane{ID: mux.ID{Session: s.Session, Window: string(rune('0' + f.next)), Pane: "0"}, Command: s.Command[0], Path: s.Dir, Active: time.Now()}
 	f.panes[p.ID] = p
 	f.spawned[p.ID] = s.Command[len(s.Command)-1]
+	f.argv[p.ID] = s.Command
 	return &p, nil
 }
 func (f *fakeMux) Kill(_ context.Context, id mux.ID) error {
@@ -108,6 +110,9 @@ func TestFleetLifecycle(t *testing.T) {
 	}
 	f.StatusURL = func(id string) string { return "http://127.0.0.1:1/fleet/" + id + "/status" }
 	f.Trust = func(project, worktree string) error { return nil }
+	f.Env = func(t *Task) []string {
+		return []string{"OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic s3cret", "TOK=it's"}
+	}
 	f.Observe = func(e Event) { events = append(events, e) }
 	f.Thresholds = Thresholds{Quiet: time.Minute, Stale: 10 * time.Minute}
 	ctx := context.Background()
@@ -125,8 +130,25 @@ func TestFleetLifecycle(t *testing.T) {
 	// The harness was started in the worktree with the hook settings
 	// and the brief.
 	p := m.panes[task.Pane]
-	if p.Path != task.Worktree || p.Command != "fake-agent" {
+	if p.Path != task.Worktree || p.Command != "sh" {
 		t.Errorf("pane %+v", p)
+	}
+	// The env rides in a private file the shell sources, not in argv.
+	argv := m.argv[task.Pane]
+	if argv[0] != "sh" || !strings.Contains(argv[2], `exec "$@"`) || argv[4] != "fake-agent" {
+		t.Errorf("command shape: %q", argv)
+	}
+	if strings.Contains(strings.Join(argv, " "), "s3cret") {
+		t.Error("a token must never be in the command line")
+	}
+	envb, _ := os.ReadFile(argv[3])
+	if st, _ := os.Stat(argv[3]); st.Mode().Perm() != 0o600 {
+		t.Errorf("env file mode %v", st.Mode().Perm())
+	}
+	for _, want := range []string{"VERA_TASK='" + task.ID + "'", "OTEL_EXPORTER_OTLP_HEADERS='Authorization=Basic s3cret'", `TOK='it'\''s'`} {
+		if !strings.Contains(string(envb), want) {
+			t.Errorf("env file missing %q:\n%s", want, envb)
+		}
 	}
 	brief := m.spawned[task.Pane]
 	for _, want := range []string{"add a thing", task.Worktree, "branch feat", "Do not merge", "/fleet/" + task.ID + "/status", "blocked"} {

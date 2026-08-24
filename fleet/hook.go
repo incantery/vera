@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Claude Code is told to ring Vera's doorbell when its turn ends.
@@ -49,4 +50,23 @@ func writeHarnessSettings(dir, turnEndedURL string) (string, error) {
 	}
 	path := filepath.Join(dir, "claude.json")
 	return path, os.WriteFile(path, b, 0o644)
+}
+
+// writeEnvFile writes KEY=VALUE pairs as a file `sh` can source, mode
+// 0600: this is where a telemetry token lives on disk, and nowhere
+// else.
+func writeEnvFile(dir string, env []string) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	for _, kv := range env {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			continue
+		}
+		b.WriteString(k + "='" + strings.ReplaceAll(v, "'", `'\''`) + "'\n")
+	}
+	path := filepath.Join(dir, "env")
+	return path, os.WriteFile(path, []byte(b.String()), 0o600)
 }

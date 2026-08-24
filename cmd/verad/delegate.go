@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/incantery/vera/fleet"
 	"go.opentelemetry.io/otel/propagation"
 	"log/slog"
 	"os"
@@ -213,26 +214,12 @@ func (d *Delegate) environment(ctx context.Context) []string {
 		return append(env, "CLAUDE_CODE_ENABLE_TELEMETRY=0")
 	}
 
-	env = append(env,
-		"CLAUDE_CODE_ENABLE_TELEMETRY=1",
-		"CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1", // traces are still beta
-		"OTEL_METRICS_EXPORTER=otlp",
-		"OTEL_LOGS_EXPORTER=otlp",
-		"OTEL_TRACES_EXPORTER=otlp",
-		// A delegated task lives seconds; the OTel default metric
-		// interval is sixty of them. Left alone, a short run exports
-		// its resource and exits before a single reading of what it
-		// cost — which is exactly the number this was turned on for.
-		"OTEL_METRIC_EXPORT_INTERVAL=2000",
-		// Prometheus is cumulative. Grafana Cloud accepts delta metrics
-		// with a 200 and then drops them, so the default temporality
-		// costs you every cost and token reading and reports nothing
-		// wrong. Traces are unaffected, which is what makes it a
-		// convincing dead end.
-		"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative",
-		// Last wins, so this overrides anything Vera set for itself.
-		"OTEL_SERVICE_NAME="+delegateService,
-	)
+	env = append(env, telemetryEnv()...)
+	// A delegated task lives seconds; the OTel default metric interval
+	// is sixty of them. Left alone, a short run exports its resource
+	// and exits before a single reading of what it cost — which is
+	// exactly the number this was turned on for.
+	env = append(env, "OTEL_METRIC_EXPORT_INTERVAL=2000")
 
 	// The thread. Injected through the propagator rather than
 	// hand-formatted, so sampling flags survive the hop.
@@ -248,6 +235,46 @@ func (d *Delegate) environment(ctx context.Context) []string {
 }
 
 const delegateService = "claude-code"
+
+// telemetryEnv is how a Claude Code we start reports to the same place
+// Vera does, under its own service name.
+func telemetryEnv() []string {
+	return []string{
+		"CLAUDE_CODE_ENABLE_TELEMETRY=1",
+		"CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1", // traces are still beta
+		"OTEL_METRICS_EXPORTER=otlp",
+		"OTEL_LOGS_EXPORTER=otlp",
+		"OTEL_TRACES_EXPORTER=otlp",
+		// Prometheus is cumulative. Grafana Cloud accepts delta metrics
+		// with a 200 and then drops them, so the default temporality
+		// costs you every cost and token reading and reports nothing
+		// wrong. Traces are unaffected, which is what makes it a
+		// convincing dead end.
+		"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative",
+		// Last wins, so this overrides anything Vera set for itself.
+		"OTEL_SERVICE_NAME=" + delegateService,
+	}
+}
+
+// fleetEnv is the environment a fleet task's Claude Code gets. The
+// pane's shell is not verad — it has none of verad's OTEL_* — so the
+// endpoint and credentials are carried across explicitly, and the
+// task id rides as a resource attribute so one task's spans and cost
+// can be found by name.
+func fleetEnv(telemetry bool) func(t *fleet.Task) []string {
+	return func(t *fleet.Task) []string {
+		if !telemetry {
+			return []string{"CLAUDE_CODE_ENABLE_TELEMETRY=0"}
+		}
+		env := telemetryEnv()
+		for _, k := range []string{"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_PROTOCOL"} {
+			if v := os.Getenv(k); v != "" {
+				env = append(env, k+"="+v)
+			}
+		}
+		return append(env, "OTEL_RESOURCE_ATTRIBUTES=vera.task="+t.ID+",vera.project="+shortPath(t.Project)+",vera.branch="+t.Branch)
+	}
+}
 
 func without(env []string, keys ...string) []string {
 	drop := make(map[string]bool, len(keys))

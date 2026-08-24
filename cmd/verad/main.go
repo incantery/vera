@@ -298,6 +298,7 @@ func main() {
 		f.StatusURL = func(task string) string {
 			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/status"
 		}
+		f.Env = fleetEnv(telemetryConfigured() && !*noDelegateTelemetry)
 		f.Observe = func(ev fleet.Event) { lan.attention.Observe(fleetObservation(id.Name, ev)) }
 		lan.fleet = f
 		if mind != nil {
