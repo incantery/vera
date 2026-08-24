@@ -19,7 +19,7 @@ front of you.
 ## 1. Run Vera Core
 
 ```
-go run github.com/incantery/vera/cmd/vera --echo
+go run github.com/incantery/vera/cmd/verad --echo
 ```
 
 Core comes up on `127.0.0.1:4780` and mints a pairing secret. Loopback

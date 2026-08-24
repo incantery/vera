@@ -3,9 +3,9 @@
 The rebuild. A person talks to their phone, a Mac answers.
 
 ```
-go run ./cmd/vera                 # then open http://localhost:4780/ and scan
-open ios/Vera.xcodeproj           # ⌘R to a real phone
-vera chat                         # talk to her from a pane instead
+make install                      # vera + verad into ~/.local/bin
+vera                              # starts verad if needed, opens the chat
+open http://localhost:4780/       # scan to pair a phone; open ios/Vera.xcodeproj, ⌘R
 ```
 
 ## Shape
@@ -23,7 +23,6 @@ history.go     what was said a moment ago, bounded
 telemetry.go   OTel traces and metrics
 generation.go  generation export — what feeds the Conversations view
 delegate.go    handing work to Claude Code
-chat.go        vera chat — the laptop's workbench, a pane that speaks the phone's wire
 rook.go        the terminal adapter: what is inside the terminal, over mux.Mux
 fleet.go       the fleet over the wire
 usage.go       what is left of the Claude Code subscription
@@ -133,7 +132,11 @@ to polling.
 
 ## Chat
 
-`vera chat` is the workbench: a pane (pin it to rook's rail) that
+`vera` (cmd/vera) is the front door and the workbench: bare `vera` makes
+sure `verad` is running — detached, its output in
+`~/.local/state/vera/verad.log` — and opens the chat; `vera start|stop|
+restart|status|log|url` manage the daemon and `vera install` makes it a
+launchd agent. The chat is a pane (pin it to rook's rail) that
 speaks exactly the phone's wire — `/say` frames, `/fleet`, `/status`,
 the identity file for the secret — and shows what the phone cannot.
 Status lines and deltas as they stream; the fleet as a strip, one line

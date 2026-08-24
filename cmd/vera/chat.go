@@ -1,4 +1,4 @@
-// vera chat — the laptop's way of talking to Vera.
+// The chat — the laptop's way of talking to Vera.
 //
 // The phone is the face; this is the workbench. A pane inside rook
 // (pin it to the rail) that speaks the same wire the phone does —
@@ -32,24 +32,32 @@ import (
 
 func runChat(args []string) {
 	fs := flag.NewFlagSet("vera chat", flag.ExitOnError)
-	url := fs.String("url", "http://127.0.0.1:4780", "where Vera Core listens")
-	state := fs.String("state", "", "identity file (default ~/.local/state/vera/identity.json)")
+	url := fs.String("url", "", "where verad listens (default: the running one, started if needed)")
 	debug := fs.Bool("debug", false, "start with the belief panel open")
 	_ = fs.Parse(args)
 
-	id, err := loadOrCreateIdentity(identityPath(*state))
+	base := strings.TrimRight(*url, "/")
+	if base == "" {
+		b, err := ensure()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "vera: "+err.Error())
+			os.Exit(1)
+		}
+		base = b
+	}
+	id, err := loadIdentity(identityPath())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "vera chat: no identity ("+err.Error()+"); is vera running on this machine?")
+		fmt.Fprintln(os.Stderr, "vera: no identity at "+identityPath()+" ("+err.Error()+")")
 		os.Exit(1)
 	}
-	c := &chatClient{base: strings.TrimRight(*url, "/"), secret: id.Secret, device: id.Name}
+	c := &chatClient{base: base, secret: id.Secret, device: id.Name}
 	if _, err := c.status(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, "vera chat: cannot reach "+*url+" ("+err.Error()+")")
+		fmt.Fprintln(os.Stderr, "vera: cannot reach "+base+" ("+err.Error()+")")
 		os.Exit(1)
 	}
 	m := newChatModel(c, *debug)
 	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
-		fmt.Fprintln(os.Stderr, "vera chat: "+err.Error())
+		fmt.Fprintln(os.Stderr, "vera: "+err.Error())
 		os.Exit(1)
 	}
 }

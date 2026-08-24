@@ -2,14 +2,52 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// fakeVerad is enough of the wire to test the client: /say streams an
+// echo as ndjson frames, /status answers, /fleet is absent, and the
+// secret is checked.
+func fakeVerad(t *testing.T) (string, Identity) {
+	t.Helper()
+	id := Identity{Peer: "peer-under-test", Secret: "s3cret", Name: "test-mac"}
+	mux := http.NewServeMux()
+	authed := func(r *http.Request) bool { return r.Header.Get("Authorization") == "Bearer "+id.Secret }
+	mux.HandleFunc("POST /say", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var m Message
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		enc := json.NewEncoder(w)
+		_ = enc.Encode(Frame{Run: "r1"})
+		_ = enc.Encode(Frame{Status: "thinking"})
+		for _, word := range strings.Fields("You said: " + m.Text) {
+			_ = enc.Encode(Frame{Delta: word + " "})
+		}
+		_ = enc.Encode(Frame{Done: true})
+	})
+	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(Status{Name: id.Name, Mind: "echo"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv.URL, id
+}
+
 func TestChatClientSpeaksThePhonesWire(t *testing.T) {
-	base, id := serveLAN(t, echo)
+	base, id := fakeVerad(t)
 	c := &chatClient{base: base, secret: id.Secret, device: id.Name}
 
 	var got []Frame
