@@ -99,3 +99,22 @@ func writeEnvFile(dir string, env []string) (string, error) {
 	path := filepath.Join(dir, "env")
 	return path, os.WriteFile(path, []byte(b.String()), 0o600)
 }
+
+// writeRunScript writes the launch: source the env, enter the room,
+// become the harness. Mode 0700 — it names the report path and the
+// brief, which are the person's business.
+func writeRunScript(dir, envFile, cwd string, argv []string) (string, error) {
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	b.WriteString("set -a; . " + shQuote(envFile) + "; set +a\n")
+	b.WriteString("cd " + shQuote(cwd) + " || exit 1\n")
+	b.WriteString("exec")
+	for _, a := range argv {
+		b.WriteString(" " + shQuote(a))
+	}
+	b.WriteString("\n")
+	path := filepath.Join(dir, "run")
+	return path, os.WriteFile(path, []byte(b.String()), 0o700)
+}
+
+func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

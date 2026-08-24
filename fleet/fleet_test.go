@@ -57,11 +57,11 @@ func (f *fakeMux) Spawn(_ context.Context, s mux.Spawn) (*mux.Pane, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.next++
-	// The fake's "foreground program" is what the shell exec's into.
+	// The fake's "foreground program" is what the run script execs.
 	cmd := s.Command[0]
-	for i, a := range s.Command {
-		if a == "fake-agent" {
-			cmd = s.Command[i]
+	if len(s.Command) == 2 && s.Command[0] == "sh" {
+		if b, err := os.ReadFile(s.Command[1]); err == nil && strings.Contains(string(b), "'fake-agent'") {
+			cmd = "fake-agent"
 		}
 	}
 	p := mux.Pane{ID: mux.ID{Session: s.Session, Window: string(rune('0' + f.next)), Pane: "0"}, Command: cmd, Path: s.Dir, Active: time.Now()}
@@ -152,16 +152,20 @@ func TestFleetLifecycle(t *testing.T) {
 	if p.Path != task.Worktree || p.Command != "fake-agent" {
 		t.Errorf("pane %+v", p)
 	}
-	// The env rides in a private file the shell sources, not in argv.
+	// The pane is told one short line; the launch is a script, and the
+	// env a private file it sources. Nothing long or secret is typed.
 	argv := m.argv[task.Pane]
-	if argv[0] != "sh" || !strings.Contains(argv[2], `exec "$@"`) || argv[4] != "fake-agent" {
-		t.Errorf("command shape: %q", argv)
+	if len(argv) != 2 || argv[0] != "sh" || !strings.HasSuffix(argv[1], "/run") {
+		t.Fatalf("command shape: %q", argv)
 	}
-	if strings.Contains(strings.Join(argv, " "), "s3cret") {
-		t.Error("a token must never be in the command line")
+	runb, _ := os.ReadFile(argv[1])
+	run := string(runb)
+	if !strings.Contains(run, "cd '"+task.Worktree+"'") || !strings.Contains(run, "exec 'fake-agent' '--model' 'opus'") || strings.Contains(run, "s3cret") {
+		t.Errorf("run script:\n%s", run)
 	}
-	envb, _ := os.ReadFile(argv[3])
-	if st, _ := os.Stat(argv[3]); st.Mode().Perm() != 0o600 {
+	envPath := filepath.Join(store.TaskDir(task.ID), "env")
+	envb, _ := os.ReadFile(envPath)
+	if st, _ := os.Stat(envPath); st.Mode().Perm() != 0o600 {
 		t.Errorf("env file mode %v", st.Mode().Perm())
 	}
 	for _, want := range []string{"VERA_TASK='" + task.ID + "'", "OTEL_EXPORTER_OTLP_HEADERS='Authorization=Basic s3cret'", `TOK='it'\''s'`} {
@@ -169,10 +173,9 @@ func TestFleetLifecycle(t *testing.T) {
 			t.Errorf("env file missing %q:\n%s", want, envb)
 		}
 	}
-	brief := m.spawned[task.Pane]
 	for _, want := range []string{"add a thing", task.Worktree, "branch feat", "Do not merge", "/fleet/" + task.ID + "/status", "blocked"} {
-		if !strings.Contains(brief, want) {
-			t.Errorf("brief missing %q:\n%s", want, brief)
+		if !strings.Contains(run, want) {
+			t.Errorf("brief (in the run script) missing %q", want)
 		}
 	}
 	settings, _ := os.ReadFile(filepath.Join(store.TaskDir(task.ID), "claude.json"))
@@ -182,8 +185,8 @@ func TestFleetLifecycle(t *testing.T) {
 		}
 	}
 	// Vera picked the model; the harness did not inherit one.
-	if cmd := strings.Join(m.argv[task.Pane], " "); !strings.Contains(cmd, "--model opus") {
-		t.Errorf("argv: %q", cmd)
+	if !strings.Contains(run, "'--model' 'opus'") {
+		t.Errorf("model not chosen: %s", run)
 	}
 	if def := New(m, store).Harness; strings.Join(def, " ") != "claude --permission-mode auto" {
 		t.Errorf("default harness: %q", def)
@@ -374,8 +377,12 @@ func TestFleetResumesAfterThePaneIsGone(t *testing.T) {
 	if again.Pane == task.Pane || again.Incarnation == task.Incarnation || again.Worktree != task.Worktree {
 		t.Fatalf("resume: %+v", again)
 	}
-	cmd := strings.Join(m.argv[again.Pane], " ")
-	if strings.Contains(cmd, "--continue") || !strings.Contains(cmd, "keep going\n\n---") {
+	runOf := func(id mux.ID) string {
+		b, _ := os.ReadFile(m.argv[id][1])
+		return string(b)
+	}
+	cmd := runOf(again.Pane)
+	if strings.Contains(cmd, "--continue") || !strings.Contains(cmd, "keep going") || !strings.Contains(cmd, "---") {
 		t.Errorf("with no session to continue, resume starts over with the brief: %q", cmd)
 	}
 	// With a session, it continues instead.
@@ -387,8 +394,8 @@ func TestFleetResumesAfterThePaneIsGone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd = strings.Join(m.argv[again.Pane], " ")
-	if !strings.Contains(cmd, "--continue") || strings.Contains(cmd, "keep going\n\n---") {
+	cmd = runOf(again.Pane)
+	if !strings.Contains(cmd, "--continue") || strings.Contains(cmd, "---") {
 		t.Errorf("resume should continue, not re-brief: %q", cmd)
 	}
 	// An agent that exited and left its shell reads as gone too, and

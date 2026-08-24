@@ -282,15 +282,23 @@ func (f *Fleet) open(ctx context.Context, t *Task, extra []string) (*mux.Pane, e
 	if err != nil {
 		return nil, err
 	}
-	// The shell sources the file, then becomes the harness: the pane's
-	// foreground program is the agent, and the file's contents never
-	// cross the screen.
-	command := append([]string{"sh", "-c", `set -a; . "$0"; set +a; exec "$@"`, envFile}, argv...)
+	// The launch is a script, and the pane is told one short line to
+	// run it. A mux that starts panes by typing into a shell (rook,
+	// today) cannot be handed a brief on the command line: a pty in
+	// canonical mode keeps 1024 bytes of a line and drops the rest, so
+	// a long brief arrived truncated and its Enter never came. The
+	// script sources the env, cds into the room, and execs the harness
+	// — the pane's foreground program is the agent, and neither the
+	// brief nor a token ever crosses the screen.
+	run, err := writeRunScript(f.Store.TaskDir(t.ID), envFile, t.Worktree, argv)
+	if err != nil {
+		return nil, err
+	}
 	return f.Mux.Spawn(ctx, mux.Spawn{
 		Session: t.Session,
 		Name:    t.Name,
 		Dir:     t.Worktree,
-		Command: command,
+		Command: []string{"sh", run},
 	})
 }
 
