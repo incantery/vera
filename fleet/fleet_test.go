@@ -309,3 +309,66 @@ type failingMux struct{ *fakeMux }
 func (failingMux) Spawn(context.Context, mux.Spawn) (*mux.Pane, error) {
 	return nil, mux.ErrUnavailable
 }
+
+func TestFleetResumesAfterThePaneIsGone(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	ctx := context.Background()
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Name: "back", Brief: "keep going"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Resume(ctx, task.ID); err == nil {
+		t.Fatal("resume with the pane alive should refuse")
+	}
+	m.Kill(ctx, task.Pane)
+	views, _ := f.Tasks(ctx)
+	if views[0].State != Gone {
+		t.Fatalf("expected gone, got %s", views[0].State)
+	}
+	again, err := f.Resume(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Pane == task.Pane || again.Incarnation == task.Incarnation || again.Worktree != task.Worktree {
+		t.Fatalf("resume: %+v", again)
+	}
+	cmd := strings.Join(m.argv[again.Pane], " ")
+	if !strings.Contains(cmd, "--continue") || strings.Contains(cmd, "keep going\n\n---") {
+		t.Errorf("resume should continue, not re-brief: %q", cmd)
+	}
+	if p := m.panes[again.Pane]; p.Path != task.Worktree {
+		t.Errorf("resumed elsewhere: %+v", p)
+	}
+	views, _ = f.Tasks(ctx)
+	if views[0].State != Running {
+		t.Errorf("after resume: %s", views[0].State)
+	}
+}
+
+func TestProjectsResolveByName(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	m.Spawn(context.Background(), mux.Spawn{Session: "x", Dir: r.Root, Command: []string{"zsh"}})
+	p := &Projects{Mux: m, File: filepath.Join(t.TempDir(), "projects.json")}
+	ctx := context.Background()
+	got, err := p.Resolve(ctx, "PROJ")
+	if err != nil || got.Root != r.Root {
+		t.Fatalf("by name: %v %+v", err, got)
+	}
+	if got, err := p.Resolve(ctx, r.Root); err != nil || got.Root != r.Root {
+		t.Fatalf("by path: %v %+v", err, got)
+	}
+	if _, err := p.Resolve(ctx, "nope"); err == nil || !strings.Contains(err.Error(), "known: proj") {
+		t.Fatalf("miss should list names: %v", err)
+	}
+	// Forgotten by the mux, still known: it was remembered.
+	m.panes = map[mux.ID]mux.Pane{}
+	p2 := &Projects{Mux: m, File: p.File}
+	if got, err := p2.Resolve(ctx, "proj"); err != nil || got.Root != r.Root {
+		t.Fatalf("remembered: %v %+v", err, got)
+	}
+}

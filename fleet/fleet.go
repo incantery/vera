@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,9 @@ import (
 type Fleet struct {
 	Mux   mux.Mux
 	Store *Store
+	// Projects resolves what a request calls its repository — a path
+	// or a name — and remembers every one a task runs in.
+	Projects *Projects
 	// Harness is argv for the coding agent; the brief is appended as
 	// the first prompt. Default: claude in auto mode.
 	Harness []string
@@ -114,9 +118,26 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 	if strings.TrimSpace(req.Brief) == "" {
 		return nil, errors.New("a task needs a brief")
 	}
-	repo, err := FindRepo(req.Project)
+	var err error
+	var repo Repo
+	if strings.TrimSpace(req.Project) == "" {
+		// Nothing named: the repository in front of the person.
+		if p, ferr := f.Mux.Focus(ctx); ferr == nil && p.Path != "" {
+			req.Project = p.Path
+		} else {
+			return nil, errors.New("no repository named, and none is in front of them")
+		}
+	}
+	if f.Projects != nil {
+		repo, err = f.Projects.Resolve(ctx, req.Project)
+	} else {
+		repo, err = FindRepo(req.Project)
+	}
 	if err != nil {
 		return nil, err
+	}
+	if f.Projects != nil {
+		f.Projects.Remember(repo)
 	}
 	if req.Kind == "" {
 		req.Kind = Ship
@@ -157,42 +178,7 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 			slog.Warn("fleet: could not pre-trust the worktree; the agent may wait on a dialog", "task", id, "error", err.Error())
 		}
 	}
-	argv := append([]string{}, f.Harness...)
-	if f.Model != nil {
-		if model := f.Model(t); model != "" {
-			argv = append(argv, "--model", model)
-		}
-	}
-	statusURL := ""
-	if f.StatusURL != nil {
-		statusURL = f.StatusURL(id)
-	}
-	if f.HookURL != nil {
-		settings, err := writeHarnessSettings(f.Store.TaskDir(id), f.HookURL(id, t.Incarnation), statusURL)
-		if err != nil {
-			return nil, err
-		}
-		argv = append(argv, "--settings", settings)
-	}
-	argv = append(argv, scaffold(t, statusURL, f.Store.ReportPath(id)))
-	env := []string{"VERA_TASK=" + id}
-	if f.Env != nil {
-		env = append(env, f.Env(t)...)
-	}
-	envFile, err := writeEnvFile(f.Store.TaskDir(id), env)
-	if err != nil {
-		return nil, err
-	}
-	// The shell sources the file, then becomes the harness: the pane's
-	// foreground program is the agent, and the file's contents never
-	// cross the screen.
-	command := append([]string{"sh", "-c", `set -a; . "$0"; set +a; exec "$@"`, envFile}, argv...)
-	pane, err := f.Mux.Spawn(ctx, mux.Spawn{
-		Session: t.Session,
-		Name:    name,
-		Dir:     t.Worktree,
-		Command: command,
-	})
+	pane, err := f.open(ctx, t, nil)
 	if err != nil {
 		if req.Kind == Ship {
 			if wt, gerr := repo.Get(name); gerr == nil {
@@ -242,6 +228,91 @@ func (f *Fleet) Hook(id, incarnation string, ev HookEvent) error {
 	}
 	f.Poke()
 	return nil
+}
+
+// open starts the harness in the task's room and returns its pane.
+// extra is argv between the harness and the prompt; the prompt is the
+// scaffolded brief for a fresh start, or a nudge for a resume.
+func (f *Fleet) open(ctx context.Context, t *Task, extra []string) (*mux.Pane, error) {
+	argv := append([]string{}, f.Harness...)
+	if f.Model != nil {
+		if model := f.Model(t); model != "" {
+			argv = append(argv, "--model", model)
+		}
+	}
+	statusURL := ""
+	if f.StatusURL != nil {
+		statusURL = f.StatusURL(t.ID)
+	}
+	if f.HookURL != nil {
+		settings, err := writeHarnessSettings(f.Store.TaskDir(t.ID), f.HookURL(t.ID, t.Incarnation), statusURL)
+		if err != nil {
+			return nil, err
+		}
+		argv = append(argv, "--settings", settings)
+	}
+	argv = append(argv, extra...)
+	if len(extra) == 0 {
+		argv = append(argv, scaffold(t, statusURL, f.Store.ReportPath(t.ID)))
+	} else {
+		argv = append(argv, "Vera here: your terminal was restarted. Carry on from where you were; your status curl and report path are unchanged. Post a working status first.")
+	}
+	env := []string{"VERA_TASK=" + t.ID}
+	if f.Env != nil {
+		env = append(env, f.Env(t)...)
+	}
+	envFile, err := writeEnvFile(f.Store.TaskDir(t.ID), env)
+	if err != nil {
+		return nil, err
+	}
+	// The shell sources the file, then becomes the harness: the pane's
+	// foreground program is the agent, and the file's contents never
+	// cross the screen.
+	command := append([]string{"sh", "-c", `set -a; . "$0"; set +a; exec "$@"`, envFile}, argv...)
+	return f.Mux.Spawn(ctx, mux.Spawn{
+		Session: t.Session,
+		Name:    t.Name,
+		Dir:     t.Worktree,
+		Command: command,
+	})
+}
+
+// Resume picks a task up whose pane is gone — the multiplexer was
+// restarted, the window was closed — in the same room, with the
+// harness continuing its last session there. The worktree, branch and
+// log are all still where they were; only the pane is new. This is
+// what makes the fleet survive a rook restart, which is firstmate's
+// "kill the session anytime and the next one reconciles".
+func (f *Fleet) Resume(ctx context.Context, id string) (*Task, error) {
+	t, err := f.Store.Load(id)
+	if err != nil {
+		return nil, err
+	}
+	if t.Closed {
+		return nil, errors.New("the task is closed")
+	}
+	if p, err := f.Mux.Get(ctx, t.Pane); err == nil && !p.Dead {
+		return t, errors.New("the task's terminal is still there; nothing to resume")
+	}
+	if _, err := os.Stat(t.Worktree); err != nil {
+		return nil, fmt.Errorf("the task's checkout is gone: %s", t.Worktree)
+	}
+	t.Incarnation = newID()
+	t.TurnEnded = time.Time{}
+	// --continue: the harness's own most recent session in that
+	// directory, which is this task's.
+	pane, err := f.open(ctx, t, []string{"--continue"})
+	if err != nil {
+		return nil, err
+	}
+	t.Pane = pane.ID
+	if err := f.Store.Save(t); err != nil {
+		return nil, err
+	}
+	_ = f.Store.Append(id, Status{Verb: Working, Text: "resumed in " + t.Session + " after its terminal went away", By: "vera"})
+	slog.Info("fleet: resumed", "task", id, "pane", t.Pane.String())
+	f.Poke()
+	return t, nil
 }
 
 // TurnEnded is the Stop hook, for callers that speak only that.

@@ -52,6 +52,7 @@ Verbs: working (what you are on now), blocked (you need a decision or informatio
 
 `, statusURL)
 	}
+	b.WriteString("Stay inside your room: do not install anything outside it, do not restart or kill services or processes you did not start, do not change the person's shell, editor or terminal, and do not touch the multiplexer you are running in. If landing your work needs any of that, write it in your report and stop; the person does it. ")
 	b.WriteString("Do not ask the person for permission to proceed on ordinary steps; make the routine calls yourself and reserve blocked for real forks in the road. Your terminal's own permission prompts are answered by Vera or the person, but every one of them stalls you: prefer commands the project already uses.")
 	return b.String()
 }

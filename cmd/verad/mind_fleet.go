@@ -40,7 +40,7 @@ func fleetTool() map[string]any {
 				"properties": map[string]any{
 					"action": map[string]any{
 						"type": "string",
-						"enum": []string{"list", "start", "answer", "land", "stop"},
+						"enum": []string{"list", "start", "answer", "resume", "land", "stop"},
 					},
 					"brief": map[string]any{
 						"type": "string",
@@ -49,8 +49,8 @@ func fleetTool() map[string]any {
 					},
 					"project": map[string]any{
 						"type": "string",
-						"description": "start: the repository's path — one of the repositories listed in the " +
-							"prompt when they name one. Leave empty only when they mean the one in front of them.",
+						"description": "start: the repository, by the name or path listed in the prompt. Leave " +
+							"empty only when they mean the one in front of them.",
 					},
 					"kind": map[string]any{
 						"type":        "string",
@@ -149,6 +149,18 @@ func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args
 		}
 		return "Sent. The task has their answer and is working again.", nil
 
+	case "resume":
+		if args.Task == "" {
+			return "", fmt.Errorf("resume needs a task id")
+		}
+		x.sign(ctx)
+		_ = reply(Frame{Status: "Picking it back up…"})
+		t, err := m.Fleet.Resume(ctx, args.Task)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Resumed task %s in %s; it is working again where it left off.", t.ID, shortPath(t.Project)), nil
+
 	case "land":
 		if args.Task == "" {
 			return "", fmt.Errorf("land needs a task id")
@@ -246,7 +258,7 @@ func fleetPhrase(v fleet.View, now time.Time) string {
 	case fleet.Broken:
 		return "FAILED; it gave up"
 	case fleet.Gone:
-		return "its terminal is gone; it may have been closed"
+		return "its terminal is gone (the multiplexer was restarted?) — its work is intact; `resume` picks it up where it left off"
 	default:
 		return string(v.State)
 	}

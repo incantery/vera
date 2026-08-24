@@ -25,6 +25,7 @@ func (l *lanTransport) fleetRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /fleet/{id}/land", l.fleetLand)
 	mux.HandleFunc("POST /fleet/{id}/teardown", l.fleetTeardown)
 	mux.HandleFunc("POST /fleet/{id}/seen", l.fleetSeen)
+	mux.HandleFunc("POST /fleet/{id}/resume", l.fleetResume)
 	// Loopback, no secret: the harness's Stop hook and the agent's own
 	// status line. They ring a bell and say a word; the supervisor
 	// re-reads the truth either way.
@@ -109,6 +110,19 @@ func (l *lanTransport) fleetTeardown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (l *lanTransport) fleetResume(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	t, err := l.fleet.Resume(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, err.Error(), fleetStatusCode(err))
+		return
+	}
+	writeJSON(w, t)
 }
 
 // fleetSeen: the phone rendered the log this far. What follows is

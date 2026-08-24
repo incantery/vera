@@ -380,7 +380,7 @@ func (m *chatModel) command(text string) tea.Cmd {
 	}
 	switch verb {
 	case "help", "?":
-		m.note("/tasks · /start <brief> · /scout <brief> · /report <id> · /answer <id> <text> · /land <id> · /stop <id> [force] · /seen <id> · /new (conversation) · /debug (F2) · /quit")
+		m.note("/tasks · /start [@repo] <brief> · /scout [@repo] <brief> · /resume <id> · /report <id> · /answer <id> <text> · /land <id> · /stop <id> [force] · /seen <id> · /new (conversation) · /debug (F2) · /quit")
 	case "quit", "q":
 		return tea.Quit
 	case "tasks", "t":
@@ -393,16 +393,33 @@ func (m *chatModel) command(text string) tea.Cmd {
 		m.layout()
 		return m.believe()
 	case "start", "scout":
+		// /start @rook <brief> names the repository; without it, the
+		// one in front of them (verad resolves it — the chat's own cwd
+		// means nothing).
+		project := ""
+		if strings.HasPrefix(rest, "@") {
+			project, rest, _ = strings.Cut(rest[1:], " ")
+			rest = strings.TrimSpace(rest)
+		}
 		if rest == "" {
-			m.fail("/" + verb + " needs a brief")
+			m.fail("/" + verb + " [@repo] <brief>")
 			return nil
 		}
-		cwd, _ := os.Getwd()
 		kind := fleet.Ship
 		if verb == "scout" {
 			kind = fleet.Scout
 		}
-		return post("/fleet", fleet.Request{Project: cwd, Kind: kind, Brief: rest}, "started in "+cwd)
+		where := project
+		if where == "" {
+			where = "the repo in front of you"
+		}
+		return post("/fleet", fleet.Request{Project: project, Kind: kind, Brief: rest}, "started in "+where)
+	case "resume":
+		if id == "" {
+			m.fail("/resume <id>")
+			return nil
+		}
+		return post("/fleet/"+id+"/resume", nil, "resumed "+id)
 	case "answer", "a":
 		if id == "" || arg == "" {
 			m.fail("/answer <id> <text>")
@@ -642,7 +659,7 @@ func fleetPhrase(v fleet.View, now time.Time) string {
 	case fleet.Broken:
 		return "failed"
 	case fleet.Gone:
-		return "its terminal is gone"
+		return "its terminal is gone — /resume picks it up"
 	default:
 		return string(v.State)
 	}

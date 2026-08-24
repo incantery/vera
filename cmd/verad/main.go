@@ -289,6 +289,7 @@ func main() {
 	// them. It needs a mux to put a pane in; without one it is off.
 	if term != nil && !*noTools {
 		f := fleet.New(term, fleet.NewStore(filepath.Join(stateDir(), "vera", "fleet")))
+		f.Projects = &fleet.Projects{Mux: term, File: filepath.Join(stateDir(), "vera", "projects.json")}
 		f.HookURL = func(task, incarnation string) string {
 			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/hook?incarnation=" + incarnation
 		}
@@ -303,7 +304,7 @@ func main() {
 		lan.fleet = f
 		if mind != nil {
 			mind.Fleet = f
-			mind.Projects = &fleet.Projects{Mux: term}
+			mind.Projects = f.Projects
 		}
 		go func() { _ = f.Supervise(ctx) }()
 	}
