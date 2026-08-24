@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,23 +20,26 @@ import (
 
 // Rook is the backend for rook's own engine, over its unix socket.
 //
-// The wire is rook's placeholder protocol (mux/src/proto.zig): one
-// type byte, a little-endian length, a payload; the structured cell
-// protocol replaces it. This file is written to be thrown away with
-// it — a thin client, no cleverness, one connection per question.
+// Rook is the single writer of its state; Vera replicates it and
+// changes it only by issuing commands (rook's docs/surfaces.md). So
+// this file reads one thing — the state feed, a JSON snapshot of
+// everything the engine knows, pushed on change — and sends a handful
+// of commands. The wire is rook's placeholder framing (proto.zig: one
+// type byte, a little-endian length, a payload); the snapshot's
+// schema is the part meant to last.
 //
-// What rook gives that tmux could not: the block table is PUSHED on
-// change, so Watch is an event stream rather than a poll; and a block
-// client can hold a resize lease, so the phone can narrow a pane
-// without reflowing the desk. What it does not give yet — which pane
-// has the person, a per-block activity pulse, a plain-text snapshot,
-// a spawn that carries a command — is noted at each verb, and each
-// is a small ask on rook's side rather than a workaround here.
+// What rook gives that tmux could not: focus and a per-pane activity
+// stamp arrive as fields of the same snapshot rather than as hooks and
+// heuristics; a block client can hold a resize lease, so the phone
+// narrows a pane without reflowing the desk; and a workspace can be
+// opened quietly, so starting work never moves the person.
 type Rook struct {
 	// Sock is the engine's socket; empty means $ROOK_MUX_SOCK or the
 	// default beside rook's state.
 	Sock string
-	// Every is how often Watch re-asks for the table between pushes.
+	// Every is how often Watch re-asks for a fresh snapshot between
+	// pushes — the pushed stream holds activity back to its own
+	// cadence; a direct ask always carries it.
 	Every time.Duration
 
 	poke chan struct{}
@@ -46,20 +50,20 @@ type Rook struct {
 
 // rook's message kinds (proto.zig).
 const (
-	c2sAttach      byte = 1
 	c2sStdin       byte = 2
 	c2sResize      byte = 3
-	c2sDetach      byte = 4
 	c2sSession     byte = 9
-	c2sBlocks      byte = 10
 	c2sAttachBlock byte = 11
 	c2sBlockCmd    byte = 12
+	c2sState       byte = 13
+	c2sCapture     byte = 14
 
 	s2cDraw         byte = 1
 	s2cExit         byte = 2
-	s2cStatsText    byte = 3
-	s2cBlocksText   byte = 4
 	s2cBlockCreated byte = 5
+	s2cStateJSON    byte = 6
+	s2cAck          byte = 7
+	s2cText         byte = 8
 )
 
 // RookSock is where the engine listens.
@@ -123,7 +127,7 @@ func recv(br *bufio.Reader) (frame, error) {
 }
 
 // waitFor reads frames until one of kind arrives or the deadline
-// passes. Frames of other kinds are dropped — a control connection is
+// passes. Others — acks, draws — are dropped: a control connection is
 // not a viewer.
 func waitFor(c net.Conn, br *bufio.Reader, kind byte, timeout time.Duration) (frame, error) {
 	_ = c.SetReadDeadline(time.Now().Add(timeout))
@@ -142,48 +146,160 @@ func waitFor(c net.Conn, br *bufio.Reader, kind byte, timeout time.Duration) (fr
 	}
 }
 
-// --- the block table ----------------------------------------------------
+// --- the state feed -----------------------------------------------------
 
-// block is one row of rook's table: id, place (workspace:window, or
-// "global:pin" / "<ws>:pin"), foreground program, size, cwd.
-type block struct {
-	id   uint32
-	ws   string
-	slot string
-	fg   string
-	cols int
-	rows int
-	cwd  string
+// snapshot is the subset of rook's state JSON Vera reads. Unknown
+// fields are skipped; the schema says readers accept newer.
+type snapshot struct {
+	Version int    `json:"rookMuxState"`
+	Serial  uint64 `json:"serial"`
+	Focus   struct {
+		Pane uint32 `json:"pane"`
+		Mode string `json:"mode"`
+	} `json:"focus"`
+	Workspaces []struct {
+		Name    string `json:"name"`
+		Current bool   `json:"current"`
+		Windows []struct {
+			Index  int             `json:"index"`
+			Layout json.RawMessage `json:"layout"`
+		} `json:"windows"`
+		Pins []uint32 `json:"pins"`
+	} `json:"workspaces"`
+	Panes []struct {
+		ID           uint32 `json:"id"`
+		Program      string `json:"program"`
+		Cwd          string `json:"cwd"`
+		Cols         int    `json:"cols"`
+		Rows         int    `json:"rows"`
+		Exited       bool   `json:"exited"`
+		LastOutputMs int64  `json:"lastOutputMs"`
+	} `json:"panes"`
+	Pins []struct {
+		Pane  uint32 `json:"pane"`
+		Scope string `json:"scope"`
+	} `json:"pins"`
 }
 
-func parseBlocks(text string) []block {
-	var out []block
-	for _, line := range strings.Split(text, "\n") {
-		f := strings.Split(strings.TrimRight(line, "\r"), "\t")
-		if len(f) < 5 {
-			continue
-		}
-		id, err := strconv.ParseUint(f[0], 10, 32)
-		if err != nil {
-			continue
-		}
-		ws, slot, _ := strings.Cut(f[1], ":")
-		b := block{id: uint32(id), ws: ws, slot: slot, fg: f[2], cwd: f[4]}
-		if c, r, ok := strings.Cut(f[3], "x"); ok {
-			b.cols, _ = strconv.Atoi(c)
-			b.rows, _ = strconv.Atoi(r)
-		}
-		out = append(out, b)
+// leaves collects the pane ids in a layout tree, in order.
+func leaves(layout json.RawMessage, out *[]uint32) {
+	var n struct {
+		Pane *uint32         `json:"pane"`
+		A    json.RawMessage `json:"a"`
+		B    json.RawMessage `json:"b"`
 	}
-	return out
+	if json.Unmarshal(layout, &n) != nil {
+		return
+	}
+	if n.Pane != nil {
+		*out = append(*out, *n.Pane)
+		return
+	}
+	if n.A != nil {
+		leaves(n.A, out)
+	}
+	if n.B != nil {
+		leaves(n.B, out)
+	}
 }
 
-// pane maps a block to the neutral shape. Window is the block's slot
-// (a window index or "pin"); Pane is the block id, which is the stable
-// part — rook renumbers windows, never blocks. Active is zero: rook
-// does not report a pulse yet.
-func (b block) pane() Pane {
-	return Pane{ID: ID{Session: b.ws, Window: b.slot, Pane: strconv.FormatUint(uint64(b.id), 10)}, Command: b.fg, Path: b.cwd}
+// panes turns a snapshot into the neutral shape. Window is the window
+// index or "pin"; Pane is the block id, the stable part — rook
+// renumbers windows, never panes.
+func (s *snapshot) panes() ([]Pane, map[uint32]ID) {
+	place := map[uint32]ID{}
+	for _, ws := range s.Workspaces {
+		for _, w := range ws.Windows {
+			var ids []uint32
+			leaves(w.Layout, &ids)
+			for _, id := range ids {
+				place[id] = ID{Session: ws.Name, Window: strconv.Itoa(w.Index), Pane: strconv.FormatUint(uint64(id), 10)}
+			}
+		}
+		for _, id := range ws.Pins {
+			place[id] = ID{Session: ws.Name, Window: "pin", Pane: strconv.FormatUint(uint64(id), 10)}
+		}
+	}
+	for _, p := range s.Pins {
+		if p.Scope == "global" {
+			place[p.Pane] = ID{Session: "global", Window: "pin", Pane: strconv.FormatUint(uint64(p.Pane), 10)}
+		}
+	}
+	out := make([]Pane, 0, len(s.Panes))
+	for _, p := range s.Panes {
+		id, ok := place[p.ID]
+		if !ok {
+			id = ID{Pane: strconv.FormatUint(uint64(p.ID), 10)}
+		}
+		pane := Pane{ID: id, Command: p.Program, Path: p.Cwd, Dead: p.Exited}
+		if p.LastOutputMs > 0 {
+			pane.Active = time.UnixMilli(p.LastOutputMs)
+		}
+		out = append(out, pane)
+	}
+	return out, place
+}
+
+func (s *snapshot) focus() (*Pane, error) {
+	panes, _ := s.panes()
+	want := strconv.FormatUint(uint64(s.Focus.Pane), 10)
+	for i := range panes {
+		if panes[i].ID.Pane == want {
+			return &panes[i], nil
+		}
+	}
+	return nil, ErrNoFocus
+}
+
+func (r *Rook) state(ctx context.Context) (*snapshot, error) {
+	c, err := r.dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	if err := send(c, c2sState, []byte{0}); err != nil {
+		return nil, ErrUnavailable
+	}
+	f, err := waitFor(c, bufio.NewReader(c), s2cStateJSON, 2*time.Second)
+	if err != nil {
+		return nil, ErrUnavailable
+	}
+	var s snapshot
+	if err := json.Unmarshal(f.payload, &s); err != nil {
+		return nil, fmt.Errorf("rook: bad state: %w", err)
+	}
+	return &s, nil
+}
+
+func (r *Rook) List(ctx context.Context) ([]Pane, error) {
+	s, err := r.state(ctx)
+	if err != nil {
+		return nil, err
+	}
+	panes, _ := s.panes()
+	return panes, nil
+}
+
+func (r *Rook) Get(ctx context.Context, id ID) (*Pane, error) {
+	s, err := r.state(ctx)
+	if err != nil {
+		return nil, err
+	}
+	panes, _ := s.panes()
+	for i := range panes {
+		if panes[i].ID.Pane == id.Pane {
+			return &panes[i], nil
+		}
+	}
+	return nil, ErrNoPane
+}
+
+func (r *Rook) Focus(ctx context.Context) (*Pane, error) {
+	s, err := r.state(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.focus()
 }
 
 func blockID(id ID) (uint32, bool) {
@@ -191,83 +307,20 @@ func blockID(id ID) (uint32, bool) {
 	return uint32(n), err == nil
 }
 
-func (r *Rook) blocks(ctx context.Context) ([]block, error) {
-	c, err := r.dial(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer c.Close()
-	if err := send(c, c2sBlocks, nil); err != nil {
-		return nil, ErrUnavailable
-	}
-	f, err := waitFor(c, bufio.NewReader(c), s2cBlocksText, 2*time.Second)
-	if err != nil {
-		return nil, ErrUnavailable
-	}
-	return parseBlocks(string(f.payload)), nil
-}
-
-func (r *Rook) List(ctx context.Context) ([]Pane, error) {
-	bs, err := r.blocks(ctx)
-	if err != nil {
-		return nil, err
-	}
-	panes := make([]Pane, 0, len(bs))
-	for _, b := range bs {
-		panes = append(panes, b.pane())
-	}
-	return panes, nil
-}
-
-func (r *Rook) find(ctx context.Context, id ID) (block, error) {
-	want, ok := blockID(id)
-	if !ok {
-		return block{}, ErrNoPane
-	}
-	bs, err := r.blocks(ctx)
-	if err != nil {
-		return block{}, err
-	}
-	for _, b := range bs {
-		if b.id == want {
-			return b, nil
-		}
-	}
-	return block{}, ErrNoPane
-}
-
-func (r *Rook) Get(ctx context.Context, id ID) (*Pane, error) {
-	b, err := r.find(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	p := b.pane()
-	return &p, nil
-}
-
-// Focus: rook does not yet tell a client which block has the person.
-// The ask is one s2c event; until then there is no focus to report.
-func (r *Rook) Focus(ctx context.Context) (*Pane, error) {
-	if _, err := r.blocks(ctx); err != nil {
-		return nil, err
-	}
-	return nil, ErrNoFocus
-}
-
-// --- a connection attached to one block ---------------------------------
+// --- commands -----------------------------------------------------------
 
 // attach opens a block client on id. flags: 1 takes the resize lease
-// (with cols×rows), 2 asks for scrollback backfill. The reply is a
-// snapshot draw frame, returned so Capture can read it; other callers
-// discard it.
-func (r *Rook) attach(ctx context.Context, id ID, cols, rows int, flags byte) (net.Conn, *bufio.Reader, []byte, error) {
+// (with cols×rows), 2 asks for scrollback backfill. Rook answers with a
+// snapshot draw and then the raw tee; a command connection ignores
+// both.
+func (r *Rook) attach(ctx context.Context, id ID, cols, rows int, flags byte) (net.Conn, *bufio.Reader, error) {
 	bid, ok := blockID(id)
 	if !ok {
-		return nil, nil, nil, ErrNoPane
+		return nil, nil, ErrNoPane
 	}
 	c, err := r.dial(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	var p [9]byte
 	binary.LittleEndian.PutUint32(p[0:], bid)
@@ -276,25 +329,24 @@ func (r *Rook) attach(ctx context.Context, id ID, cols, rows int, flags byte) (n
 	p[8] = flags
 	if err := send(c, c2sAttachBlock, p[:]); err != nil {
 		c.Close()
-		return nil, nil, nil, ErrUnavailable
+		return nil, nil, ErrUnavailable
 	}
 	br := bufio.NewReader(c)
-	f, err := waitFor(c, br, s2cDraw, 2*time.Second)
-	if err != nil {
+	if _, err := waitFor(c, br, s2cDraw, 2*time.Second); err != nil {
 		c.Close()
 		if strings.Contains(err.Error(), "no such block") {
-			return nil, nil, nil, ErrNoPane
+			return nil, nil, ErrNoPane
 		}
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return c, br, f.payload, nil
+	return c, br, nil
 }
 
 func (r *Rook) Send(ctx context.Context, id ID, text string) error {
 	if text == "" {
 		return nil
 	}
-	c, _, _, err := r.attach(ctx, id, 0, 0, 0)
+	c, _, err := r.attach(ctx, id, 0, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -303,7 +355,7 @@ func (r *Rook) Send(ctx context.Context, id ID, text string) error {
 }
 
 func (r *Rook) Enter(ctx context.Context, id ID) error {
-	c, _, _, err := r.attach(ctx, id, 0, 0, 0)
+	c, _, err := r.attach(ctx, id, 0, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -311,20 +363,33 @@ func (r *Rook) Enter(ctx context.Context, id ID) error {
 	return send(c, c2sStdin, []byte("\r"))
 }
 
-// Capture attaches, takes the snapshot rook sends every block client
-// on arrival, and reads the rows back out of it. The ask on rook's
-// side is a plain-text flag; until then the frame is decoded here.
+// Capture asks for the viewport as text: rows joined by newlines,
+// trailing blanks already trimmed, no styling.
 func (r *Rook) Capture(ctx context.Context, id ID) ([]string, error) {
-	b, err := r.find(ctx, id)
+	bid, ok := blockID(id)
+	if !ok {
+		return nil, ErrNoPane
+	}
+	c, err := r.dial(ctx)
 	if err != nil {
 		return nil, err
 	}
-	c, _, snap, err := r.attach(ctx, id, 0, 0, 0)
+	defer c.Close()
+	var p [4]byte
+	binary.LittleEndian.PutUint32(p[:], bid)
+	if err := send(c, c2sCapture, p[:]); err != nil {
+		return nil, ErrUnavailable
+	}
+	f, err := waitFor(c, bufio.NewReader(c), s2cText, 2*time.Second)
 	if err != nil {
+		// rook answers nothing for an unknown pane; a timeout is the
+		// only signal, so tell the two apart by asking.
+		if _, gerr := r.Get(ctx, id); gerr != nil {
+			return nil, gerr
+		}
 		return nil, err
 	}
-	c.Close()
-	lines := rowsOf(snap, b.rows)
+	lines := strings.Split(strings.TrimRight(string(f.payload), "\n"), "\n")
 	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
 		lines = lines[:len(lines)-1]
 	}
@@ -332,7 +397,7 @@ func (r *Rook) Capture(ctx context.Context, id ID) ([]string, error) {
 }
 
 func (r *Rook) Kill(ctx context.Context, id ID) error {
-	c, _, _, err := r.attach(ctx, id, 0, 0, 0)
+	c, _, err := r.attach(ctx, id, 0, 0, 0)
 	if err != nil {
 		return err
 	}
@@ -340,8 +405,8 @@ func (r *Rook) Kill(ctx context.Context, id ID) error {
 	return send(c, c2sBlockCmd, []byte{'x'})
 }
 
-// GoTo switches to the block's workspace. rook has no verb yet to
-// focus one block within it.
+// GoTo switches to the pane's workspace. Focusing one pane within it
+// is the next verb rook does not have.
 func (r *Rook) GoTo(ctx context.Context, id ID) error {
 	c, err := r.dial(ctx)
 	if err != nil {
@@ -351,152 +416,124 @@ func (r *Rook) GoTo(ctx context.Context, id ID) error {
 	return send(c, c2sSession, append([]byte{'s'}, id.Session...))
 }
 
-// Spawn: a new workspace when the session is unknown, else a new
-// window in it. rook starts a shell; the command, if any, is typed
-// into it — which leaves a prompt behind when the program exits
-// rather than a dead pane.
-//
-// Caveat, until rook grows a quiet form: creating a workspace makes it
-// current, which moves the person's view. A new window does not.
+// Spawn opens a workspace quietly ('N': the view stays where it is)
+// or a window in an existing one, and gets the new pane's id back as
+// block_created. Rook starts a shell; the command is typed into it,
+// which leaves a prompt behind when the program exits rather than a
+// dead pane.
 func (r *Rook) Spawn(ctx context.Context, s Spawn) (*Pane, error) {
 	if s.Session == "" {
 		return nil, errors.New("spawn needs a session")
 	}
-	before, err := r.blocks(ctx)
+	snap, err := r.state(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var in []block
-	for _, b := range before {
-		if b.ws == s.Session && b.slot != "pin" {
-			in = append(in, b)
+	var existing []Pane
+	panes, _ := snap.panes()
+	for _, p := range panes {
+		if p.ID.Session == s.Session && p.ID.Window != "pin" && !p.Dead {
+			existing = append(existing, p)
 		}
 	}
-	var created *block
-	if len(in) > 0 {
-		// A window beside the existing ones: attach to any block in
-		// the workspace and ask for 'c'. rook opens it in that block's
-		// cwd; Dir is applied by the shell below.
-		c, br, _, err := r.attach(ctx, in[0].pane().ID, 0, 0, 0)
+
+	var c net.Conn
+	var br *bufio.Reader
+	if len(existing) > 0 {
+		// A window beside the existing ones: any block in the
+		// workspace can ask for 'c'. Rook opens it in that block's cwd;
+		// Dir is applied by the shell below.
+		c, br, err = r.attach(ctx, existing[0].ID, 0, 0, 0)
 		if err != nil {
 			return nil, err
 		}
-		if err := send(c, c2sBlockCmd, []byte{'c'}); err != nil {
-			c.Close()
-			return nil, ErrUnavailable
-		}
-		f, err := waitFor(c, br, s2cBlockCreated, 2*time.Second)
-		c.Close()
-		if err != nil || len(f.payload) < 4 {
-			return nil, fmt.Errorf("rook: no reply to new window")
-		}
-		id := binary.LittleEndian.Uint32(f.payload)
-		created, err = r.await(ctx, func(b block) bool { return b.id == id })
-		if err != nil {
-			return nil, err
-		}
+		err = send(c, c2sBlockCmd, []byte{'c'})
 	} else {
-		c, err := r.dial(ctx)
+		c, err = r.dial(ctx)
 		if err != nil {
 			return nil, err
 		}
-		payload := append([]byte{'n'}, s.Session...)
+		br = bufio.NewReader(c)
+		payload := append([]byte{'N'}, s.Session...)
 		if s.Dir != "" {
 			payload = append(append(payload, '\t'), s.Dir...)
 		}
 		err = send(c, c2sSession, payload)
-		c.Close()
-		if err != nil {
-			return nil, ErrUnavailable
-		}
-		known := map[uint32]bool{}
-		for _, b := range before {
-			known[b.id] = true
-		}
-		created, err = r.await(ctx, func(b block) bool { return b.ws == s.Session && b.slot != "pin" && !known[b.id] })
-		if err != nil {
-			return nil, err
-		}
 	}
-	p := created.pane()
-	if len(s.Command) > 0 || len(in) > 0 && s.Dir != "" {
-		line := ""
+	if err != nil {
+		c.Close()
+		return nil, ErrUnavailable
+	}
+	f, err := waitFor(c, br, s2cBlockCreated, 2*time.Second)
+	c.Close()
+	if err != nil || len(f.payload) < 4 {
+		return nil, errors.New("rook: no reply to spawn")
+	}
+	id := binary.LittleEndian.Uint32(f.payload)
+	// The snapshot after the ack names the window it landed in.
+	p, err := r.Get(ctx, ID{Pane: strconv.FormatUint(uint64(id), 10)})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(s.Command) > 0 || (len(existing) > 0 && s.Dir != "") {
+		var line strings.Builder
 		if s.Dir != "" {
-			line += "cd " + shellQuote(s.Dir) + " && "
+			line.WriteString("cd " + shellQuote(s.Dir) + " && ")
 		}
 		for _, e := range s.Env {
-			line += "export " + shellQuote(e) + " && "
+			line.WriteString("export " + shellQuote(e) + " && ")
 		}
 		if len(s.Command) > 0 {
-			line += shellJoin(s.Command)
+			line.WriteString(shellJoin(s.Command))
 		} else {
-			line += "clear"
+			line.WriteString("clear")
 		}
-		// The shell may not have read its prompt yet; the pty queues
-		// input, so this is safe — but give it a beat so the line is
-		// not painted over by the shell's startup.
+		// The pty queues input before the shell reads it, so this is
+		// safe at once; a beat keeps the line clear of the prompt's own
+		// first paint. The leading space keeps it out of history.
 		time.Sleep(150 * time.Millisecond)
-		if err := r.Send(ctx, p.ID, " "+line); err != nil { // leading space: out of history
-			return &p, err
+		if err := r.Send(ctx, p.ID, " "+line.String()); err != nil {
+			return p, err
 		}
 		if err := r.Enter(ctx, p.ID); err != nil {
-			return &p, err
+			return p, err
 		}
 	}
-	return &p, nil
-}
-
-// await polls the table briefly for a block matching pred.
-func (r *Rook) await(ctx context.Context, pred func(block) bool) (*block, error) {
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		bs, err := r.blocks(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, b := range bs {
-			if pred(b) {
-				return &b, nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
-	return nil, errors.New("rook: the new pane did not appear")
+	return p, nil
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // Narrow takes the resize lease on the block and HOLDS the connection:
 // the lease is the connection, and the geometry returns to the desk
-// when it drops. This is the thing tmux could not do — the desk never
-// reflows.
+// when it drops. The desk never reflows.
 func (r *Rook) Narrow(ctx context.Context, id ID, cols int) error {
 	if cols < 20 || cols > 300 {
 		cols = 52
 	}
-	b, err := r.find(ctx, id)
+	p, err := r.Get(ctx, id)
 	if err != nil {
 		return err
 	}
-	rows := b.rows
-	if rows == 0 {
-		rows = 40
+	rows := 40
+	if s, err := r.state(ctx); err == nil {
+		for _, sp := range s.Panes {
+			if strconv.FormatUint(uint64(sp.ID), 10) == p.ID.Pane && sp.Rows > 0 {
+				rows = sp.Rows
+			}
+		}
 	}
 	r.mu.Lock()
 	old := r.leases[id]
 	r.mu.Unlock()
 	if old != nil {
-		// Same lease, new width: resize on the held connection.
 		var g [4]byte
 		binary.LittleEndian.PutUint16(g[0:], uint16(cols))
 		binary.LittleEndian.PutUint16(g[2:], uint16(rows))
 		return send(old, c2sResize, g[:])
 	}
-	c, _, _, err := r.attach(ctx, id, cols, rows, 1)
+	c, _, err := r.attach(ctx, id, cols, rows, 1)
 	if err != nil {
 		return err
 	}
@@ -526,19 +563,20 @@ func (r *Rook) Poke() {
 	}
 }
 
-// Watch holds one connection with the table subscription open and
-// turns each push into events. rook pushes on structural change and
-// on foreground/cwd drift; a re-ask on the ticker covers a missed one.
-// Focus events never come — rook does not send them yet.
+// Watch subscribes to the feed and turns each snapshot into events:
+// focus and pane changes, exits, and the mux going away and coming
+// back. A ticker re-asks so activity — which the pushed stream holds
+// back — stays fresh.
 func (r *Rook) Watch(ctx context.Context, fn func(Event)) error {
 	every := r.Every
 	if every == 0 {
 		every = 5 * time.Second
 	}
 	last := map[ID]Pane{}
+	var lastFocus *Pane
 	gone := false
 	for {
-		err := r.watchOnce(ctx, every, last, &gone, fn)
+		err := r.watchOnce(ctx, every, last, &lastFocus, &gone, fn)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -550,6 +588,10 @@ func (r *Rook) Watch(ctx context.Context, fn func(Event)) error {
 				fn(Event{Kind: PaneExited, Pane: &p, At: now})
 			}
 			clear(last)
+			if lastFocus != nil {
+				lastFocus = nil
+				fn(Event{Kind: FocusChanged, At: now})
+			}
 			fn(Event{Kind: Gone, At: now})
 		}
 		select {
@@ -561,13 +603,13 @@ func (r *Rook) Watch(ctx context.Context, fn func(Event)) error {
 	}
 }
 
-func (r *Rook) watchOnce(ctx context.Context, every time.Duration, last map[ID]Pane, gone *bool, fn func(Event)) error {
+func (r *Rook) watchOnce(ctx context.Context, every time.Duration, last map[ID]Pane, lastFocus **Pane, gone *bool, fn func(Event)) error {
 	c, err := r.dial(ctx)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
-	if err := send(c, c2sBlocks, nil); err != nil {
+	if err := send(c, c2sState, []byte{1}); err != nil {
 		return err
 	}
 	if *gone {
@@ -596,23 +638,31 @@ func (r *Rook) watchOnce(ctx context.Context, every time.Duration, last map[ID]P
 		case err := <-errs:
 			return err
 		case <-tick.C:
-			if err := send(c, c2sBlocks, nil); err != nil {
+			if err := send(c, c2sState, []byte{0}); err != nil {
 				return err
 			}
 		case <-r.poke:
-			if err := send(c, c2sBlocks, nil); err != nil {
+			if err := send(c, c2sState, []byte{0}); err != nil {
 				return err
 			}
 		case f := <-frames:
-			if f.kind != s2cBlocksText {
+			if f.kind != s2cStateJSON {
+				continue
+			}
+			var s snapshot
+			if json.Unmarshal(f.payload, &s) != nil {
 				continue
 			}
 			now := time.Now()
+			panes, _ := s.panes()
 			seen := map[ID]Pane{}
-			for _, b := range parseBlocks(string(f.payload)) {
-				p := b.pane()
+			for _, p := range panes {
 				seen[p.ID] = p
-				if old, ok := last[p.ID]; !ok || old != p {
+				old, ok := last[p.ID]
+				switch {
+				case ok && p.Dead && !old.Dead:
+					fn(Event{Kind: PaneExited, Pane: &p, At: now})
+				case !ok || old != p:
 					fn(Event{Kind: PaneChanged, Pane: &p, At: now})
 				}
 			}
@@ -625,6 +675,15 @@ func (r *Rook) watchOnce(ctx context.Context, every time.Duration, last map[ID]P
 			for k, v := range seen {
 				last[k] = v
 			}
+			focus, ferr := s.focus()
+			switch {
+			case ferr != nil && *lastFocus != nil:
+				*lastFocus = nil
+				fn(Event{Kind: FocusChanged, At: now})
+			case ferr == nil && (*lastFocus == nil || focus.ID != (*lastFocus).ID || focus.Command != (*lastFocus).Command || focus.Path != (*lastFocus).Path):
+				*lastFocus = focus
+				fn(Event{Kind: FocusChanged, Pane: focus, At: now})
+			}
 		}
 	}
 }
@@ -634,109 +693,4 @@ func errText(err error) string {
 		return ""
 	}
 	return err.Error()
-}
-
-// --- reading rows out of a snapshot -------------------------------------
-
-// rowsOf turns rook's snapshot frame — clear, home, then each row
-// painted with cursor moves and SGR — back into plain rows. It knows
-// exactly as much VT as that frame uses: CUP, SGR and the other CSI
-// sequences (skipped), OSC (skipped), CR/LF, and printable text.
-func rowsOf(frame []byte, rows int) []string {
-	if rows <= 0 {
-		rows = 200
-	}
-	grid := make([][]rune, rows)
-	x, y := 0, 0
-	put := func(r rune) {
-		if y >= rows {
-			return
-		}
-		for len(grid[y]) <= x {
-			grid[y] = append(grid[y], ' ')
-		}
-		grid[y][x] = r
-		x++
-	}
-	s := []rune(string(frame))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c == 0x1b && i+1 < len(s) && s[i+1] == '[':
-			// CSI: parameters, then a final byte in 0x40–0x7e.
-			j := i + 2
-			for j < len(s) && (s[j] < 0x40 || s[j] > 0x7e) {
-				j++
-			}
-			if j >= len(s) {
-				return finish(grid)
-			}
-			params := string(s[i+2 : j])
-			switch s[j] {
-			case 'H', 'f':
-				row, col := 1, 1
-				if a, b, ok := strings.Cut(params, ";"); ok {
-					row, _ = strconv.Atoi(a)
-					col, _ = strconv.Atoi(b)
-				} else if params != "" {
-					row, _ = strconv.Atoi(params)
-				}
-				if row < 1 {
-					row = 1
-				}
-				if col < 1 {
-					col = 1
-				}
-				y, x = row-1, col-1
-			case 'J':
-				if params == "" || params == "2" {
-					for k := range grid {
-						grid[k] = nil
-					}
-				}
-			case 'K':
-				if y < rows && x < len(grid[y]) {
-					grid[y] = grid[y][:x]
-				}
-			case 'C':
-				n, _ := strconv.Atoi(params)
-				if n < 1 {
-					n = 1
-				}
-				x += n
-			}
-			i = j
-		case c == 0x1b && i+1 < len(s) && s[i+1] == ']':
-			// OSC: to BEL or ST.
-			j := i + 2
-			for j < len(s) && s[j] != 0x07 && !(s[j] == 0x1b && j+1 < len(s) && s[j+1] == '\\') {
-				j++
-			}
-			if j < len(s) && s[j] == 0x1b {
-				j++
-			}
-			i = j
-		case c == 0x1b:
-			// Some other escape: skip it and its one following byte.
-			i++
-		case c == '\r':
-			x = 0
-		case c == '\n':
-			y++
-			x = 0
-		case c < 0x20:
-			// other control: ignore
-		default:
-			put(c)
-		}
-	}
-	return finish(grid)
-}
-
-func finish(grid [][]rune) []string {
-	out := make([]string, len(grid))
-	for i, row := range grid {
-		out[i] = strings.TrimRight(string(row), " ")
-	}
-	return out
 }

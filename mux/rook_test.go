@@ -2,70 +2,109 @@ package mux
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestParseBlocks(t *testing.T) {
-	text := "1\tmain:1\tversions\t103x42\t/Users/me/rook\n3\tmain:2\tzsh\t103x42\t/Users/me/rook\n7\tglobal:pin\tclaude\t40x42\t/x\nbad line\n"
-	bs := parseBlocks(text)
-	if len(bs) != 3 {
-		t.Fatalf("got %d blocks", len(bs))
+// A snapshot in the shape statefeed.zig emits (schema 1).
+const stateFixture = `{"rookMuxState":1,"epoch":"2f11a944","serial":6,"pid":50928,
+"geometry":{"cols":103,"rows":42},
+"focus":{"pane":4,"mode":"pane"},
+"workspaces":[
+ {"name":"main","current":false,"windows":[
+   {"index":1,"name":"versions","current":true,"zoomed":false,"focus":1,"layout":{"pane":1}},
+   {"index":2,"name":"zsh","current":false,"zoomed":false,"focus":3,"layout":{"split":"v","ratio":0.5,"a":{"pane":3},"b":{"pane":5}}}
+ ],"pins":[]},
+ {"name":"vera","current":true,"windows":[
+   {"index":1,"name":"versions","current":true,"zoomed":false,"focus":4,"layout":{"pane":4}}
+ ],"pins":[9]}
+],
+"panes":[
+ {"id":1,"pid":10,"program":"versions","cwd":"/x/rook","cols":103,"rows":42,"rect":null,"focused":false,"visible":true,"wantsMouse":false,"exited":false,"lastOutputMs":1756050000000},
+ {"id":3,"pid":11,"program":"zsh","cwd":"/x/rook","cols":51,"rows":42,"rect":null,"focused":false,"visible":false,"wantsMouse":false,"exited":false,"lastOutputMs":0},
+ {"id":5,"pid":12,"program":"cat","cwd":"/x/rook","cols":51,"rows":42,"rect":null,"focused":false,"visible":false,"wantsMouse":false,"exited":true},
+ {"id":4,"pid":13,"program":"claude","cwd":"/x/vera","cols":103,"rows":42,"rect":{"x":0,"y":1,"w":103,"h":41},"focused":true,"visible":true,"wantsMouse":false,"exited":false,"lastOutputMs":1756050001000},
+ {"id":9,"pid":14,"program":"tail","cwd":"/x/vera","cols":30,"rows":42,"rect":null,"focused":false,"visible":true,"wantsMouse":false,"exited":false}
+],
+"pins":[{"pane":9,"scope":"vera"}],
+"surfaces":[],"clients":[]}
+`
+
+func TestSnapshotPanes(t *testing.T) {
+	var s snapshot
+	if err := json.Unmarshal([]byte(stateFixture), &s); err != nil {
+		t.Fatal(err)
 	}
-	if bs[0].id != 1 || bs[0].ws != "main" || bs[0].slot != "1" || bs[0].fg != "versions" || bs[0].cols != 103 || bs[0].rows != 42 || bs[0].cwd != "/Users/me/rook" {
-		t.Errorf("%+v", bs[0])
+	panes, _ := s.panes()
+	byID := map[string]Pane{}
+	for _, p := range panes {
+		byID[p.ID.Pane] = p
 	}
-	if bs[2].slot != "pin" || bs[2].ws != "global" {
-		t.Errorf("%+v", bs[2])
+	if len(byID) != 5 {
+		t.Fatalf("got %d panes", len(byID))
 	}
-	p := bs[1].pane()
-	if p.ID != (ID{"main", "2", "3"}) || p.Command != "zsh" || p.Path != "/Users/me/rook" {
-		t.Errorf("%+v", p)
+	if p := byID["1"]; p.ID != (ID{"main", "1", "1"}) || p.Command != "versions" || !p.Active.Equal(time.UnixMilli(1756050000000)) {
+		t.Errorf("pane 1: %+v", p)
 	}
-	if id, ok := blockID(p.ID); !ok || id != 3 {
+	if p := byID["5"]; p.ID != (ID{"main", "2", "5"}) || !p.Dead {
+		t.Errorf("pane 5 (split leaf, exited): %+v", p)
+	}
+	if p := byID["3"]; !p.Active.IsZero() {
+		t.Errorf("lastOutputMs 0 should be zero time: %+v", p)
+	}
+	if p := byID["9"]; p.ID != (ID{"vera", "pin", "9"}) {
+		t.Errorf("pin: %+v", p)
+	}
+	f, err := s.focus()
+	if err != nil || f.ID != (ID{"vera", "1", "4"}) || f.Command != "claude" {
+		t.Errorf("focus: %v %+v", err, f)
+	}
+	if id, ok := blockID(f.ID); !ok || id != 4 {
 		t.Error("blockID")
-	}
-	if _, ok := blockID(ID{"s", "1", "zero"}); ok {
-		t.Error("non-numeric pane should not be a block")
 	}
 }
 
-func TestRowsOf(t *testing.T) {
-	// The shape blockSnapshot emits: sync on, clear+home+reset, rows
-	// painted via CUP with SGR runs, cursor placed, sync off.
-	frame := "\x1b[?2026h\x1b[2J\x1b[H\x1b[0m" +
-		"\x1b[1;1H\x1b[38;2;1;2;3mhello\x1b[0m world" +
-		"\x1b[2;1H$ " +
-		"\x1b[3;1H\x1b[1mbold\x1b[0m\x1b[5Cafter" +
-		"\x1b]2;title\x07" +
-		"\x1b[2;3H\x1b[6 q\x1b[?25h\x1b[?2026l"
-	rows := rowsOf([]byte(frame), 5)
-	want := []string{"hello world", "$", "bold     after", "", ""}
-	if strings.Join(rows, "|") != strings.Join(want, "|") {
-		t.Errorf("got %q", rows)
+func TestSnapshotNoFocus(t *testing.T) {
+	var s snapshot
+	_ = json.Unmarshal([]byte(`{"rookMuxState":1,"focus":{"pane":0,"mode":"pane"},"workspaces":[],"panes":[]}`), &s)
+	if _, err := s.focus(); err != ErrNoFocus {
+		t.Error(err)
 	}
-	// Truncated escape at the end must not panic.
-	_ = rowsOf([]byte("abc\x1b["), 2)
 }
 
 // TestRookLive drives the engine the person is running. Opt-in: it
-// creates a workspace in THEIR rook, which switches their view.
+// creates a workspace in THEIR rook. With quiet spawn the view should
+// stay put; the test checks that too.
 func TestRookLive(t *testing.T) {
 	if os.Getenv("VERA_ROOK_LIVE") == "" {
-		t.Skip("set VERA_ROOK_LIVE=1 to run against the live rook (it will switch your workspace)")
+		t.Skip("set VERA_ROOK_LIVE=1 to run against the live rook")
 	}
 	r := NewRook("")
 	ctx := context.Background()
-	if _, err := r.List(ctx); err != nil {
+	before, err := r.state(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if before.Version < 1 {
+		t.Fatalf("server does not speak the state feed (rookMuxState=%d); rook kill to restart on the new build", before.Version)
+	}
+	focusBefore := before.Focus.Pane
+
 	p, err := r.Spawn(ctx, Spawn{Session: "vera-test", Dir: t.TempDir(), Command: []string{"sh", "-c", "echo hello from vera; exec cat"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = r.Kill(ctx, p.ID) })
+	if p.ID.Session != "vera-test" {
+		t.Fatalf("spawned into %+v", p.ID)
+	}
+	if after, _ := r.state(ctx); after.Focus.Pane != focusBefore {
+		t.Errorf("quiet spawn moved focus: %d → %d", focusBefore, after.Focus.Pane)
+	}
+
 	time.Sleep(500 * time.Millisecond)
 	lines, err := r.Capture(ctx, p.ID)
 	if err != nil {
@@ -85,6 +124,11 @@ func TestRookLive(t *testing.T) {
 	if strings.Count(strings.Join(lines, "\n"), "typed by vera") != 2 {
 		t.Fatalf("cat should echo: %q", lines)
 	}
+	got, err := r.Get(ctx, p.ID)
+	if err != nil || got.Active.IsZero() || time.Since(got.Active) > 10*time.Second {
+		t.Errorf("activity stamp: %v %+v", err, got)
+	}
+
 	// A second spawn into the same workspace is a new window.
 	p2, err := r.Spawn(ctx, Spawn{Session: "vera-test", Command: []string{"cat"}})
 	if err != nil {
@@ -97,8 +141,12 @@ func TestRookLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(200 * time.Millisecond)
-	if b, _ := r.find(ctx, p2.ID); b.cols != 40 {
-		t.Errorf("lease did not resize: %+v", b)
+	if s, _ := r.state(ctx); s != nil {
+		for _, sp := range s.Panes {
+			if sp.ID == mustID(p2.ID) && sp.Cols != 40 {
+				t.Errorf("lease did not resize: %+v", sp)
+			}
+		}
 	}
 	if err := r.Widen(ctx, p2.ID); err != nil {
 		t.Fatal(err)
@@ -107,7 +155,15 @@ func TestRookLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(300 * time.Millisecond)
-	if _, err := r.Get(ctx, p2.ID); err != ErrNoPane {
-		t.Errorf("after kill: %v", err)
+	if g, err := r.Get(ctx, p2.ID); err == nil && !g.Dead {
+		t.Errorf("after kill: %+v", g)
 	}
+	if _, err := r.Capture(ctx, ID{Pane: "999999"}); err != ErrNoPane {
+		t.Errorf("capture of a missing pane: %v", err)
+	}
+}
+
+func mustID(id ID) uint32 {
+	n, _ := blockID(id)
+	return n
 }
