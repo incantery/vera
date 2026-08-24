@@ -423,3 +423,14 @@ func TestFrecencyRanksRecentFirstAndMarksCurrent(t *testing.T) {
 		t.Fatal("the current app should be marked")
 	}
 }
+
+func TestDescribeMentionsTheTerminalWithoutAMacApp(t *testing.T) {
+	a := newAttention()
+	now := time.Now()
+	a.Observe(Observation{Type: "terminal.focus", Device: "mac", Source: "rook", At: now,
+		Terminal: &TerminalFocus{Session: "vera", Window: "1", Pane: "2", Command: "claude", Agent: "claude-code"}})
+	got := a.Describe(now, "mac")
+	if !strings.Contains(got, "rook shows a Claude Code session (vera:1)") || !strings.Contains(got, "No other application is reporting") {
+		t.Fatalf("got %q", got)
+	}
+}

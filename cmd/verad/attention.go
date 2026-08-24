@@ -302,7 +302,14 @@ func (a *Attention) Describe(now time.Time, speaking string) string {
 			b.WriteString(" (the device they are speaking from)")
 		}
 		if d.Focus == nil {
-			b.WriteString(": no application has focus.")
+			// No Mac app reporting: the terminal is the only sense.
+			// Rook knows the pane in front of them; say so, and say
+			// that is all that is known.
+			if d.Terminal != nil {
+				b.WriteString(": in the terminal, rook shows " + d.Terminal.Describe() + ". No other application is reporting.")
+			} else {
+				b.WriteString(": no application has focus.")
+			}
 		} else {
 			fmt.Fprintf(&b, ": %s has had focus for %s.", d.Focus.Name, roughly(now.Sub(d.FocusSince)))
 			// Inside the terminal, only when the terminal is what they
