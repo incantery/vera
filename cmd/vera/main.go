@@ -271,6 +271,9 @@ func main() {
 		}
 		f.Observe = func(ev fleet.Event) { lan.attention.Observe(fleetObservation(id.Name, ev)) }
 		lan.fleet = f
+		if mind != nil {
+			mind.Fleet = f
+		}
 		go func() { _ = f.Supervise(ctx) }()
 	}
 

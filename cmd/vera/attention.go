@@ -332,6 +332,17 @@ func (a *Attention) TerminalHost(device string) *ObservedApp {
 	return nil
 }
 
+// TerminalPath is the working directory of the pane in front of the
+// person on a device, or "" — what "start a task on this" means.
+func (a *Attention) TerminalPath(device string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if d := a.devices[device]; d != nil && d.Terminal != nil {
+		return d.Terminal.Path
+	}
+	return ""
+}
+
 // isTerminal says whether an app is the kind rook would be running in.
 func isTerminal(app *ObservedApp) bool {
 	id := strings.ToLower(app.BundleID + " " + app.Name)

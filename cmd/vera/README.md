@@ -112,6 +112,13 @@ POST /fleet/{id}/teardown      ?force=1 to discard unlanded work — never Vera'
 POST /fleet/{id}/seen          the phone rendered the log this far
 ```
 
+The mind reaches the same thing through the `fleet` tool — one tool,
+five verbs (`list start answer land stop`) — so "have someone add dark
+mode while I'm out" opens a room in the repo in front of the person,
+and "how's it going" reads back the picture above in their nouns.
+`delegate` stays for the minute of work they wait on; `stop` never
+forces, so unlanded work is only ever discarded at the machine.
+
 Every hook is a doorbell, not a fact: the supervisor re-reads the pane
 and the worktree after it rings, and a hook that stops firing degrades
 to polling.

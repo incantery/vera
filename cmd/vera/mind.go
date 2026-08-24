@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/incantery/vera/fleet"
 	"io"
 	"log/slog"
 	"net/http"
@@ -43,7 +44,9 @@ You can see the recent turns of this conversation.
 
 You can hand real work to Claude Code, a capable agent on this Mac, using the delegate tool — reading and writing files, running commands, looking things up. Reach for it when answering means DOING something rather than knowing something. Answer directly when you can; delegating a question you could simply answer wastes a minute of their time.
 
-When a delegated task comes back, tell them what happened in a sentence. Do not narrate the steps.`
+When a delegated task comes back, tell them what happened in a sentence. Do not narrate the steps.
+
+For work that will take a while, or that they want done while they do something else, use the fleet tool instead: it starts a separate agent that keeps working after this conversation ends. Ask the fleet when they want to know how things are going, and pass their replies to a task that is waiting on them. Speak of tasks in their words — what it is doing, whether it needs them — never in terms of branches, panes or ids unless they ask.`
 
 type Mind struct {
 	Client   *http.Client
@@ -55,7 +58,10 @@ type Mind struct {
 	History  *History
 	Memory   *Memory
 	Delegate *Delegate
-	Gen      *agento11y.Client
+	// Fleet is where work that outlives the conversation goes. Nil
+	// when there is no multiplexer to put a pane in.
+	Fleet *fleet.Fleet
+	Gen   *agento11y.Client
 	// Attention is what the devices have reported about where the
 	// person is looking. Nil is fine: a mind with no senses.
 	Attention *Attention
@@ -132,7 +138,10 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 
 	var tools []map[string]any
 	if m.Delegate != nil {
-		tools = []map[string]any{m.Delegate.tool()}
+		tools = append(tools, m.Delegate.tool())
+	}
+	if m.Fleet != nil {
+		tools = append(tools, fleetTool())
 	}
 
 	var answer strings.Builder
@@ -162,7 +171,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 
 		messages = append(messages, chatMessage{Role: "assistant", ToolCalls: calls})
 		for _, call := range calls {
-			result := m.invoke(ctx, msg.Conversation, x, call, reply)
+			result := m.invoke(ctx, msg.Conversation, msg.Device, x, call, reply)
 			delegations++
 			messages = append(messages, chatMessage{
 				Role:       "tool",
@@ -222,7 +231,10 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 // that could not finish is information the model can work with, and a
 // person asking a question should not get a stack trace because a
 // subprocess was unhappy.
-func (m *Mind) invoke(ctx context.Context, conversation string, x *exchange, call toolCall, reply func(Frame) error) string {
+func (m *Mind) invoke(ctx context.Context, conversation, device string, x *exchange, call toolCall, reply func(Frame) error) string {
+	if call.Function.Name == "fleet" && m.Fleet != nil {
+		return m.invokeFleet(ctx, conversation, device, x, call, reply)
+	}
 	if call.Function.Name != "delegate" || m.Delegate == nil {
 		return "That tool does not exist."
 	}
