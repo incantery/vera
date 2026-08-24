@@ -41,6 +41,11 @@ import (
 const version = "0.1.0"
 
 func main() {
+	// Subcommands first: `vera chat` is a client, not the server.
+	if len(os.Args) > 1 && os.Args[1] == "chat" {
+		runChat(os.Args[2:])
+		return
+	}
 	addr := flag.String("addr", ":4780", "listen address")
 	noPeer := flag.Bool("no-peer", false, "do not advertise over peer-to-peer")
 	state := flag.String("state", "", "identity file (default ~/.local/state/vera/identity.json)")
