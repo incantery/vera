@@ -158,3 +158,11 @@ var (
 	// ErrUnavailable: the mux is not running or not reachable.
 	ErrUnavailable = errors.New("multiplexer is not available")
 )
+
+// Sider is a mux with a side rail that takes a pushed model — rook.
+// Optional: a backend without one is not a lesser backend, and the
+// publisher simply has nowhere to draw.
+type Sider interface {
+	// Side pushes one frame, one JSON line, to the rail.
+	Side(ctx context.Context, frame []byte) error
+}

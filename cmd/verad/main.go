@@ -307,6 +307,30 @@ func main() {
 			mind.Projects = f.Projects
 		}
 		go func() { _ = f.Supervise(ctx) }()
+		// The side rail, when the mux has one: the fleet as rows.
+		if side, ok := term.(mux.Sider); ok {
+			focus := func() string {
+				fctx, cancel := context.WithTimeout(ctx, time.Second)
+				defer cancel()
+				p, err := term.Focus(fctx)
+				if err != nil || p.Path == "" {
+					return ""
+				}
+				if r, err := fleet.FindRepo(p.Path); err == nil {
+					return r.Root
+				}
+				return ""
+			}
+			rl := newRail(side, f, f.Projects, focus)
+			prev := f.Observe
+			f.Observe = func(ev fleet.Event) {
+				if prev != nil {
+					prev(ev)
+				}
+				rl.Poke()
+			}
+			go rl.run(ctx)
+		}
 	}
 
 	go func() {

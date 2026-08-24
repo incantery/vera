@@ -329,6 +329,20 @@ func TestFleetResumesAfterThePaneIsGone(t *testing.T) {
 	if views[0].State != Gone {
 		t.Fatalf("expected gone, got %s", views[0].State)
 	}
+	// The supervisor brings it back on its own; a manual resume then
+	// finds the pane alive.
+	f.sweep(ctx)
+	if _, err := f.Resume(ctx, task.ID); err == nil {
+		t.Fatal("auto-resume should have reopened it already")
+	}
+	if _, ok := m.panes[task.Pane]; ok {
+		t.Fatal("the old pane must not be back")
+	}
+	// Kill it again: the manual path, with auto off.
+	f.AutoResume = false
+	for id := range m.panes {
+		m.Kill(ctx, id)
+	}
 	again, err := f.Resume(ctx, task.ID)
 	if err != nil {
 		t.Fatal(err)

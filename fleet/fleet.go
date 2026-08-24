@@ -51,9 +51,20 @@ type Fleet struct {
 	// Every is the supervision cadence. Default 15s; pokes cut it short.
 	Every time.Duration
 
-	mu    sync.Mutex
-	poke  chan struct{}
-	known map[string]State // last state per task, to report changes once
+	// AutoResume: a task whose pane went away (the multiplexer was
+	// restarted) is reopened by the supervisor on its own, a few times,
+	// with a pause between. Off means a person says resume.
+	AutoResume bool
+
+	mu      sync.Mutex
+	poke    chan struct{}
+	known   map[string]State // last state per task, to report changes once
+	resumes map[string]resumeTry
+}
+
+type resumeTry struct {
+	n  int
+	at time.Time
 }
 
 // Event is one change of what Vera believes about a task.
@@ -98,8 +109,10 @@ func New(m mux.Mux, store *Store) *Fleet {
 		Trust:      inheritTrust,
 		Thresholds: DefaultThresholds,
 		Every:      15 * time.Second,
+		AutoResume: true,
 		poke:       make(chan struct{}, 1),
 		known:      map[string]State{},
+		resumes:    map[string]resumeTry{},
 	}
 }
 
@@ -309,6 +322,9 @@ func (f *Fleet) Resume(ctx context.Context, id string) (*Task, error) {
 	if err := f.Store.Save(t); err != nil {
 		return nil, err
 	}
+	if f.Projects != nil {
+		f.Projects.Remember(Repo{Root: t.Project, Name: baseName(t.Project)})
+	}
 	_ = f.Store.Append(id, Status{Verb: Working, Text: "resumed in " + t.Session + " after its terminal went away", By: "vera"})
 	slog.Info("fleet: resumed", "task", id, "pane", t.Pane.String())
 	f.Poke()
@@ -475,8 +491,22 @@ func (f *Fleet) sweep(ctx context.Context) {
 	}
 	panes := f.panes(ctx)
 	for _, t := range tasks {
+		if f.Projects != nil && !t.Closed {
+			// A task's repository is a known one for as long as the
+			// task exists, whatever panes are open.
+			f.Projects.Remember(Repo{Root: t.Project, Name: baseName(t.Project)})
+		}
 		last, _ := f.Store.Last(t.ID)
 		state := f.classify(t, last, panes)
+		if state == Gone && panes != nil && f.AutoResume && f.mayResume(t.ID) {
+			// The mux is reachable and this task's pane is not in it:
+			// the mux was restarted under it. Reopen the room.
+			if _, err := f.Resume(ctx, t.ID); err == nil {
+				state = Running
+			} else {
+				slog.Warn("fleet: auto-resume failed", "task", t.ID, "error", err.Error())
+			}
+		}
 		f.mu.Lock()
 		prev, seen := f.known[t.ID]
 		f.known[t.ID] = state
@@ -492,6 +522,19 @@ func (f *Fleet) sweep(ctx context.Context) {
 			f.Observe(Event{Task: t, State: state, Prev: prev, At: time.Now()})
 		}
 	}
+}
+
+// mayResume bounds automatic resumes: three tries per task, a minute
+// apart — a room that keeps dying is a person's problem, not a loop.
+func (f *Fleet) mayResume(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	try := f.resumes[id]
+	if try.n >= 3 || time.Since(try.at) < time.Minute {
+		return false
+	}
+	f.resumes[id] = resumeTry{n: try.n + 1, at: time.Now()}
+	return true
 }
 
 // panes reads the mux once per sweep; nil means the mux is away and

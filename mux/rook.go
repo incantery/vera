@@ -2,6 +2,7 @@ package mux
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -57,6 +58,7 @@ const (
 	c2sBlockCmd    byte = 12
 	c2sState       byte = 13
 	c2sCapture     byte = 14
+	c2sSide        byte = 15
 
 	s2cDraw         byte = 1
 	s2cExit         byte = 2
@@ -693,4 +695,39 @@ func errText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// Side pushes one `items.push` frame to rook's side rail — Vera as
+// rook's first plugin, on the seam rook's docs/surfaces.md drew: rook
+// paints, plugins supply. The frame is one JSON line; rook answers an
+// ack, or a text saying why it was refused, and a refused frame
+// changes nothing on the glass.
+func (r *Rook) Side(ctx context.Context, frame []byte) error {
+	c, err := r.dial(ctx)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	// One line, no newline: rook refuses a frame with a raw newline in
+	// it (NotOneLine), and the framing already says where it ends.
+	frame = bytes.TrimRight(frame, "\r\n")
+	if err := send(c, c2sSide, frame); err != nil {
+		return ErrUnavailable
+	}
+	br := bufio.NewReader(c)
+	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	for {
+		f, err := recv(br)
+		if err != nil {
+			return err
+		}
+		switch f.kind {
+		case s2cAck:
+			return nil
+		case s2cText:
+			return errors.New(strings.TrimSpace(string(f.payload)))
+		case s2cExit:
+			return errors.New("rook: " + strings.TrimSpace(string(f.payload)))
+		}
+	}
 }
