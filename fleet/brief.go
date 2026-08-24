@@ -114,3 +114,24 @@ func inheritTrust(project, worktree string) error {
 	}
 	return os.Rename(tmp, path)
 }
+
+// claudeHasSession says whether Claude Code has a conversation to
+// --continue in dir: its sessions live under ~/.claude/projects/<dir
+// with every "/" and "." turned into "-">/, one jsonl each.
+func claudeHasSession(dir string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	enc := strings.NewReplacer("/", "-", ".", "-").Replace(dir)
+	entries, err := os.ReadDir(filepath.Join(home, ".claude", "projects", enc))
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".jsonl") {
+			return true
+		}
+	}
+	return false
+}

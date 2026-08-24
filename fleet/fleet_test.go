@@ -57,7 +57,14 @@ func (f *fakeMux) Spawn(_ context.Context, s mux.Spawn) (*mux.Pane, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.next++
-	p := mux.Pane{ID: mux.ID{Session: s.Session, Window: string(rune('0' + f.next)), Pane: "0"}, Command: s.Command[0], Path: s.Dir, Active: time.Now()}
+	// The fake's "foreground program" is what the shell exec's into.
+	cmd := s.Command[0]
+	for i, a := range s.Command {
+		if a == "fake-agent" {
+			cmd = s.Command[i]
+		}
+	}
+	p := mux.Pane{ID: mux.ID{Session: s.Session, Window: string(rune('0' + f.next)), Pane: "0"}, Command: cmd, Path: s.Dir, Active: time.Now()}
 	f.panes[p.ID] = p
 	f.spawned[p.ID] = s.Command[len(s.Command)-1]
 	f.argv[p.ID] = s.Command
@@ -142,7 +149,7 @@ func TestFleetLifecycle(t *testing.T) {
 	// The harness was started in the worktree with the hook settings
 	// and the brief.
 	p := m.panes[task.Pane]
-	if p.Path != task.Worktree || p.Command != "sh" {
+	if p.Path != task.Worktree || p.Command != "fake-agent" {
 		t.Errorf("pane %+v", p)
 	}
 	// The env rides in a private file the shell sources, not in argv.
@@ -331,6 +338,8 @@ func TestFleetResumesAfterThePaneIsGone(t *testing.T) {
 	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
 	f.Harness = []string{"fake-agent"}
 	f.Trust = nil
+	sessions := false
+	f.HasSession = func(string) bool { return sessions }
 	ctx := context.Background()
 	task, err := f.Spawn(ctx, Request{Project: r.Root, Name: "back", Brief: "keep going"})
 	if err != nil {
@@ -366,10 +375,47 @@ func TestFleetResumesAfterThePaneIsGone(t *testing.T) {
 		t.Fatalf("resume: %+v", again)
 	}
 	cmd := strings.Join(m.argv[again.Pane], " ")
+	if strings.Contains(cmd, "--continue") || !strings.Contains(cmd, "keep going\n\n---") {
+		t.Errorf("with no session to continue, resume starts over with the brief: %q", cmd)
+	}
+	// With a session, it continues instead.
+	sessions = true
+	for id := range m.panes {
+		m.Kill(ctx, id)
+	}
+	again, err = f.Resume(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd = strings.Join(m.argv[again.Pane], " ")
 	if !strings.Contains(cmd, "--continue") || strings.Contains(cmd, "keep going\n\n---") {
 		t.Errorf("resume should continue, not re-brief: %q", cmd)
 	}
-	if p := m.panes[again.Pane]; p.Path != task.Worktree {
+	// An agent that exited and left its shell reads as gone too, and
+	// resume replaces the shell pane rather than adding to it.
+	shell := m.panes[again.Pane]
+	shell.Command = "zsh"
+	m.panes[again.Pane] = shell
+	f.AutoResume = false
+	t0 := time.Now().Add(-time.Minute)
+	tk, _ := f.Store.Load(task.ID)
+	tk.Resumed, tk.Spawned = t0, t0
+	f.Store.Save(tk)
+	views, _ = f.Tasks(ctx)
+	if views[0].State != Gone {
+		t.Fatalf("a bare shell should read as gone, got %s", views[0].State)
+	}
+	third, err := f.Resume(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.panes[again.Pane]; ok {
+		t.Error("the shell pane should have been killed")
+	}
+	if third.Pane == again.Pane {
+		t.Error("resume should open a new pane")
+	}
+	if p := m.panes[third.Pane]; p.Path != task.Worktree {
 		t.Errorf("resumed elsewhere: %+v", p)
 	}
 	views, _ = f.Tasks(ctx)

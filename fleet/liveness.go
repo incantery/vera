@@ -50,6 +50,10 @@ type Evidence struct {
 	Now time.Time
 	// PaneAlive: the mux still has the pane and its process.
 	PaneAlive bool
+	// AgentAlive: the pane's foreground program is the agent, not the
+	// shell it was started from. A pane whose agent has exited shows
+	// a prompt: alive to the mux, gone for our purposes.
+	AgentAlive bool
 	// PaneActive: the last time the pane produced output.
 	PaneActive time.Time
 	// LastWrite: the newest mtime under the worktree. A pane that is
@@ -81,7 +85,7 @@ func Classify(e Evidence, th Thresholds) State {
 	if e.Closed {
 		return Closed
 	}
-	if !e.PaneAlive {
+	if !e.PaneAlive || !e.AgentAlive {
 		return Gone
 	}
 	if e.Last != nil {
@@ -160,3 +164,9 @@ func depth(root, p string) int {
 	}
 	return strings.Count(rel, string(os.PathSeparator)) + 1
 }
+
+// shells are what a pane shows when the agent in it has exited.
+var shells = map[string]bool{"sh": true, "bash": true, "zsh": true, "fish": true, "dash": true, "": true}
+
+// IsShell says whether a foreground program name is a shell.
+func IsShell(command string) bool { return shells[command] }

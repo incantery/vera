@@ -88,6 +88,8 @@ type Task struct {
 	// Incarnation changes every spawn of the same task so a stale hook
 	// from a previous life is ignored.
 	Incarnation string `json:"incarnation"`
+	// Resumed is the last time Vera reopened the room, zero if never.
+	Resumed time.Time `json:"resumed,omitempty"`
 	// TurnEnded is the last time the agent's harness said its turn was
 	// over (the Claude Code Stop hook). Zero until it does.
 	TurnEnded time.Time `json:"turn_ended,omitempty"`

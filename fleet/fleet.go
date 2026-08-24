@@ -41,6 +41,9 @@ type Fleet struct {
 	// through the pane's screen: a token typed into a terminal is a
 	// token in its scrollback.
 	Env func(t *Task) []string
+	// HasSession says whether the harness has a session to continue in
+	// a directory. Nil means assume yes. Default: Claude Code's layout.
+	HasSession func(dir string) bool
 	// Trust pre-answers the harness's "trust this folder?" for a new
 	// worktree. Nil skips it; the default inherits Claude Code's
 	// answer for the main checkout.
@@ -106,6 +109,7 @@ func New(m mux.Mux, store *Store) *Fleet {
 		// "blocked" for real forks.
 		Harness:    []string{"claude", "--permission-mode", "auto"},
 		Model:      DefaultModel,
+		HasSession: claudeHasSession,
 		Trust:      inheritTrust,
 		Thresholds: DefaultThresholds,
 		Every:      15 * time.Second,
@@ -304,17 +308,34 @@ func (f *Fleet) Resume(ctx context.Context, id string) (*Task, error) {
 	if t.Closed {
 		return nil, errors.New("the task is closed")
 	}
-	if p, err := f.Mux.Get(ctx, t.Pane); err == nil && !p.Dead {
+	old, err := f.Mux.Get(ctx, t.Pane)
+	if err == nil && !old.Dead && !IsShell(old.Command) {
 		return t, errors.New("the task's terminal is still there; nothing to resume")
 	}
 	if _, err := os.Stat(t.Worktree); err != nil {
 		return nil, fmt.Errorf("the task's checkout is gone: %s", t.Worktree)
 	}
+	if err == nil && !old.Dead {
+		// The agent exited and left its shell: take the pane with it,
+		// or the room fills with dead prompts.
+		_ = f.Mux.Kill(ctx, t.Pane)
+	}
 	t.Incarnation = newID()
 	t.TurnEnded = time.Time{}
+	t.Resumed = time.Now()
 	// --continue: the harness's own most recent session in that
-	// directory, which is this task's.
-	pane, err := f.open(ctx, t, []string{"--continue"})
+	// directory, which is this task's — when there is one. An agent
+	// that died before it ever spoke has nothing to continue, and
+	// asking would exit with "no conversation found"; it starts over
+	// with the brief instead.
+	var extra []string
+	how := "continuing its session"
+	if f.HasSession == nil || f.HasSession(t.Worktree) {
+		extra = []string{"--continue"}
+	} else {
+		how = "starting over with the brief; it had no session to continue"
+	}
+	pane, err := f.open(ctx, t, extra)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +346,7 @@ func (f *Fleet) Resume(ctx context.Context, id string) (*Task, error) {
 	if f.Projects != nil {
 		f.Projects.Remember(Repo{Root: t.Project, Name: baseName(t.Project)})
 	}
-	_ = f.Store.Append(id, Status{Verb: Working, Text: "resumed in " + t.Session + " after its terminal went away", By: "vera"})
+	_ = f.Store.Append(id, Status{Verb: Working, Text: "resumed in " + t.Session + " after its terminal went away, " + how, By: "vera"})
 	slog.Info("fleet: resumed", "task", id, "pane", t.Pane.String())
 	f.Poke()
 	return t, nil
@@ -571,6 +592,9 @@ func (f *Fleet) classify(t *Task, last *Status, panes map[mux.ID]mux.Pane) State
 	if p, ok := panes[t.Pane]; ok && !p.Dead {
 		e.PaneAlive = true
 		e.PaneActive = p.Active
+		// Just spawned, the pane may still read as the shell for a
+		// moment before it becomes the agent; give it that moment.
+		e.AgentAlive = !IsShell(p.Command) || time.Since(t.Spawned) < 20*time.Second || time.Since(t.Resumed) < 20*time.Second
 	}
 	if e.PaneAlive && !t.Closed {
 		// Bounded: a poll must never cost more than a glance.
