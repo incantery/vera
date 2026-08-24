@@ -61,7 +61,7 @@ func main() {
 	usageEvery := flag.Duration("usage-interval", 15*time.Minute, "how often to report Claude Code subscription usage (0 to stop)")
 	showUsage := flag.Bool("usage", false, "print what is left of the Claude Code subscription, and exit")
 	toolTimeout := flag.Duration("tool-timeout", 10*time.Minute, "how long a delegated task may run")
-	rookTmux := flag.String("rook-tmux", "rook", "rook's tmux server name, for terminal focus (\"\" to disable)")
+	muxKind := flag.String("mux", "auto", "the multiplexer: rook (its socket), tmux (rook's -L socket), auto, or off")
 	showMemory := flag.Bool("memories", false, "print what Vera remembers, and exit")
 	forget := flag.String("forget", "", "forget fact ids (\"3,7\"), or \"all\", and exit")
 	flag.Parse()
@@ -250,8 +250,23 @@ func main() {
 	// same name. tmux on rook's socket is the backend today; the Mux
 	// interface is where rook's own socket goes when it answers.
 	var term mux.Mux
-	if *rookTmux != "" {
-		term = mux.NewTmux(*rookTmux, "http://127.0.0.1"+portOf(*addr)+"/poke/rook")
+	switch *muxKind {
+	case "auto":
+		if _, err := os.Stat(mux.RookSock()); err == nil {
+			term = mux.NewRook("")
+		} else {
+			term = mux.NewTmux("rook", "http://127.0.0.1"+portOf(*addr)+"/poke/rook")
+		}
+	case "rook":
+		term = mux.NewRook("")
+	case "tmux":
+		term = mux.NewTmux("rook", "http://127.0.0.1"+portOf(*addr)+"/poke/rook")
+	case "off":
+	default:
+		fmt.Fprintln(os.Stderr, "vera: --mux must be auto, rook, tmux or off")
+		os.Exit(2)
+	}
+	if term != nil {
 		t := newTerminal(term, id.Name)
 		lan.onPoke("rook", t.Poke)
 		lan.typer = t.Type

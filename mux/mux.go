@@ -32,6 +32,8 @@ type ID struct {
 }
 
 // String is the backend-neutral spelling: "session:window.pane".
+// Backends whose pane ids are stable on their own (rook's blocks)
+// still carry a window; it is informational there.
 func (id ID) String() string { return id.Session + ":" + id.Window + "." + id.Pane }
 
 // Zero says whether the ID names nothing.

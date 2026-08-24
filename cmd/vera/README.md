@@ -75,9 +75,17 @@ Vera owns *what work exists and who is doing it*; the multiplexer owns
 *where it is drawn and how you reach it*. `mux.Mux` is the line between
 them — find the focused pane, spawn one, type into it, read its screen,
 bring it forward, hear when something changed — written to what Vera
-wants from a mux rather than to what tmux offers. `mux.Tmux` (rook's
-socket, today) is deliberately lossy against it; rook's own socket is
-the next backend and nothing above the line moves.
+wants from a mux rather than to what tmux offers. Two backends:
+`mux.Rook` speaks rook's socket (`$ROOK_MUX_SOCK`) — the block table
+is pushed on change, and a block client can hold a resize lease so the
+phone narrows a pane without reflowing the desk; `mux.Tmux` is the
+lossy reference on a `-L rook` server. `--mux auto` picks rook when
+its socket exists. What rook does not say yet — which block has the
+person, a per-block activity pulse, a plain-text snapshot, a spawn
+that carries a command — is noted at each verb in `mux/rook.go`; each
+is a small ask on rook's side, not a workaround here. Until then the
+rook backend types the command into the new shell, decodes the
+snapshot frame into rows itself, and reports no focus.
 
 `fleet/` is firstmate's supervisor
 (github.com/kunchenguid/firstmate) as a Go package instead of forty
