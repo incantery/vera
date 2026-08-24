@@ -160,9 +160,12 @@ func start(args []string, say bool) error {
 	// Not our child to wait on: it belongs to its own session now.
 	go func() { _ = cmd.Wait() }()
 
+	// "Answering" is not enough: an older verad may still own the
+	// port. The one we started has to be the one whose note is down
+	// and whose pid is answering.
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if r, ok := current(); ok {
+		if r, ok := current(); ok && r.PID == cmd.Process.Pid {
 			if say {
 				fmt.Printf("verad started (pid %d, %s)\n", r.PID, baseURL(r.Addr))
 			}
@@ -180,9 +183,17 @@ func start(args []string, say bool) error {
 func stop() error {
 	r, err := readRunfile()
 	if err != nil || !pidAlive(r.PID) {
-		fmt.Println("verad is not running")
 		_ = os.Remove(runfilePath())
-		return nil
+		// No note, but is something answering on the default port? A
+		// verad that lost its note (an older build could) is still
+		// ours to stop — but only by its own admission, never by port.
+		if pid := strayVerad(); pid > 0 {
+			fmt.Printf("verad pid %d has no note but is ours; stopping it\n", pid)
+			r = &runfile{PID: pid}
+		} else {
+			fmt.Println("verad is not running")
+			return nil
+		}
 	}
 	if err := syscall.Kill(r.PID, syscall.SIGTERM); err != nil {
 		return err
@@ -320,4 +331,20 @@ func roughDuration(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%d days", int(d.Hours()/24))
 	}
+}
+
+// strayVerad finds a verad process of ours with no runfile: same
+// binary path as the one we would start. pgrep is the tool for it.
+func strayVerad() int {
+	out, err := exec.Command("pgrep", "-f", veradPath()).Output()
+	if err != nil {
+		return 0
+	}
+	for _, f := range strings.Fields(string(out)) {
+		var pid int
+		if _, err := fmt.Sscan(f, &pid); err == nil && pid != os.Getpid() && pidAlive(pid) {
+			return pid
+		}
+	}
+	return 0
 }

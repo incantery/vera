@@ -30,4 +30,16 @@ func writeRunfile(addr string) error {
 	return os.WriteFile(runfilePath(), b, 0o644)
 }
 
-func removeRunfile() { _ = os.Remove(runfilePath()) }
+// removeRunfile takes the note down only if it is this process's:
+// another verad may have written its own since.
+func removeRunfile() {
+	b, err := os.ReadFile(runfilePath())
+	if err != nil {
+		return
+	}
+	var r runfile
+	if json.Unmarshal(b, &r) == nil && r.PID != os.Getpid() {
+		return
+	}
+	_ = os.Remove(runfilePath())
+}

@@ -104,11 +104,7 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	// Leave a note of where this process is, for `vera` to find it.
-	if err := writeRunfile(*addr); err != nil {
-		slog.Warn("verad: cannot record runfile", "error", err.Error())
-	}
-	defer removeRunfile()
+
 	defer stop()
 
 	// Telemetry before the mind, because the mind builds its
@@ -316,20 +312,47 @@ func main() {
 		announce(transports[0], id, *addr, how, telemetry, conversations, memory, hands, peering)
 	}()
 
-	// Every transport carries the same handler. A failure in one is
-	// reported and does not take the others down — losing the radio
-	// should not cost you the wifi.
+	// Leave a note of where this process is, for `vera` to find it —
+	// only now, on the way into serving: the exit-early modes above
+	// (--usage, --check-telemetry) are not the daemon and must not
+	// write over its note.
+	if err := writeRunfile(*addr); err != nil {
+		slog.Warn("verad: cannot record runfile", "error", err.Error())
+	}
+	defer removeRunfile()
+
+	// Every transport carries the same handler. A failure in the radio
+	// is reported and does not take the LAN down — losing the radio
+	// should not cost you the wifi. The LAN is different: it is the
+	// front door, and a verad that cannot open it (the port is taken,
+	// usually by an older verad) is not serving and must not pretend
+	// to. It exits, loudly, and `vera` reports it.
 	var wg sync.WaitGroup
+	failed := make(chan error, 1)
 	for _, t := range transports {
 		wg.Add(1)
 		go func(t Transport) {
 			defer wg.Done()
 			if err := t.Serve(ctx, answer); err != nil {
 				slog.Error("transport stopped", "transport", t.Name(), "error", err.Error())
+				if t.Name() == "lan" {
+					select {
+					case failed <- err:
+					default:
+					}
+					stop()
+				}
 			}
 		}(t)
 	}
 	wg.Wait()
+	select {
+	case err := <-failed:
+		removeRunfile()
+		fmt.Fprintln(os.Stderr, "verad: "+err.Error())
+		os.Exit(1)
+	default:
+	}
 }
 
 // echo is the stand-in for a mind.
