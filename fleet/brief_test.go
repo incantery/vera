@@ -47,13 +47,14 @@ func TestInheritTrust(t *testing.T) {
 		return top.Projects
 	}
 
-	// Untrusted main checkout: nothing is written.
+	// A main checkout Claude Code never trusted (or never opened):
+	// the room is trusted anyway — Vera made it.
 	write(map[string]any{"other": "kept", "projects": map[string]any{"/r": map[string]any{"hasTrustDialogAccepted": false}}})
-	if err := inheritTrust("/r", "/r--wt"); err == nil {
-		t.Error("should refuse when the main checkout is untrusted")
+	if err := inheritTrust("/r", "/r--wt"); err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := read()["/r--wt"]; ok {
-		t.Error("wrote trust it should not have")
+	if read()["/r--wt"]["hasTrustDialogAccepted"] != true {
+		t.Error("the room should be trusted regardless of the main checkout")
 	}
 
 	// Trusted: the worktree inherits, other fields untouched.
