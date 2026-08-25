@@ -16,4 +16,5 @@ go 1.25.7
 use (
 	.
 	./drive
+	../mote
 )

@@ -6,7 +6,7 @@ require (
 	connectrpc.com/connect v1.20.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
-	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/grafana/agento11y/go v0.17.0
 	github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
