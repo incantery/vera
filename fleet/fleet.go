@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +59,16 @@ type Fleet struct {
 	// restarted) is reopened by the supervisor on its own, a few times,
 	// with a pause between. Off means a person says resume.
 	AutoResume bool
+	// AutoLand: a ship task that says done is landed by the supervisor
+	// the way its mode says — merged, or pushed as a PR — and a scout
+	// is closed once its report has been seen. Off means a person says
+	// land. Landing is what the person asked for when they started the
+	// task; asking them to type it again is the supervisor handing its
+	// job back.
+	AutoLand bool
+	// Run runs a check command in a directory and returns its output
+	// and whether it passed. Nil uses `sh -c`.
+	Run func(ctx context.Context, dir, command string) (string, error)
 
 	mu      sync.Mutex
 	poke    chan struct{}
@@ -109,6 +120,7 @@ func New(m mux.Mux, store *Store) *Fleet {
 		// "blocked" for real forks.
 		Harness:    []string{"claude", "--permission-mode", "auto"},
 		Model:      DefaultModel,
+		AutoLand:   true,
 		HasSession: claudeHasSession,
 		Trust:      inheritTrust,
 		Thresholds: DefaultThresholds,
@@ -428,23 +440,137 @@ func (f *Fleet) Land(ctx context.Context, id string) error {
 	if t.Closed {
 		return errors.New("already closed")
 	}
-	if t.Kind == Ship && t.Mode == LocalOnly {
+	return f.land(ctx, t)
+}
+
+// land does what the mode says, then closes the room. Nothing is
+// killed until the landing has succeeded: a merge that fails leaves
+// the agent where it is, so it can be told what went wrong.
+func (f *Fleet) land(ctx context.Context, t *Task) error {
+	switch {
+	case t.Kind == Ship && t.Mode == DirectPR:
+		url, err := f.openPR(ctx, t)
+		if err != nil {
+			return err
+		}
+		t.PR = url
+		_ = f.Store.Append(t.ID, Status{Verb: Done, Text: "opened " + url, By: "vera"})
+	case t.Kind == Ship:
+		if t.Mode == NoMistakes {
+			if err := f.check(ctx, t); err != nil {
+				return err
+			}
+		}
 		repo := Repo{Root: t.Project, Name: baseName(t.Project)}
-		_ = f.Mux.Kill(ctx, t.Pane) // the checkout must be quiet to merge
+		ahead, _ := distance(t.Worktree, repo.DefaultBranch(), t.Branch)
 		if err := repo.Merge(t.Name); err != nil {
 			return err
 		}
-		_ = f.Store.Append(id, Status{Verb: Done, Text: "merged " + t.Branch + " into " + repo.DefaultBranch(), By: "vera"})
-	} else {
-		_ = f.Mux.Kill(ctx, t.Pane)
-		_ = f.Store.Append(id, Status{Verb: Done, Text: "closed", By: "vera"})
+		_ = f.Store.Append(t.ID, Status{Verb: Done, Text: fmt.Sprintf("merged %s into %s (%d commit%s)", t.Branch, repo.DefaultBranch(), ahead, plural(ahead)), By: "vera"})
+	default:
+		_ = f.Store.Append(t.ID, Status{Verb: Done, Text: "closed", By: "vera"})
 	}
+	_ = f.Mux.Kill(ctx, t.Pane)
 	f.closeRoom(ctx, t)
 	return f.close(t)
 }
 
-// Teardown ends a task without landing it. force discards unlanded
-// work, which is never Vera's decision — the caller says so.
+// check runs the repository's landing checks in the worktree. The
+// first failure is the answer, with the end of its output.
+func (f *Fleet) check(ctx context.Context, t *Task) error {
+	run := f.Run
+	if run == nil {
+		run = shellRun
+	}
+	for _, cmd := range LoadConventions(t.Project).Check {
+		out, err := run(ctx, t.Worktree, cmd)
+		if err != nil {
+			return fmt.Errorf("check `%s` failed: %s", cmd, tail(out, 600))
+		}
+	}
+	return nil
+}
+
+func shellRun(ctx context.Context, dir, command string) (string, error) {
+	c := exec.CommandContext(ctx, "sh", "-c", command)
+	c.Dir = dir
+	out, err := c.CombinedOutput()
+	return string(out), err
+}
+
+// openPR pushes the branch and opens a pull request with gh. The
+// worktree stays: a PR that needs changes needs somewhere to make them.
+func (f *Fleet) openPR(ctx context.Context, t *Task) (string, error) {
+	if out, err := git(t.Worktree, "push", "-u", "origin", t.Branch); err != nil {
+		return "", fmt.Errorf("push %s: %s", t.Branch, tail(out, 300))
+	}
+	c := exec.CommandContext(ctx, "gh", "pr", "create", "--fill", "--head", t.Branch)
+	c.Dir = t.Worktree
+	out, err := c.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("gh pr create: %s", tail(string(out), 300))
+	}
+	// gh prints the URL last.
+	lines := strings.Fields(strings.TrimSpace(string(out)))
+	if len(lines) == 0 {
+		return "", errors.New("gh pr create said nothing")
+	}
+	return lines[len(lines)-1], nil
+}
+
+// autoLand is the supervisor landing a task that said done. A failure
+// is written down once and becomes a decision; a newer done — the
+// agent fixed what was wrong — is a reason to try again.
+func (f *Fleet) autoLand(ctx context.Context, t *Task, last *Status) State {
+	if !t.LandFailedAt.IsZero() && !last.At.After(t.LandFailedAt) {
+		return Decision
+	}
+	if err := f.land(ctx, t); err != nil {
+		slog.Warn("fleet: could not land", "task", t.ID, "error", err.Error())
+		t.LandFailedAt, t.LandFailure = time.Now(), err.Error()
+		_ = f.Store.Save(t)
+		_ = f.Store.Append(t.ID, Status{Verb: Blocked, Text: "could not land: " + err.Error() + " — tell the agent what to fix and it will say done again, or land it by hand", By: "vera"})
+		return Decision
+	}
+	return Closed
+}
+
+// closeScout ends a scout whose report has been seen: the deliverable
+// was delivered, the pane is done.
+func (f *Fleet) closeScout(ctx context.Context, t *Task) {
+	_ = f.Mux.Kill(ctx, t.Pane)
+	_ = f.Store.Append(t.ID, Status{Verb: Done, Text: "report delivered", By: "vera"})
+	_ = f.close(t)
+}
+
+// Seen marks everything a task has said as shown to the person.
+func (f *Fleet) Seen(id string) error {
+	all, err := f.Store.Statuses(id)
+	if err != nil {
+		return err
+	}
+	if err := f.Store.Present(id, len(all)); err != nil {
+		return err
+	}
+	f.Poke()
+	return nil
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func tail(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return "…" + s[len(s)-n:]
+}
+
 func (f *Fleet) Teardown(ctx context.Context, id string, force bool) error {
 	t, err := f.Store.Load(id)
 	if err != nil {
@@ -549,6 +675,17 @@ func (f *Fleet) sweep(ctx context.Context) {
 		}
 		last, _ := f.Store.Last(t.ID)
 		state := f.classify(t, last, panes)
+		if state == Finished && f.AutoLand && last != nil {
+			switch t.Kind {
+			case Ship:
+				state = f.autoLand(ctx, t, last)
+			case Scout:
+				if unread, _ := f.Store.Unread(t.ID); len(unread) == 0 {
+					f.closeScout(ctx, t)
+					state = Closed
+				}
+			}
+		}
 		if state == Gone && panes != nil && f.AutoResume && f.mayResume(t.ID) {
 			// The mux is reachable and this task's pane is not in it:
 			// the mux was restarted under it. Reopen the room.

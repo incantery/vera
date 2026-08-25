@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -479,5 +480,142 @@ func TestHookIdleAfterDone(t *testing.T) {
 	}
 	if last, _ := store.Last(task.ID); last.Verb != Blocked {
 		t.Fatalf("a permission prompt is a question: %s", last.Verb)
+	}
+}
+
+// The supervisor lands a ship task that says done; a landing that
+// fails is a decision, tried again only after a newer done.
+func TestAutoLand(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	var events []Event
+	f.Observe = func(ev Event) { events = append(events, ev) }
+	ctx := context.Background()
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "ship it", Kind: Ship})
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(task.Worktree, "thing.txt"), []byte("x\n"), 0o644)
+	gitRun(t, task.Worktree, "add", "thing.txt")
+	gitRun(t, task.Worktree, "commit", "-q", "-m", "the thing")
+
+	// The main checkout is dirty: landing cannot happen yet.
+	os.WriteFile(filepath.Join(r.Root, "wip.txt"), []byte("wip\n"), 0o644)
+	if err := f.Report(task.ID, Status{Verb: Done, Text: "shipped", By: "agent"}); err != nil {
+		t.Fatal(err)
+	}
+	f.sweep(ctx)
+	last, _ := f.Store.Last(task.ID)
+	if last.Verb != Blocked || !strings.Contains(last.Text, "could not land") {
+		t.Fatalf("a failed landing should be a decision: %+v", last)
+	}
+	if events[len(events)-1].State != Decision {
+		t.Fatalf("state after failed landing: %s", events[len(events)-1].State)
+	}
+	if _, ok := m.panes[task.Pane]; !ok {
+		t.Fatal("the agent's pane must survive a failed landing")
+	}
+	n := len(events)
+	f.sweep(ctx)
+	if len(events) != n {
+		t.Fatal("a failed landing should not be retried without a newer done")
+	}
+
+	// The person cleans up; the agent says done again; it lands.
+	os.Remove(filepath.Join(r.Root, "wip.txt"))
+	time.Sleep(10 * time.Millisecond)
+	if err := f.Report(task.ID, Status{Verb: Done, Text: "shipped, again", By: "agent"}); err != nil {
+		t.Fatal(err)
+	}
+	f.sweep(ctx)
+	if _, err := os.Stat(filepath.Join(r.Root, "thing.txt")); err != nil {
+		t.Fatal("not merged home")
+	}
+	last, _ = f.Store.Last(task.ID)
+	if last.Verb != Done || !strings.Contains(last.Text, "merged "+task.Branch) || !strings.Contains(last.Text, "1 commit)") {
+		t.Errorf("landing status: %+v", last)
+	}
+	if _, ok := m.panes[task.Pane]; ok {
+		t.Error("pane not killed after landing")
+	}
+	if events[len(events)-1].State != Closed {
+		t.Errorf("state after landing: %s", events[len(events)-1].State)
+	}
+	if out := gitRun(t, r.Root, "log", "--oneline", "-1"); !strings.Contains(out, "Merge") {
+		t.Errorf("landing should be a merge commit (--no-ff): %s", out)
+	}
+}
+
+// A no-mistakes task passes the repository's checks first.
+func TestAutoLandChecks(t *testing.T) {
+	r := newRepo(t)
+	os.WriteFile(filepath.Join(r.Root, "rook.toml"), []byte("[land]\ncheck = [\"true\", \"false\"]\n"), 0o644)
+	gitRun(t, r.Root, "add", "rook.toml")
+	gitRun(t, r.Root, "commit", "-q", "-m", "conventions")
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	var ran []string
+	f.Run = func(_ context.Context, dir, command string) (string, error) {
+		ran = append(ran, command)
+		if command == "false" {
+			return "FAIL: TestX\n", errors.New("exit 1")
+		}
+		return "", nil
+	}
+	ctx := context.Background()
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "carefully", Kind: Ship, Mode: NoMistakes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(task.Worktree, "thing.txt"), []byte("x\n"), 0o644)
+	gitRun(t, task.Worktree, "add", "thing.txt")
+	gitRun(t, task.Worktree, "commit", "-q", "-m", "the thing")
+	f.Report(task.ID, Status{Verb: Done, Text: "shipped", By: "agent"})
+	f.sweep(ctx)
+	if len(ran) != 2 || ran[0] != "true" {
+		t.Fatalf("checks run: %v", ran)
+	}
+	last, _ := f.Store.Last(task.ID)
+	if last.Verb != Blocked || !strings.Contains(last.Text, "check `false` failed: FAIL: TestX") {
+		t.Fatalf("a failed check should be the decision: %+v", last)
+	}
+	if _, err := os.Stat(filepath.Join(r.Root, "thing.txt")); err == nil {
+		t.Fatal("merged despite a failed check")
+	}
+}
+
+// A scout closes when its report has been seen, not before.
+func TestScoutClosesWhenSeen(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	ctx := context.Background()
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "look around", Kind: Scout})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Report(task.ID, Status{Verb: Done, Text: "report written", By: "agent"})
+	f.sweep(ctx)
+	views, _ := f.Tasks(ctx)
+	if views[0].State != Finished || views[0].Closed {
+		t.Fatalf("a finished scout nobody has read stays open: %+v", views[0].State)
+	}
+	if err := f.Seen(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.sweep(ctx)
+	views, _ = f.Tasks(ctx)
+	if !views[0].Closed {
+		t.Fatal("a scout whose report was seen should close")
+	}
+	if _, ok := m.panes[task.Pane]; ok {
+		t.Error("scout pane not killed")
 	}
 }

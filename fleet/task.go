@@ -98,4 +98,9 @@ type Task struct {
 	ClosedAt time.Time `json:"closed_at,omitempty"`
 	// PR is the URL when Mode opened one.
 	PR string `json:"pr,omitempty"`
+	// LandFailedAt and LandFailure: the last time Vera tried to land
+	// this on its own and could not, and why. A `done` newer than the
+	// failure is a reason to try again.
+	LandFailedAt time.Time `json:"land_failed_at,omitempty"`
+	LandFailure  string    `json:"land_failure,omitempty"`
 }

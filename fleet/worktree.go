@@ -47,6 +47,9 @@ type Conventions struct {
 	// Link are repo-relative paths symlinked to the main checkout's
 	// copy: heavy caches no two worktrees need twice ("node_modules").
 	Link []string
+	// Check are the commands a no-mistakes task must pass in its
+	// worktree before it lands ("go test ./..."), from [land] check.
+	Check []string
 }
 
 // FindRepo resolves the repo containing dir. A worktree answers with
@@ -240,7 +243,9 @@ func (r Repo) Merge(name string) error {
 	if st, _ := git(r.Root, "status", "--porcelain"); strings.TrimSpace(st) != "" {
 		return fmt.Errorf("main checkout has uncommitted changes; merge needs it clean")
 	}
-	if out, err := git(r.Root, "merge", "--no-edit", wt.Branch); err != nil {
+	// --no-ff: one merge commit per landing, so a landing Vera did on
+	// its own is one revert away.
+	if out, err := git(r.Root, "merge", "--no-ff", "--no-edit", wt.Branch); err != nil {
 		_, _ = git(r.Root, "merge", "--abort")
 		return fmt.Errorf("merge %s: %s", wt.Branch, strings.TrimSpace(out))
 	}
@@ -292,17 +297,14 @@ func LoadConventions(root string) Conventions {
 	if err != nil {
 		return c
 	}
-	in := false
+	section := ""
 	for _, line := range strings.Split(string(b), "\n") {
 		line = strings.TrimSpace(line)
 		if i := strings.Index(line, "#"); i >= 0 {
 			line = strings.TrimSpace(line[:i])
 		}
 		if strings.HasPrefix(line, "[") {
-			in = line == "[worktree]"
-			continue
-		}
-		if !in {
+			section = line
 			continue
 		}
 		key, val, ok := strings.Cut(line, "=")
@@ -310,11 +312,13 @@ func LoadConventions(root string) Conventions {
 			continue
 		}
 		list := tomlStrings(strings.TrimSpace(val))
-		switch strings.TrimSpace(key) {
-		case "copy":
+		switch section + " " + strings.TrimSpace(key) {
+		case "[worktree] copy":
 			c.Copy = list
-		case "link":
+		case "[worktree] link":
 			c.Link = list
+		case "[land] check":
+			c.Check = list
 		}
 	}
 	return c

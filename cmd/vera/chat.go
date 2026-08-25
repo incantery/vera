@@ -324,7 +324,9 @@ func (m *chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case noteMsg:
-		m.note(msg.text)
+		if msg.text != "" {
+			m.note(msg.text)
+		}
 		return m, m.refresh()
 
 	case tickMsg:
@@ -347,7 +349,20 @@ func (m *chatModel) notice(views []fleet.View) {
 	for _, v := range views {
 		prev, seen := m.states[v.ID]
 		m.states[v.ID] = v.State
-		if !seen || prev == v.State || !v.State.Actionable() {
+		if !seen || prev == v.State {
+			continue
+		}
+		// Landed on its own: say what happened, in the supervisor's
+		// words, so a wrong landing is visible at once.
+		if v.State == fleet.Closed {
+			line := "✓ " + v.ID + " — " + trim(firstSentence(v.Brief), 60)
+			if v.Last != nil && v.Last.Text != "" {
+				line += ": " + trim(v.Last.Text, 200)
+			}
+			m.note(line)
+			continue
+		}
+		if !v.State.Actionable() {
 			continue
 		}
 		line := fmt.Sprintf("● %s %s — %s", v.ID, fleetPhrase(v, time.Now()), trim(firstSentence(v.Brief), 60))
@@ -465,6 +480,8 @@ func (m *chatModel) command(text string) tea.Cmd {
 					m.note(id + " has written no report yet")
 				} else {
 					m.note("report from " + id + ":\n" + v.Report)
+					// Read is seen: a scout whose report was read is done.
+					return post("/fleet/"+id+"/seen", nil, "")
 				}
 				return nil
 			}

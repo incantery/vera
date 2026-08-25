@@ -30,7 +30,7 @@ func scaffold(t *Task, statusURL, reportPath string) string {
 		case NoMistakes:
 			b.WriteString("Commit as you go. When the work is done, run the project's tests and linters and fix what they find before reporting done. Do not push, do not merge.\n\n")
 		default:
-			b.WriteString("Commit as you go with clear messages. Do not merge and do not push: Vera lands the branch when the person says so.\n\n")
+			b.WriteString("Commit as you go with clear messages. Do not merge and do not push: when you say done, Vera lands the branch. If landing fails you will be told why; fix it, commit, and say done again.\n\n")
 		}
 	case Scout:
 		fmt.Fprintf(&b, "You are in %s to investigate and report. Do not modify files, do not commit, do not run anything with side effects.\n\n", t.Worktree)

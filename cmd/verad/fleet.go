@@ -132,13 +132,7 @@ func (l *lanTransport) fleetSeen(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	id := r.PathValue("id")
-	all, err := l.fleet.Store.Statuses(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := l.fleet.Store.Present(id, len(all)); err != nil {
+	if err := l.fleet.Seen(r.PathValue("id")); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -33,8 +33,9 @@ func fleetTool() map[string]any {
 				"`start` for ANY work in a repository — inspecting, changing, investigating — and for anything " +
 				"that will take more than a couple of minutes; `delegate` is only for a quick lookup they wait " +
 				"on. Use `list` whenever they ask how things are going. " +
-				"Use `answer` to pass their reply to a task that is waiting on them. `land` merges a finished " +
-				"task; `stop` abandons one — only when they clearly said so.",
+				"Use `answer` to pass their reply to a task that is waiting on them. Vera lands a task by " +
+				"itself when it says done; `land` is only for landing early or retrying after a landing " +
+				"failed. `stop` abandons one — only when they clearly said so.",
 			"parameters": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -114,6 +115,13 @@ func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args
 		views, err := m.Fleet.Tasks(ctx)
 		if err != nil {
 			return "", err
+		}
+		// Told to the model is told to the person: what was unread is
+		// now seen, and a scout whose report was seen can close.
+		for _, v := range views {
+			if len(v.Unread) > 0 {
+				_ = m.Fleet.Seen(v.ID)
+			}
 		}
 		return describeFleet(views, time.Now()), nil
 
