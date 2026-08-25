@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/incantery/mote/agent"
 	"github.com/incantery/mote/tui"
 	"github.com/incantery/vera/fleet"
@@ -448,5 +450,72 @@ func TestBeliefReadsLikeThePreface(t *testing.T) {
 	}
 	if strings.Contains(md, "mail") {
 		t.Error("an integration that is not connected is not connected")
+	}
+}
+
+// deliver hands a command's messages to the model the way a running
+// program would, unwrapping batches. It is the only way to drive the
+// terminal from outside: the message types are the terminal's own.
+func deliver(m *tui.Model, cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	switch msg := cmd().(type) {
+	case nil:
+	case tea.BatchMsg:
+		for _, c := range msg {
+			deliver(m, c)
+		}
+	default:
+		m.Update(msg)
+	}
+}
+
+// The whole of it, once, without a terminal: the real options over a
+// fake verad, drawn by mote with the colour turned off.
+func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
+	f := newFakeVerad(t)
+	c := f.client()
+	f.setFleet(fleet.View{
+		Task:   &fleet.Task{ID: "a1", Brief: "Port the chat onto mote"},
+		State:  fleet.Decision,
+		Last:   &fleet.Status{Verb: fleet.Blocked, Text: "one rail or two?"},
+		Report: "# Findings\n\nIt works.",
+	})
+	w := newFleetWatch(c)
+	w.poll(context.Background())
+	s := &chatSession{c: c, w: w, conv: "chat-1"}
+
+	pal := tui.DefaultPalette()
+	pal.Markdown = "ascii"
+	m := tui.New(veraAgent{c}, tui.Options{
+		Name:         "vera",
+		Model:        "echo",
+		Conversation: s.conversation(),
+		Greeting:     "say something",
+		Side:         w.side,
+		SideTitle:    "fleet",
+		Notices:      w.notices,
+		Commands:     chatCommands,
+		Handle:       s.handle,
+		Palette:      &pal,
+		Renderer:     lipgloss.NewRenderer(io.Discard),
+	})
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
+
+	view := m.View()
+	for _, want := range []string{"vera", "echo", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("the screen is missing %q:\n%s", want, view)
+		}
+	}
+
+	deliver(m, s.handle("report", "a1"))
+	if v := m.View(); !strings.Contains(v, "Findings") || !strings.Contains(v, "It works.") {
+		t.Errorf("/report should print what it fetched:\n%s", v)
+	}
+	deliver(m, s.handle("start", ""))
+	if v := m.View(); !strings.Contains(v, "/start [@repo] <brief>") {
+		t.Errorf("a command that cannot run says how:\n%s", v)
 	}
 }
