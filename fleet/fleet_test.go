@@ -499,11 +499,15 @@ func TestAutoLand(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(task.Worktree, "thing.txt"), []byte("x\n"), 0o644)
-	gitRun(t, task.Worktree, "add", "thing.txt")
+	os.WriteFile(filepath.Join(task.Worktree, "README"), []byte("hi\nfrom the branch\n"), 0o644)
+	gitRun(t, task.Worktree, "add", "thing.txt", "README")
 	gitRun(t, task.Worktree, "commit", "-q", "-m", "the thing")
 
-	// The main checkout is dirty: landing cannot happen yet.
-	os.WriteFile(filepath.Join(r.Root, "wip.txt"), []byte("wip\n"), 0o644)
+	// The main checkout has uncommitted work on a file the branch also
+	// changes: landing cannot happen yet. (An untracked scratch file
+	// and unrelated edits would not have stood in the way.)
+	os.WriteFile(filepath.Join(r.Root, "scratch.txt"), []byte("untracked, harmless\n"), 0o644)
+	os.WriteFile(filepath.Join(r.Root, "README"), []byte("hi\nlocal edit\n"), 0o644)
 	if err := f.Report(task.ID, Status{Verb: Done, Text: "shipped", By: "agent"}); err != nil {
 		t.Fatal(err)
 	}
@@ -524,8 +528,9 @@ func TestAutoLand(t *testing.T) {
 		t.Fatal("a failed landing should not be retried without a newer done")
 	}
 
-	// The person cleans up; the agent says done again; it lands.
-	os.Remove(filepath.Join(r.Root, "wip.txt"))
+	// The person cleans up the one clash; the scratch file stays; the
+	// agent says done again; it lands.
+	gitRun(t, r.Root, "checkout", "README")
 	time.Sleep(10 * time.Millisecond)
 	if err := f.Report(task.ID, Status{Verb: Done, Text: "shipped, again", By: "agent"}); err != nil {
 		t.Fatal(err)

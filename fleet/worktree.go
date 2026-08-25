@@ -240,8 +240,12 @@ func (r Repo) Merge(name string) error {
 	if cur, _ := git(r.Root, "branch", "--show-current"); strings.TrimSpace(cur) != base {
 		return fmt.Errorf("main checkout is on %q, not %s; check out %s first", strings.TrimSpace(cur), base, base)
 	}
-	if st, _ := git(r.Root, "status", "--porcelain"); strings.TrimSpace(st) != "" {
-		return fmt.Errorf("main checkout has uncommitted changes; merge needs it clean")
+	// git's own rule, not a stricter one: uncommitted work in the main
+	// checkout only stands in the way when the branch changes the same
+	// files. A person's notes or an untracked scratch file are not a
+	// reason to hold a landing.
+	if clash := r.clashes(wt.Branch); len(clash) > 0 {
+		return fmt.Errorf("main checkout has uncommitted changes to files this branch also changes: %s", strings.Join(clash, ", "))
 	}
 	// --no-ff: one merge commit per landing, so a landing Vera did on
 	// its own is one revert away.
@@ -250,6 +254,29 @@ func (r Repo) Merge(name string) error {
 		return fmt.Errorf("merge %s: %s", wt.Branch, strings.TrimSpace(out))
 	}
 	return r.Remove(wt, true)
+}
+
+// clashes lists files modified in the main checkout that the branch
+// also changes relative to their merge base.
+func (r Repo) clashes(branch string) []string {
+	st, _ := git(r.Root, "status", "--porcelain", "--untracked-files=no")
+	dirty := map[string]bool{}
+	for _, line := range strings.Split(st, "\n") {
+		if len(line) > 3 {
+			dirty[strings.TrimSpace(line[3:])] = true
+		}
+	}
+	if len(dirty) == 0 {
+		return nil
+	}
+	changed, _ := git(r.Root, "diff", "--name-only", "HEAD..."+branch)
+	var out []string
+	for _, f := range strings.Split(changed, "\n") {
+		if f = strings.TrimSpace(f); f != "" && dirty[f] {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Remove deletes a worktree and its branch. Without force it refuses
