@@ -18,6 +18,8 @@ func TestClassify(t *testing.T) {
 	}{
 		{"closed wins", Evidence{Now: now, Closed: true, PaneAlive: true}, Closed},
 		{"no pane", Evidence{Now: now}, Gone},
+		{"no pane but done: at rest, not gone", Evidence{Now: now, Last: &Status{Verb: Done}}, Finished},
+		{"no pane but failed", Evidence{Now: now, Last: &Status{Verb: Failed}}, Broken},
 		{"pane is a bare shell: the agent is gone", Evidence{Now: now, PaneAlive: true, AgentAlive: false, PaneActive: ago(time.Second)}, Gone},
 		{"agent said done", Evidence{Now: now, PaneAlive: true, AgentAlive: true, Last: &Status{Verb: Done}}, Finished},
 		{"agent said failed", Evidence{Now: now, PaneAlive: true, AgentAlive: true, Last: &Status{Verb: Failed}}, Broken},

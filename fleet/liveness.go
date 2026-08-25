@@ -85,15 +85,20 @@ func Classify(e Evidence, th Thresholds) State {
 	if e.Closed {
 		return Closed
 	}
+	// A task that said done or failed is at rest whatever became of
+	// its pane: it needs to be landed or read, not resumed — reopening
+	// it only buys an agent that says "still done".
+	if e.Last != nil && e.Last.Verb.Terminal() {
+		if e.Last.Verb == Done {
+			return Finished
+		}
+		return Broken
+	}
 	if !e.PaneAlive || !e.AgentAlive {
 		return Gone
 	}
 	if e.Last != nil {
 		switch e.Last.Verb {
-		case Done:
-			return Finished
-		case Failed:
-			return Broken
 		case Blocked:
 			return Decision
 		case Paused:

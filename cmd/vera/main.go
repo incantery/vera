@@ -19,6 +19,9 @@ const usage = `vera — talk to her, and keep her running
   vera status             is verad up, where, since when
   vera log [-f]           verad's log
   vera url                the pairing page
+  vera say [-c id] <text> one exchange, reply on stdout — for scripts and other agents
+  vera tasks              every task and what is believed about it
+  vera task <verb> ...    start | answer | report | land | stop | resume | seen — the fleet, by hand
   vera dump [ids...]      a folder of everything about a conversation, to report a problem
   vera install            a launchd agent so verad starts at login
   vera uninstall          remove it
@@ -51,6 +54,16 @@ func main() {
 		err = showURL()
 	case "dump":
 		err = runDump(args[1:])
+	case "say":
+		err = runSay(args[1:])
+	case "tasks":
+		err = runFleet("tasks", nil)
+	case "task":
+		if len(args) < 2 {
+			fmt.Fprint(os.Stderr, fleetUsage)
+			os.Exit(1)
+		}
+		err = runFleet(args[1], args[2:])
 	case "install":
 		err = install()
 	case "uninstall":
