@@ -105,8 +105,11 @@ func newFleetWatch(c *chatClient) *fleetWatch {
 	return &fleetWatch{c: c, notices: make(chan agent.Event, 64), states: map[string]fleet.State{}}
 }
 
+// run polls until ctx ends. It never closes notices: a command can be
+// polling on its own goroutine when the terminal goes away, and a
+// channel closed under it would take the process out on the way to
+// exiting anyway.
 func (w *fleetWatch) run(ctx context.Context, every time.Duration) {
-	defer close(w.notices)
 	t := time.NewTicker(every)
 	defer t.Stop()
 	w.poll(ctx)
