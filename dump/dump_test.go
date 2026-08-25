@@ -20,7 +20,7 @@ func fixture(t *testing.T) Options {
 	state := filepath.Join(root, "state")
 	claude := filepath.Join(root, "claude")
 	config := filepath.Join(root, "config")
-	worktree := filepath.Join(root, "repo--vera-abc12345")
+	worktree := filepath.Join(root, "repo--room")
 	must := func(err error) {
 		if err != nil {
 			t.Fatal(err)
@@ -68,7 +68,7 @@ func fixture(t *testing.T) Options {
 			b.Write(j)
 			b.WriteString("\n")
 		}
-		line(map[string]any{"type": "user", "cwd": worktree, "timestamp": now, "message": map[string]any{"role": "user", "content": "hi"}})
+		line(map[string]any{"type": "user", "cwd": worktree, "timestamp": now, "message": map[string]any{"role": "user", "content": "hi" + map[string]string{"fbe5": " post to /fleet/abc12345/status", "sess-1": " task abc12345"}[id]}})
 		usage := map[string]any{"input_tokens": 1000, "cache_creation_input_tokens": 2000, "cache_read_input_tokens": 3000, "output_tokens": 400}
 		// Two lines, one message: usage counted once.
 		line(map[string]any{"type": "assistant", "timestamp": now.Add(time.Second), "message": map[string]any{"id": "m1", "model": model, "usage": usage, "content": []any{map[string]any{"type": "text", "text": "ok " + secret}}}})
@@ -76,6 +76,8 @@ func fixture(t *testing.T) Options {
 		must(os.WriteFile(filepath.Join(dir, id+".jsonl"), []byte(b.String()), 0o644))
 	}
 	session(projectDir(claude, worktree), "fbe5", "claude-opus-5")
+	// The person's own session in the same checkout: not the task's.
+	session(projectDir(claude, worktree), "mine", "claude-opus-5")
 	session(filepath.Join(claude, "projects", "-somewhere-else"), "sess-1", "claude-mystery-9")
 
 	return Options{StateDir: state, ClaudeDir: claude, ConfigDir: config, Out: filepath.Join(root, "out"), Now: now.Add(time.Minute), Version: "test"}

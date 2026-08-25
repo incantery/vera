@@ -170,9 +170,13 @@ func readSession(path string) (*Session, error) {
 	return s, sc.Err()
 }
 
-// sessionsIn lists the sessions Claude Code kept for cwd, newest last,
-// leaving out any that ended before `since`.
-func sessionsIn(claudeDir, cwd string, since time.Time) []string {
+// sessionsIn lists the sessions Claude Code kept for cwd that belong
+// to a task, newest last. Belonging is the task id appearing in the
+// file: the brief names the task's status URL, so the agent's session
+// carries it from its first line. The directory alone is not enough —
+// a scout works in the checkout itself, beside every session the
+// person ever ran there.
+func sessionsIn(claudeDir, cwd, task string, since time.Time) []string {
 	dir := projectDir(claudeDir, cwd)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -187,10 +191,22 @@ func sessionsIn(claudeDir, cwd string, since time.Time) []string {
 		if err != nil || (!since.IsZero() && info.ModTime().Before(since)) {
 			continue
 		}
-		out = append(out, filepath.Join(dir, e.Name()))
+		path := filepath.Join(dir, e.Name())
+		if task != "" && !mentions(path, task) {
+			continue
+		}
+		out = append(out, path)
 	}
 	sort.Strings(out)
 	return out
+}
+
+// mentions: does the file contain the string? The first lines are
+// enough — the brief is the first prompt — but a resumed session's
+// nudge names the task too, so the whole file is read.
+func mentions(path, needle string) bool {
+	b, err := os.ReadFile(path)
+	return err == nil && strings.Contains(string(b), needle)
 }
 
 // findSession finds a session by id under any project — where a

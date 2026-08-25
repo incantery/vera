@@ -277,7 +277,7 @@ func collect(o Options) (*collected, error) {
 		}
 		tb := taskBundle{task: t, dir: store.TaskDir(t.ID)}
 		tb.statuses, _ = store.Statuses(t.ID)
-		for _, path := range sessionsIn(o.ClaudeDir, t.Worktree, t.Spawned.Add(-time.Minute)) {
+		for _, path := range sessionsIn(o.ClaudeDir, t.Worktree, t.ID, t.Spawned.Add(-time.Minute)) {
 			if s, err := readSession(path); err == nil {
 				tb.sessions = append(tb.sessions, s)
 			}
