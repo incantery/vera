@@ -454,3 +454,30 @@ func TestProjectsResolveByName(t *testing.T) {
 		t.Fatalf("remembered: %v %+v", err, got)
 	}
 }
+
+// An idle prompt after the agent said done is the harness at rest,
+// not a finished task reopened as blocked; a permission prompt after
+// done is still a question.
+func TestHookIdleAfterDone(t *testing.T) {
+	store := NewStore(t.TempDir())
+	f := &Fleet{Store: store}
+	task := &Task{ID: "aa11", Incarnation: "x"}
+	if err := store.Save(task); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Append(task.ID, Status{Verb: Done, Text: "shipped", By: "agent"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Hook(task.ID, "x", HookEvent{Name: "Notification", NotificationType: "idle_prompt", Message: "Claude is waiting for your input"}); err != nil {
+		t.Fatal(err)
+	}
+	if last, _ := store.Last(task.ID); last.Verb != Done {
+		t.Fatalf("idle prompt after done reopened the task: %s", last.Verb)
+	}
+	if err := f.Hook(task.ID, "x", HookEvent{Name: "Notification", NotificationType: "permission_prompt", Message: "Bash?"}); err != nil {
+		t.Fatal(err)
+	}
+	if last, _ := store.Last(task.ID); last.Verb != Blocked {
+		t.Fatalf("a permission prompt is a question: %s", last.Verb)
+	}
+}

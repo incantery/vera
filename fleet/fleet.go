@@ -236,6 +236,13 @@ func (f *Fleet) Hook(id, incarnation string, ev HookEvent) error {
 	case "Notification":
 		switch ev.NotificationType {
 		case "permission_prompt", "idle_prompt", "elicitation_dialog":
+			// An idle prompt after the agent said done is the harness
+			// sitting at its prompt with nothing to do — not a task
+			// reopened as blocked. A permission prompt is a question
+			// whatever was said before it.
+			if last, _ := f.Store.Last(id); last != nil && last.Verb.Terminal() && ev.NotificationType == "idle_prompt" {
+				break
+			}
 			text := strings.TrimSpace(ev.Message)
 			if text == "" {
 				text = ev.NotificationType

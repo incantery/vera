@@ -27,6 +27,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/incantery/vera/dump"
 	"github.com/incantery/vera/fleet"
 )
 
@@ -380,7 +381,7 @@ func (m *chatModel) command(text string) tea.Cmd {
 	}
 	switch verb {
 	case "help", "?":
-		m.note("/tasks · /start [@repo] <brief> · /scout [@repo] <brief> · /resume <id> · /report <id> · /answer <id> <text> · /land <id> · /stop <id> [force] · /seen <id> · /new (conversation) · /debug (F2) · /quit")
+		m.note("/tasks · /start [@repo] <brief> · /scout [@repo] <brief> · /resume <id> · /report <id> · /answer <id> <text> · /land <id> · /stop <id> [force] · /seen <id> · /new (conversation) · /dump [note] · /debug (F2) · /quit")
 	case "quit", "q":
 		return tea.Quit
 	case "tasks", "t":
@@ -388,6 +389,17 @@ func (m *chatModel) command(text string) tea.Cmd {
 	case "new":
 		m.conversation = "chat-" + time.Now().Format("20060102-150405")
 		m.note("new conversation " + m.conversation)
+	case "dump":
+		// This conversation and every task it touched, in a folder;
+		// the rest of the line is the note at the top of its README.
+		conv := m.conversation
+		return func() tea.Msg {
+			res, err := dump.Build(dump.Options{Conversations: []string{conv}, Note: rest, Version: version, Tar: true})
+			if err != nil {
+				return noteMsg{"✗ dump: " + err.Error()}
+			}
+			return noteMsg{"dumped → " + strings.ReplaceAll(describeDump(res), "\n", " · ")}
+		}
 	case "debug":
 		m.debug = !m.debug
 		m.layout()

@@ -19,6 +19,7 @@ const usage = `vera — talk to her, and keep her running
   vera status             is verad up, where, since when
   vera log [-f]           verad's log
   vera url                the pairing page
+  vera dump [ids...]      a folder of everything about a conversation, to report a problem
   vera install            a launchd agent so verad starts at login
   vera uninstall          remove it
   vera version
@@ -48,6 +49,8 @@ func main() {
 		err = showLog(len(args) > 1 && args[1] == "-f")
 	case "url":
 		err = showURL()
+	case "dump":
+		err = runDump(args[1:])
 	case "install":
 		err = install()
 	case "uninstall":

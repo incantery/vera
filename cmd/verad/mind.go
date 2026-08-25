@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/journal"
 	"io"
 	"log/slog"
 	"net/http"
@@ -65,6 +66,8 @@ type Mind struct {
 	// repo" is a path the fleet can be pointed at. Nil is fine.
 	Projects *fleet.Projects
 	Gen      *agento11y.Client
+	// Journal is the record on disk, every exchange; nil keeps none.
+	Journal *journal.Writer
 	// Attention is what the devices have reported about where the
 	// person is looking. Nil is fine: a mind with no senses.
 	Attention *Attention
@@ -175,9 +178,11 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		messages = append(messages, chatMessage{Role: "assistant", ToolCalls: calls})
 		x.asked(calls)
 		for _, call := range calls {
+			started := time.Now()
 			result := m.invoke(ctx, msg.Conversation, msg.Device, x, call, reply)
 			delegations++
 			x.answered(call, result)
+			x.record(call, result, started)
 			messages = append(messages, chatMessage{
 				Role:       "tool",
 				ToolCallID: call.ID,
@@ -188,6 +193,14 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 
 	x.finish(ctx, text, answer.String(), used, err)
 	spend(ctx, used.Prompt, used.Completion)
+
+	// On disk before anything else: the log line and the remote record
+	// are copies; this is the one `vera dump` reads.
+	if m.Journal != nil {
+		if jerr := m.Journal.Write(x.entry(msg, system, text, answer.String(), used, err)); jerr != nil {
+			slog.Error("journal", "error", jerr.Error())
+		}
+	}
 
 	// One line per exchange regardless of what else is watching. Both
 	// halves of the conversation are in here on purpose: the question
@@ -263,6 +276,7 @@ func (m *Mind) invoke(ctx context.Context, conversation, device string, x *excha
 
 	m.endTool(ctx, rec, out, elapsed, err)
 	logDelegation(conversation, args.Task, out, elapsed, err)
+	x.link("", out.Session, out.Cost)
 
 	if err != nil {
 		return "The task could not be completed: " + err.Error()

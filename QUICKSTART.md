@@ -90,3 +90,9 @@ output, reading state) graduate to a Go provider.
   first (docs.astral.sh/uv); install it, then "Check again".
 - **Stuck "reading the pane".** Core may predate a feature — restart it
   after pulling.
+- **Vera did something odd.** `vera dump --note "what happened"` (or
+  `/dump what happened` in the chat) writes a folder and a `.tar.gz`
+  under `~/.local/state/vera/dumps/`: the conversation with every tool
+  round and the prompt the model saw, the fleet tasks it touched with
+  their agents' Claude Code sessions and what they cost, and verad's log
+  for those minutes — secrets redacted. Send the tarball.

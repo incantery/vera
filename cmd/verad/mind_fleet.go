@@ -91,6 +91,7 @@ func (m *Mind) invokeFleet(ctx context.Context, conversation, device string, x *
 	}
 	started := time.Now()
 	ctx, rec := m.beginTool(ctx, conversation, call, args.Action)
+	x.link(args.Task, "", 0)
 	result, err := m.fleetAction(ctx, device, x, args, reply)
 	m.endTool(ctx, rec, delegated{Result: result}, time.Since(started), err)
 	slog.Info("fleet tool",
@@ -133,6 +134,7 @@ func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args
 		if err != nil {
 			return "", err
 		}
+		x.link(t.ID, "", 0)
 		where := "in " + shortPath(t.Project)
 		if t.Branch != "" {
 			where += " on branch " + t.Branch

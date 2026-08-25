@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/journal"
 	"github.com/incantery/vera/mux"
 	"log/slog"
 	"net/http"
@@ -220,6 +221,11 @@ func main() {
 	}
 
 	answer, mind, how := chooseMind(*echoOnly, *model, *apiBase, *keyFile, generations, preface, memory, hands)
+	if mind != nil {
+		// Every exchange, on disk, whatever else is watching: what
+		// `vera dump` hands to whoever is asked why Vera did that.
+		mind.Journal = &journal.Writer{Dir: filepath.Join(stateDir(), "vera", "conversations")}
+	}
 	lan.how = how
 	// Speech to text lives on this machine; the phone sends audio and
 	// this turns it into words.

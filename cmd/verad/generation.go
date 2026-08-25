@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/incantery/vera/journal"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -59,6 +60,13 @@ type exchange struct {
 	// in order. The Conversations view shows an exchange as the model
 	// lived it only if these are in the record.
 	rounds []agento11y.Message
+
+	// notes is the same story for the journal on disk, kept whether or
+	// not anything remote is watching; pending is the round in progress,
+	// which a tool fills in (the task it opened, the session it ran)
+	// before record closes it.
+	notes   []journal.Round
+	pending journal.Round
 
 	mind    *Mind
 	labels  []attribute.KeyValue
@@ -268,6 +276,55 @@ func (m *Mind) recordSecondary(ctx context.Context, operation string, used usage
 		m.tokens.Record(ctx, int64(used.Completion), metric.WithAttributes(
 			append(append([]attribute.KeyValue{}, labels...),
 				attribute.String("gen_ai.token.type", "output"))...))
+	}
+}
+
+// link ties the round in progress to what it reached: a fleet task,
+// a Claude Code session, a cost. Empty values leave what is there.
+func (x *exchange) link(task, session string, cost float64) {
+	if task != "" {
+		x.pending.Task = task
+	}
+	if session != "" {
+		x.pending.Session = session
+	}
+	if cost != 0 {
+		x.pending.CostUSD = cost
+	}
+}
+
+// record closes the round in progress for the journal.
+func (x *exchange) record(call toolCall, result string, started time.Time) {
+	r := x.pending
+	x.pending = journal.Round{}
+	r.At = started
+	r.Tool = call.Function.Name
+	r.CallID = call.ID
+	r.Args = json.RawMessage(call.Function.Arguments)
+	r.Result = result
+	r.TookMs = time.Since(started).Milliseconds()
+	x.notes = append(x.notes, r)
+}
+
+// entry is the exchange as the journal keeps it.
+func (x *exchange) entry(msg Message, system, said, answered string, used usage, err error) journal.Entry {
+	return journal.Entry{
+		At:           x.started,
+		Version:      version,
+		Conversation: msg.Conversation,
+		Device:       msg.Device,
+		Model:        x.mind.Model,
+		TraceID:      x.traceID(),
+		System:       system,
+		Said:         said,
+		Answered:     answered,
+		Error:        errText(err),
+		InputTokens:  used.Prompt,
+		OutputTokens: used.Completion,
+		FirstSignMs:  x.signMillis(),
+		FirstTokenMs: x.firstMillis(),
+		TookMs:       time.Since(x.started).Milliseconds(),
+		Rounds:       x.notes,
 	}
 }
 
