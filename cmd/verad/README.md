@@ -139,14 +139,30 @@ restart|status|log|url` manage the daemon and `vera install` makes it a
 launchd agent. The chat is a pane (pin it to rook's rail) that
 speaks exactly the phone's wire — `/say` frames, `/fleet`, `/status`,
 the identity file for the secret — and shows what the phone cannot.
-Status lines and deltas as they stream; the fleet as a strip, one line
-per open task in the person's nouns with the unread count; and behind
-F2, what Vera currently believes about where you are, from the same
-facts the model's preface is built from. Slash commands are the fleet
-verbs by hand: `/start <brief>` opens a room in the cwd, `/scout`, 
-`/answer <id> <text>`, `/land`, `/stop [force]`, `/seen`, `/new` for a
-fresh conversation. It exists so iterating on the mind is typing, not
-picking up a phone.
+
+The screen itself is **mote's** (`github.com/incantery/mote/tui`), driven
+through the one interface a terminal needs — `agent.Agent`: say a thing,
+get a stream of events. Vera is that agent over HTTP, so `/say` frames
+become events: deltas into streaming markdown, status lines into the
+line you read while you wait, and `tool_call`/`tool_result` into a card
+per call with its arguments, its result, how long it took and what it
+cost. The rail on the right is the fleet — every open task, its title
+from the brief, its last word underneath, and one of five states a
+person acts on differently (working, idle, blocked, done, failed);
+closed tasks come off it. A task whose state turns actionable, or that
+lands, also says so in the transcript.
+
+Slash commands are the fleet verbs by hand: `/tasks`, `/start [@repo]
+<brief>` opens a room, `/scout`, `/resume`, `/report <id>` (which prints
+what it wrote and marks it seen), `/answer <id> <text>`, `/land`,
+`/stop [force]`, `/seen`, `/new` for a fresh conversation, `/dump [note]`
+for a folder of everything, `/debug` for what Vera currently believes
+about where you are — devices, focus, terminal, integrations — from the
+same facts the model's preface is built from, and `/quit`. `/help` is
+mote's: it lists these and the keys. `esc` stops a reply in flight,
+`ctrl+c` leaves, `ctrl+t` hides the rail, `tab`/`ctrl+o` walk and open
+tool cards. It exists so iterating on the mind is typing, not picking up
+a phone.
 
 ## Pairing
 
