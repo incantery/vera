@@ -179,10 +179,13 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		x.asked(calls)
 		for _, call := range calls {
 			started := time.Now()
+			_ = reply(Frame{ToolCall: &ToolCallFrame{ID: call.ID, Name: call.Function.Name, Args: call.Function.Arguments}})
 			result := m.invoke(ctx, msg.Conversation, msg.Device, x, call, reply)
 			delegations++
 			x.answered(call, result)
 			x.record(call, result, started)
+			last := x.notes[len(x.notes)-1]
+			_ = reply(Frame{ToolResult: &ToolResultFrame{ID: call.ID, Result: trim(result, 8000), DurationMs: last.TookMs, CostUSD: last.CostUSD}})
 			messages = append(messages, chatMessage{
 				Role:       "tool",
 				ToolCallID: call.ID,

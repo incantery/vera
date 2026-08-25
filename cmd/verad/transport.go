@@ -57,6 +57,26 @@ type Frame struct {
 	// replaces whatever status came before it and is never part of
 	// the answer.
 	Status string `json:"status,omitempty"`
+
+	// ToolCall and ToolResult are the exchange's tool rounds as they
+	// happen, so a terminal on the other end can show them as they
+	// are — a card per call — rather than as a status line about them.
+	// A client that does not know them ignores them.
+	ToolCall   *ToolCallFrame   `json:"tool_call,omitempty"`
+	ToolResult *ToolResultFrame `json:"tool_result,omitempty"`
+}
+
+type ToolCallFrame struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Args string `json:"args"`
+}
+
+type ToolResultFrame struct {
+	ID         string  `json:"id"`
+	Result     string  `json:"result"`
+	DurationMs int64   `json:"duration_ms"`
+	CostUSD    float64 `json:"cost_usd,omitempty"`
 }
 
 // Handler answers one exchange: the peer's message in, reply frames
