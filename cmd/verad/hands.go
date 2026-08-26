@@ -455,7 +455,8 @@ func (m *Mind) invokeTool(ctx context.Context, conversation string, x *exchange,
 		// the "first sign" clock the way a status line does.
 		x.sign(ctx)
 		m.Hands.Asking(call.ID, g)
-		_ = reply(Frame{Ask: &AskFrame{ID: call.ID, Name: c.Tool, Args: string(c.Args), Text: verdict.Reason}})
+		_ = reply(Frame{Ask: &AskFrame{ID: call.ID, Name: c.Tool,
+			Args: trim(string(c.Args), maxRecordedArgs), Text: verdict.Reason}})
 		ok, alive := m.Hands.waitFor(ctx, g, c)
 		choice := m.Hands.Answered(call.ID)
 		switch {

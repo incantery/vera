@@ -309,10 +309,30 @@ func (x *exchange) record(call toolCall, result string, started time.Time) {
 	r.At = started
 	r.Tool = call.Function.Name
 	r.CallID = call.ID
-	r.Args = json.RawMessage(call.Function.Arguments)
+	r.Args = capArgs(call.Function.Arguments)
 	r.Result = result
 	r.TookMs = time.Since(started).Milliseconds()
 	x.notes = append(x.notes, r)
+}
+
+// maxRecordedArgs bounds what a tool call's arguments contribute to
+// the record. `delegate` and `fleet` take prose and are small; `write`
+// takes a file's whole content, and a journal line the size of the
+// file it wrote is a journal nobody can read and a disk nobody meant
+// to fill.
+const maxRecordedArgs = 4000
+
+// capArgs keeps long arguments out of the record without leaving
+// something that is not JSON where JSON is expected.
+func capArgs(args string) json.RawMessage {
+	if len(args) <= maxRecordedArgs {
+		return json.RawMessage(args)
+	}
+	short, err := json.Marshal(trim(args, maxRecordedArgs))
+	if err != nil {
+		return nil
+	}
+	return short
 }
 
 // entry is the exchange as the journal keeps it.

@@ -209,7 +209,10 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		x.asked(calls)
 		for _, call := range calls {
 			started := time.Now()
-			_ = reply(Frame{ToolCall: &ToolCallFrame{ID: call.ID, Name: call.Function.Name, Args: call.Function.Arguments}})
+			// Capped for the same reason the record is: a card showing
+			// a whole file is a card nobody reads, on a phone.
+			_ = reply(Frame{ToolCall: &ToolCallFrame{ID: call.ID, Name: call.Function.Name,
+				Args: trim(call.Function.Arguments, maxRecordedArgs)}})
 			result := m.invoke(ctx, msg.Conversation, msg.Device, x, call, reply)
 			delegations++
 			x.answered(call, result)

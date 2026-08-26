@@ -229,3 +229,23 @@ func waitUntil(t *testing.T, f func() bool) {
 	}
 	t.Fatal("never happened")
 }
+
+// A write's arguments are the file's whole content. The record and
+// the wire both cap them: a journal line the size of the file it wrote
+// is a journal nobody reads and a disk nobody meant to fill.
+func TestLongArgumentsAreCapped(t *testing.T) {
+	big := `{"path":"/tmp/x","content":"` + strings.Repeat("a", 200_000) + `"}`
+	got := capArgs(big)
+	if len(got) > maxRecordedArgs+64 {
+		t.Fatalf("kept %d bytes of a %d-byte argument", len(got), len(big))
+	}
+	if !json.Valid(got) {
+		t.Fatalf("what is left is not JSON, so the whole line will be dropped: %q", got)
+	}
+	// Short arguments are kept exactly, and stay readable as JSON
+	// rather than becoming a string that happens to look like some.
+	small := `{"path":"/tmp/x"}`
+	if string(capArgs(small)) != small {
+		t.Fatalf("a short argument was rewritten: %s", capArgs(small))
+	}
+}
