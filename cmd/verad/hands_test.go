@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/incantery/mote/provider"
 	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
@@ -288,7 +289,7 @@ func oneCall(t *testing.T, h *Hands, tl tool.Tool) (string, []Frame, *exchange) 
 	m := &Mind{Hands: h, Model: "m", instruments: newInstruments()}
 	ctx, x := m.begin(context.Background(), Message{Conversation: "c", Device: "phone"}, "hi", 0, "system", nil)
 	var frames []Frame
-	call := toolCall{ID: "call_1", Function: toolFunction{Name: tl.Name(), Arguments: `{}`}}
+	call := provider.Call{ID: "call_1", Name: tl.Name(), Arguments: `{}`}
 	said := m.invoke(ctx, "c", "phone", x, call, func(f Frame) error {
 		frames = append(frames, f)
 		return nil
@@ -352,7 +353,7 @@ func TestEveryToolGoesThroughThePolicy(t *testing.T) {
 	h.policy.Tools["saying"] = tool.Deny
 	m := &Mind{Hands: h, Model: "m", instruments: newInstruments()}
 	ctx, x := m.begin(context.Background(), Message{Conversation: "c"}, "hi", 0, "system", nil)
-	call := toolCall{ID: "call_1", Function: toolFunction{Name: "saying", Arguments: `{}`}}
+	call := provider.Call{ID: "call_1", Name: "saying", Arguments: `{}`}
 	said := m.invoke(ctx, "c", "", x, call, func(Frame) error { return nil })
 	if !strings.HasPrefix(said, "Not allowed:") {
 		t.Errorf("a denied call said %q", said)
@@ -362,7 +363,7 @@ func TestEveryToolGoesThroughThePolicy(t *testing.T) {
 	}
 
 	// And a name nothing answers to is still a name nothing answers to.
-	if got := m.invoke(ctx, "c", "", x, toolCall{ID: "x", Function: toolFunction{Name: "nonesuch"}}, func(Frame) error { return nil }); got != "That tool does not exist." {
+	if got := m.invoke(ctx, "c", "", x, provider.Call{ID: "x", Name: "nonesuch"}, func(Frame) error { return nil }); got != "That tool does not exist." {
 		t.Errorf("an unknown tool said %q", got)
 	}
 }

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,76 +13,108 @@ import (
 	"testing"
 	"time"
 
+	"github.com/incantery/mote/provider"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 )
 
-// scripted is the model, answering each round of the tool loop with
-// the next thing in the script. The real one is stateless per request
-// and so is this; what it is not is the same answer twice, which would
-// loop.
-func scripted(t *testing.T, rounds ...string) *httptest.Server {
-	t.Helper()
-	var mu sync.Mutex
-	var round int
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		i := round
-		round++
-		mu.Unlock()
-		w.Header().Set("Content-Type", "text/event-stream")
-		if i < len(rounds) {
-			for _, line := range strings.Split(rounds[i], "\n") {
-				if line != "" {
-					_, _ = w.Write([]byte("data: " + line + "\n\n"))
-				}
-			}
-		}
-		_, _ = w.Write([]byte("data: [DONE]\n\n"))
-	}))
+// scriptRound is one turn of a scripted model: the events it sends and
+// what it says that cost.
+type scriptRound struct {
+	events []provider.Event
+	usage  provider.Usage
 }
 
-// callsTool is one SSE chunk asking for a tool, and the usage chunk
-// after it.
-func callsTool(t *testing.T, id, name string, args any) string {
+// scriptedModel is the model, answering each round of the tool loop
+// with the next thing in the script. The real one is stateless per
+// request and so is this; what it is not is the same answer twice,
+// which would loop.
+//
+// It is a provider rather than an HTTP server now: the wire belongs to
+// mote, which tests it against its own sockets, and what verad has
+// left to test is the loop over it.
+type scriptedModel struct {
+	mu     sync.Mutex
+	script []scriptRound
+	round  int
+	// seen is every request it was asked, in order, for a test about
+	// what the model was actually told.
+	seen []provider.Request
+}
+
+func scripted(t *testing.T, rounds ...scriptRound) *scriptedModel {
+	t.Helper()
+	return &scriptedModel{script: rounds}
+}
+
+func (m *scriptedModel) Stream(ctx context.Context, req provider.Request, fn func(provider.Event)) (provider.Usage, error) {
+	m.mu.Lock()
+	i := m.round
+	m.round++
+	m.seen = append(m.seen, req)
+	var r scriptRound
+	if i < len(m.script) {
+		r = m.script[i]
+	}
+	m.mu.Unlock()
+
+	for _, ev := range r.events {
+		if err := ctx.Err(); err != nil {
+			return r.usage, err
+		}
+		fn(ev)
+	}
+	return r.usage, nil
+}
+
+// asked is the nth request the model was given, or the zero one.
+func (m *scriptedModel) asked(n int) provider.Request {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if n >= len(m.seen) {
+		return provider.Request{}
+	}
+	return m.seen[n]
+}
+
+func (m *scriptedModel) rounds() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.seen)
+}
+
+// callsTool is a round in which the model asks for one tool.
+func callsTool(t *testing.T, id, name string, args any) scriptRound {
 	t.Helper()
 	raw, err := json.Marshal(args)
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunk := map[string]any{
-		"model": "m",
-		"choices": []any{map[string]any{"delta": map[string]any{
-			"tool_calls": []any{map[string]any{
-				"index": 0, "id": id, "type": "function",
-				"function": map[string]any{"name": name, "arguments": string(raw)},
-			}},
-		}}},
+	return scriptRound{
+		events: []provider.Event{provider.Calling(id, name, string(raw))},
+		usage:  provider.Usage{Model: "m", Input: 9, Output: 2},
 	}
-	b, err := json.Marshal(chunk)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(b) + "\n" + `{"model":"m","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":2}}`
 }
 
-func says(text string) string {
-	b, _ := json.Marshal(map[string]any{"model": "m",
-		"choices": []any{map[string]any{"delta": map[string]any{"content": text}}}})
-	return string(b) + "\n" + `{"model":"m","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1}}`
+// says is a round in which the model answers.
+func says(text string) scriptRound {
+	return scriptRound{
+		events: []provider.Event{provider.Delta(text)},
+		usage:  provider.Usage{Model: "m", Input: 3, Output: 1},
+	}
 }
 
 // askingMind is a mind with hands over a fresh home, a scripted model,
 // and a journal on disk.
-func askingMind(t *testing.T, rounds ...string) (*Mind, string, string) {
+func askingMind(t *testing.T, rounds ...scriptRound) (*Mind, string, string) {
 	t.Helper()
 	return askingMindAt(t, filepath.Join(t.TempDir(), "vera"), nil, rounds...)
 }
 
 // askingMindAt is askingMind for a test that had to know where her
 // home was before it could write the script.
-func askingMindAt(t *testing.T, root string, projects *fleet.Projects, rounds ...string) (*Mind, string, string) {
+func askingMindAt(t *testing.T, root string, projects *fleet.Projects, rounds ...scriptRound) (*Mind, string, string) {
 	t.Helper()
 	place, err := home.Open(root)
 	if err != nil {
@@ -94,12 +125,9 @@ func askingMindAt(t *testing.T, root string, projects *fleet.Projects, rounds ..
 		t.Fatal(err)
 	}
 	hands.Refresh(context.Background())
-	srv := scripted(t, rounds...)
-	t.Cleanup(srv.Close)
 	journalDir := t.TempDir()
 	return &Mind{
-		Client:      srv.Client(),
-		Base:        srv.URL,
+		Provider:    scripted(t, rounds...),
 		Model:       "m",
 		History:     newHistory(),
 		Home:        place,

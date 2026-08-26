@@ -16,6 +16,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/incantery/mote/provider"
 )
 
 // Dictation is one utterance headed for the cursor, with what is known
@@ -61,17 +63,15 @@ func (m *Mind) clean(ctx context.Context, d Dictation) (Cleaned, error) {
 	if d.App != nil && d.App.Name != "" {
 		system += "\n\nThe cursor is in " + d.App.Name + ". " + styleFor(d.App)
 	}
-	messages := []chatMessage{
-		{Role: "system", Content: system},
-		{Role: "user", Content: text},
-	}
-
 	var out strings.Builder
 	var used usage
-	_, err := m.stream(ctx, messages, nil, func(delta string) error {
-		out.WriteString(delta)
-		return nil
-	}, &used)
+	spent, err := m.Provider.Stream(ctx, m.request(system, []provider.Message{provider.User(text)}, nil),
+		func(ev provider.Event) {
+			if ev.Kind == provider.KindDelta {
+				out.WriteString(ev.Text)
+			}
+		})
+	used.add(spent)
 	spend(ctx, used.Prompt, used.Completion)
 	if err != nil {
 		return Cleaned{Text: text, Raw: true}, err

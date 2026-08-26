@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/incantery/mote/provider"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
+	"github.com/incantery/vera/journal"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,70 +17,303 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-// sse serves a canned server-sent-event stream the way the API does.
-func sse(t *testing.T, chunks ...string) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, c := range chunks {
-			fmt.Fprintf(w, "data: %s\n\n", c)
-		}
-		fmt.Fprint(w, "data: [DONE]\n\n")
-	}))
+// The loop over a provider, against a scripted one: a tool round trip,
+// what it accumulates, and a model that declined.
+//
+// What used to be here was the wire — SSE chunks, reassembled tool
+// call fragments, whether the request asked for usage. That is mote's
+// now, tested against its own sockets. What is left is verad's: the
+// rounds, the record, and what reaches the phone.
+
+func TestAToolRoundTripReachesTheModelAndComesBack(t *testing.T) {
+	mind, _, journalDir := askingMind(t,
+		callsTool(t, "call_r", "read", map[string]any{"path": "MEMORY.md"}),
+		says("It is empty."))
+	model := mind.Provider.(*scriptedModel)
+
+	var answer strings.Builder
+	if err := mind.think(context.Background(),
+		Message{Text: "what do you know", Conversation: "c1"},
+		func(f Frame) error {
+			answer.WriteString(f.Delta)
+			return nil
+		}); err != nil {
+		t.Fatal(err)
+	}
+	if answer.String() != "It is empty." {
+		t.Fatalf("the answer was %q", answer.String())
+	}
+	if model.rounds() != 2 {
+		t.Fatalf("the loop ran %d rounds, want 2", model.rounds())
+	}
+
+	// The second request carries the call the model made and the
+	// answer it got, in that order, tied by id.
+	second := model.asked(1).Messages
+	if len(second) != 3 {
+		t.Fatalf("the second round carried %d messages: %+v", len(second), second)
+	}
+	if second[1].Role != provider.RoleAssistant || len(second[1].Calls) != 1 ||
+		second[1].Calls[0].Name != "read" || second[1].Calls[0].ID != "call_r" {
+		t.Fatalf("the tool call did not go back to the model: %+v", second[1])
+	}
+	if second[2].Role != provider.RoleTool || second[2].CallID != "call_r" {
+		t.Fatalf("the tool result did not answer the call: %+v", second[2])
+	}
+	if second[2].Text == "" {
+		t.Fatal("the tool result reached the model empty")
+	}
+	// And the tools went with it, from the registry, unwrapped.
+	if len(model.asked(0).Tools) == 0 {
+		t.Fatal("no tool definitions reached the model")
+	}
+	// The journal has the round.
+	entries := readJournal(t, journalDir, "c1")
+	if len(entries) != 1 || len(entries[0].Rounds) != 1 || entries[0].Rounds[0].Tool != "read" {
+		t.Fatalf("the journal did not record the round: %+v", entries)
+	}
 }
 
-func TestStreamReassemblesTheAnswer(t *testing.T) {
-	srv := sse(t,
-		`{"model":"m-1","choices":[{"delta":{"content":"Hello"}}]}`,
-		`{"model":"m-1","choices":[{"delta":{"content":", world"}}]}`,
-		`{"model":"m-1","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":4}}`,
-	)
-	defer srv.Close()
+// Rounds accumulate: what an exchange cost is all of them, not the
+// last one — and the two cache numbers are part of the prompt rather
+// than additions to it.
+func TestUsageAccumulatesAcrossRounds(t *testing.T) {
+	model := scripted(t,
+		scriptRound{
+			events: []provider.Event{provider.Calling("call_1", "nonesuch", `{}`)},
+			usage:  provider.Usage{Model: "m", Input: 10, Output: 2, CacheWrite: 100},
+		},
+		scriptRound{
+			events: []provider.Event{provider.Delta("done")},
+			usage:  provider.Usage{Model: "m", Input: 5, Output: 3, CacheRead: 100},
+		})
+	journalDir := t.TempDir()
+	mind := &Mind{Provider: model, Model: "m", History: newHistory(),
+		Journal: &journal.Writer{Dir: journalDir}, instruments: newInstruments()}
 
-	mind := &Mind{Client: srv.Client(), Base: srv.URL, Model: "m-1", instruments: newInstruments()}
-
-	var got strings.Builder
-	var used usage
-	if _, err := mind.stream(context.Background(),
-		[]chatMessage{{Role: "user", Content: "hi"}}, nil,
-		func(d string) error {
-			got.WriteString(d)
-			return nil
-		}, &used); err != nil {
+	if err := mind.think(context.Background(), Message{Text: "go", Conversation: "c1"},
+		func(Frame) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
 
-	if got.String() != "Hello, world" {
-		t.Fatalf("reassembled %q", got.String())
+	got := readJournal(t, journalDir, "c1")
+	if len(got) != 1 {
+		t.Fatalf("wrote %d entries", len(got))
 	}
-	// Without stream_options the usage chunk never arrives, and the
-	// cost of every exchange silently reads as zero.
-	if used.Prompt != 11 || used.Completion != 4 {
-		t.Fatalf("usage was %+v — token counts did not survive the stream", used)
+	e := got[0]
+	// 10+100 written, then 5+100 read: the prompt is all of it.
+	if e.InputTokens != 215 || e.OutputTokens != 5 {
+		t.Fatalf("usage did not accumulate: %d in, %d out", e.InputTokens, e.OutputTokens)
 	}
-	if used.Model != "m-1" {
-		t.Fatalf("response model was %q", used.Model)
+	if e.CacheReadTokens != 100 || e.CacheWriteTokens != 100 {
+		t.Fatalf("the cache numbers did not reach the journal: read %d, write %d",
+			e.CacheReadTokens, e.CacheWriteTokens)
 	}
 }
 
-func TestUsageIsRequestedOrItNeverArrives(t *testing.T) {
-	var body string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		b := make([]byte, 4096)
-		n, _ := r.Body.Read(b)
-		body = string(b[:n])
-		fmt.Fprint(w, "data: [DONE]\n\n")
-	}))
-	defer srv.Close()
+// A model that declined is not an outage. It happened, it was paid
+// for, and the person should see what it said.
+func TestAnErrorEventIsToldRatherThanRaised(t *testing.T) {
+	model := scripted(t, scriptRound{
+		events: []provider.Event{provider.Fail("I will not do that."), provider.Delta("Sorry.")},
+		usage:  provider.Usage{Model: "m", Input: 1, Output: 1, StopReason: "refusal"},
+	})
+	mind := &Mind{Provider: model, Model: "m", History: newHistory(), instruments: newInstruments()}
 
-	mind := &Mind{Client: srv.Client(), Base: srv.URL, Model: "m", instruments: newInstruments()}
-	_, _ = mind.stream(context.Background(),
-		[]chatMessage{{Role: "user", Content: "hi"}}, nil,
-		func(string) error { return nil }, &usage{})
-
-	if !strings.Contains(body, "include_usage") {
-		t.Fatalf("the request does not ask for usage, so tokens will always read zero:\n%s", body)
+	var told, said string
+	err := mind.think(context.Background(), Message{Text: "do the thing", Conversation: "c1"},
+		func(f Frame) error {
+			if f.Error != "" {
+				told = f.Error
+			}
+			said += f.Delta
+			return nil
+		})
+	if err != nil {
+		t.Fatalf("a refusal came back as an error from think: %v", err)
 	}
+	if told != "I will not do that." {
+		t.Fatalf("the refusal did not reach the phone: %q", told)
+	}
+	if said != "Sorry." {
+		t.Fatalf("the reply was %q", said)
+	}
+}
+
+// Thinking is the model's working, not its answer. It is not shown,
+// and the journal keeps only that there was some.
+func TestThinkingIsCountedAndNotSpoken(t *testing.T) {
+	model := scripted(t, scriptRound{
+		events: []provider.Event{
+			provider.Thought("let me see"), provider.Thought(" — yes"),
+			provider.Delta("Yes."),
+		},
+		usage: provider.Usage{Model: "m", Input: 1, Output: 1},
+	})
+	journalDir := t.TempDir()
+	mind := &Mind{Provider: model, Model: "m", History: newHistory(),
+		Journal: &journal.Writer{Dir: journalDir}, instruments: newInstruments()}
+
+	var said string
+	if err := mind.think(context.Background(), Message{Text: "well?", Conversation: "c1"},
+		func(f Frame) error { said += f.Delta; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if said != "Yes." {
+		t.Fatalf("the model's working reached the person: %q", said)
+	}
+	if got := readJournal(t, journalDir, "c1"); len(got) != 1 || got[0].ThinkingParts != 2 {
+		t.Fatalf("the journal did not count the thinking: %+v", got)
+	}
+}
+
+// The cached prefix is worth having only if it is still there next
+// time. The stable part of the prompt goes first and the parts that
+// change go after it, so writing a memory between two exchanges of one
+// conversation must not move a byte of the prefix.
+func TestTheStablePrefixSurvivesAnExchange(t *testing.T) {
+	place, err := home.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := scripted(t, says("one"), says("two"))
+	mind := &Mind{Provider: model, Model: "m", History: newHistory(),
+		Home: place, Memory: place.Memory(), instruments: newInstruments()}
+	swallow := func(Frame) error { return nil }
+
+	stable := mind.stable()
+	if err := mind.think(context.Background(), Message{Text: "hello", Conversation: "c1"}, swallow); err != nil {
+		t.Fatal(err)
+	}
+	// Between the two, she learns something — which is the one thing
+	// that changes the prompt without anybody restarting anything.
+	place.Memory().Apply(home.Revision{Add: []home.Note{
+		{Name: "lives-in-vienna", Type: home.TypeUser, Fact: "Lives in Vienna."},
+	}}, "c1")
+	if err := mind.think(context.Background(), Message{Text: "and now", Conversation: "c1"}, swallow); err != nil {
+		t.Fatal(err)
+	}
+
+	first, second := model.asked(0).System, model.asked(1).System
+	if first == second {
+		t.Fatal("the second prompt is the first one — the memory never reached it")
+	}
+	for i, sys := range []string{first, second} {
+		if !strings.HasPrefix(sys, stable) {
+			t.Fatalf("prompt %d does not start with the stable part:\n%s", i, sys)
+		}
+	}
+	if mind.stable() != stable {
+		t.Fatal("the stable part of the prompt changed under an exchange")
+	}
+	// And the request asks for it to be cached, or none of this buys
+	// anything.
+	if !model.asked(1).CacheSystem {
+		t.Fatal("the request did not ask the provider to cache the prefix")
+	}
+}
+
+// Which wire answers is decided by the model name and the keys on the
+// machine, and the banner has to say which one it was.
+func TestTheProviderIsChosenFromTheModelAndTheKeys(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		model      string
+		anthropic  string
+		openAI     string
+		effortSet  bool
+		wantVendor string
+		wantEffort provider.Effort
+		wantThink  provider.Thinking
+	}{
+		{name: "a claude model with a key goes to the Messages API",
+			model: "claude-opus-5", anthropic: "sk-ant-x", openAI: "sk-o",
+			wantVendor: "anthropic", wantEffort: provider.EffortHigh},
+		{name: "anything else goes to the OpenAI-compatible endpoint",
+			model: "gpt-5.6-luna", openAI: "sk-o",
+			wantVendor: "openai", wantThink: provider.ThinkingOff},
+		{name: "a claude model with no key is somebody's proxy",
+			model: "claude-opus-5", openAI: "sk-o",
+			wantVendor: "openai", wantThink: provider.ThinkingOff},
+		{name: "an effort somebody typed beats the workaround",
+			model: "gpt-5.6-luna", openAI: "sk-o", effortSet: true,
+			wantVendor: "openai", wantEffort: provider.EffortHigh, wantThink: provider.ThinkingOff},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("ANTHROPIC_API_KEY", c.anthropic)
+			t.Setenv("OPENAI_API_KEY", c.openAI)
+			t.Setenv("OPENAI_BASE_URL", "")
+			_, mind, how := chooseMind(mindOptions{
+				Model: c.model, Effort: "high", EffortSet: c.effortSet,
+			})
+			if mind == nil {
+				t.Fatalf("no mind at all: %s", how)
+			}
+			if mind.Vendor != c.wantVendor {
+				t.Errorf("went to %s, want %s", mind.Vendor, c.wantVendor)
+			}
+			if mind.Effort != c.wantEffort {
+				t.Errorf("effort is %q, want %q", mind.Effort, c.wantEffort)
+			}
+			if mind.Thinking != c.wantThink {
+				t.Errorf("thinking is %q, want %q", mind.Thinking, c.wantThink)
+			}
+			if !strings.Contains(how, c.model) || !strings.Contains(how, c.wantVendor) {
+				t.Errorf("the banner does not say what answers: %q", how)
+			}
+		})
+	}
+}
+
+// Nothing to call at all is the echo, said out loud. A binary that
+// silently repeats your words is one you will spend an hour debugging
+// the model behind.
+func TestNoWireAtAllIsTheEcho(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	// --key-file that names nothing, so the file under ~/.config is not
+	// what this test is about.
+	_, mind, how := chooseMind(mindOptions{
+		Model: "gpt-5.6-luna", Effort: "high",
+		KeyFile: filepath.Join(t.TempDir(), "there-is-no-key-here"),
+	})
+	if mind != nil {
+		t.Fatalf("found a model to talk to: %s", how)
+	}
+	if !strings.HasPrefix(how, "echoing") || !strings.Contains(how, "OPENAI_API_KEY") {
+		t.Errorf("the reason is not in the banner: %q", how)
+	}
+}
+
+// An explicit --model wins; otherwise the profile is what says which
+// model suits this agent.
+func TestTheProfileNamesTheModelWhenNobodyElseDoes(t *testing.T) {
+	own := &Hands{Model: "claude-opus-5"}
+	if got, source := modelFor("gpt-5.6-luna", true, own); got != "gpt-5.6-luna" || source != "" {
+		t.Errorf("--model did not win: %q (%s)", got, source)
+	}
+	got, source := modelFor("gpt-5.6-luna", false, own)
+	if got != "claude-opus-5" || !strings.Contains(source, "profile.md") {
+		t.Errorf("the profile's hint was not used: %q (%s)", got, source)
+	}
+	// No profile, or a profile that says nothing: the flag's default.
+	if got, _ := modelFor("gpt-5.6-luna", false, nil); got != "gpt-5.6-luna" {
+		t.Errorf("with no profile the flag stands: %q", got)
+	}
+	if got, _ := modelFor("gpt-5.6-luna", false, &Hands{}); got != "gpt-5.6-luna" {
+		t.Errorf("a profile with no model hint should not blank it: %q", got)
+	}
+}
+
+// readJournal is the exchanges one conversation left on disk.
+func readJournal(t *testing.T, dir, conversation string) []journal.Entry {
+	t.Helper()
+	got, err := journal.Read(journal.Path(dir, conversation))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
 }
 
 // The one that matters for a bill: a metric label is a time series
@@ -89,13 +322,8 @@ func TestMetricsCarryNoUnboundedLabels(t *testing.T) {
 	reader := metric.NewManualReader()
 	otel.SetMeterProvider(metric.NewMeterProvider(metric.WithReader(reader)))
 
-	srv := sse(t,
-		`{"model":"m","choices":[{"delta":{"content":"ok"}}]}`,
-		`{"model":"m","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":1}}`,
-	)
-	defer srv.Close()
-
-	mind := &Mind{Client: srv.Client(), Base: srv.URL, Model: "m", History: newHistory(), instruments: newInstruments()}
+	mind := &Mind{Provider: scripted(t, says("ok")), Model: "m",
+		History: newHistory(), instruments: newInstruments()}
 	err := mind.think(context.Background(),
 		Message{Text: "hello", Conversation: "conversation-that-is-unique-forever"},
 		func(Frame) error { return nil })

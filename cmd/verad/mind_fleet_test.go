@@ -73,9 +73,8 @@ func TestHerOwnToolsComeFirst(t *testing.T) {
 	// And the definitions the model is sent are in the same order.
 	defs := h.Definitions()
 	for i, want := range []string{"delegate", "fleet"} {
-		fn := defs[i]["function"].(map[string]any)
-		if fn["name"] != want {
-			t.Fatalf("definition %d is %v, want %s", i, fn["name"], want)
+		if defs[i].Function.Name != want {
+			t.Fatalf("definition %d is %v, want %s", i, defs[i].Function.Name, want)
 		}
 	}
 }
@@ -140,6 +139,28 @@ func TestOnlyAStartNamesAPath(t *testing.T) {
 	}
 }
 
+// definitionJSON is a definition as the golden files were written:
+// through a map, so the schema's keys come out in the one order a
+// comparison can rely on. The registry keeps a schema's own byte order
+// and JSON objects have none, so normalising is what makes this a test
+// about the definitions rather than about gofmt.
+func definitionJSON(d tool.Definition) ([]byte, error) {
+	var params any
+	if len(d.Function.Parameters) > 0 {
+		if err := json.Unmarshal(d.Function.Parameters, &params); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(map[string]any{
+		"type": d.Type,
+		"function": map[string]any{
+			"name":        d.Function.Name,
+			"description": d.Function.Description,
+			"parameters":  params,
+		},
+	})
+}
+
 // The definitions are the one thing about a tool the model ever sees,
 // and these two moved from hand-written maps into the registry. Byte
 // for byte, or the move changed the agent.
@@ -148,14 +169,14 @@ func TestDefinitionsAreUnchanged(t *testing.T) {
 		&DelegateTool{Delegate: &Delegate{}, WithFleet: true},
 		&FleetTool{Fleet: &fleet.Fleet{}},
 	)
-	defs := definitionMaps(reg.Definitions())
+	defs := reg.Definitions()
 	golden := []string{"delegate.json", "fleet.json"}
 	for i, name := range golden {
 		want, err := os.ReadFile(filepath.Join("testdata", name))
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := json.Marshal(defs[i])
+		got, err := definitionJSON(defs[i])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,12 +187,12 @@ func TestDefinitionsAreUnchanged(t *testing.T) {
 
 	// And the delegate on its own, which is what a Vera with no
 	// multiplexer sends.
-	alone := definitionMaps(tool.NewRegistry(&DelegateTool{Delegate: &Delegate{}}).Definitions())
+	alone := tool.NewRegistry(&DelegateTool{Delegate: &Delegate{}}).Definitions()
 	want, err := os.ReadFile(filepath.Join("testdata", "delegate_alone.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := json.Marshal(alone[0])
+	got, err := definitionJSON(alone[0])
 	if err != nil {
 		t.Fatal(err)
 	}

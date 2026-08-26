@@ -11,25 +11,22 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"github.com/incantery/vera/fleet"
-	"github.com/incantery/vera/home"
-	"github.com/incantery/vera/journal"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
+	"github.com/incantery/vera/journal"
+
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/incantery/mote/provider"
+	"github.com/incantery/mote/tool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -51,11 +48,22 @@ When a delegated task comes back, tell them what happened in a sentence. Do not 
 Any work on code or in a repository — inspecting one, changing one, investigating something in one — goes to the fleet tool, always: it starts a separate agent in its own copy of the repository that keeps working after this conversation ends. The delegate tool is only for a quick lookup or a one-off command they wait a minute for. Ask the fleet when they want to know how things are going, and pass their replies to a task that is waiting on them. Speak of tasks in their words — what it is doing, whether it needs them — never in terms of branches, panes or ids unless they ask.`
 
 type Mind struct {
-	Client   *http.Client
-	Base     string
-	Key      string
-	Model    string
-	Effort   string
+	// Provider is the wire, and the only thing here that knows what an
+	// HTTP request looks like. mote chooses it from the model name and
+	// the keys on this machine; a Mind is handed the answer.
+	Provider provider.Provider
+	// Vendor is which wire that turned out to be — "openai" or
+	// "anthropic" — for the banner and for the one telemetry label
+	// that has always claimed to say so.
+	Vendor string
+	Model  string
+	Effort provider.Effort
+	// Thinking is what to ask for when there are tools in the request.
+	// It exists for one model: the OpenAI-compatible endpoint verad
+	// was written against refuses function tools unless reasoning is
+	// off, which is a thing found at the socket rather than in a doc.
+	// The Anthropic side leaves it empty and thinks adaptively.
+	Thinking provider.Thinking
 	Preface  string
 	History  *History
 	Memory   *home.Memory
@@ -86,6 +94,15 @@ type Mind struct {
 	// So a process that is quitting, or an eval that is finishing, can
 	// wait for what it is still learning.
 	learning sync.WaitGroup
+}
+
+// vendor is which wire answered — "openai" unless something said
+// otherwise, which is what every record said before there were two.
+func (m *Mind) vendor() string {
+	if m == nil || m.Vendor == "" {
+		return "openai"
+	}
+	return m.Vendor
 }
 
 // Tools is her hands, if she has any — nil-safe, because the echo
@@ -167,12 +184,24 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	tools := m.Hands.Definitions()
 	ctx, x := m.begin(ctx, msg, text, len(prior), system, tools)
 
-	messages := make([]chatMessage, 0, len(prior)+2+2*maxRounds)
-	messages = append(messages, chatMessage{Role: "system", Content: system})
+	// The system prompt is a field of the request now rather than the
+	// first message: half the APIs do not have a system role, and the
+	// one that caches a prefix wants it somewhere of its own.
+	messages := make([]provider.Message, 0, len(prior)+2+2*maxRounds)
 	for _, t := range prior {
-		messages = append(messages, chatMessage{Role: t.Role, Content: t.Content})
+		if t.Role == provider.RoleAssistant {
+			messages = append(messages, provider.Assistant(t.Content))
+			continue
+		}
+		messages = append(messages, provider.User(t.Content))
 	}
-	messages = append(messages, chatMessage{Role: "user", Content: text})
+	messages = append(messages, provider.User(text))
+
+	// A callback cannot fail — a consumer that wants to stop cancels
+	// the context — so a phone that hung up mid-sentence is this pair:
+	// the error is kept, and the cancel ends the stream.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	var answer strings.Builder
 	var used usage
@@ -180,44 +209,69 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	var delegations int
 
 	for round := 0; round < maxRounds; round++ {
-		var calls []toolCall
-		var spent usage
-		calls, err = m.stream(ctx, messages, tools, func(delta string) error {
-			x.sign(ctx)
-			x.firstWord(ctx)
-			answer.WriteString(delta)
-			return reply(Frame{Delta: delta})
-		}, &spent)
+		var calls []provider.Call
+		var gone error
+		// Where this round's own words start, so the assistant message
+		// that carries the tool calls carries what was said before them
+		// too. An API that will not take an empty assistant turn cares,
+		// and a transcript that drops the sentence before the tool call
+		// reads as if it was never said.
+		said := answer.Len()
+
+		spent, serr := m.Provider.Stream(ctx, m.request(system, messages, tools), func(ev provider.Event) {
+			switch ev.Kind {
+			case provider.KindDelta:
+				x.sign(ctx)
+				x.firstWord(ctx)
+				answer.WriteString(ev.Text)
+				if e := reply(Frame{Delta: ev.Text}); e != nil && gone == nil {
+					gone = e
+					cancel()
+				}
+			case provider.KindThinking:
+				// Not shown: it is the model's working, not its answer,
+				// and a phone reading it aloud would be reading the
+				// wrong thing. Counted, so the journal says it thought.
+				x.thought()
+			case provider.KindToolCall:
+				calls = append(calls, ev.Call)
+			case provider.KindError:
+				// The model declined, or said something that was not an
+				// answer. It happened and it was paid for, so it is not
+				// Stream's error — but the person should see it.
+				_ = reply(Frame{Error: ev.Text})
+			}
+		})
+		err = serr
+		if gone != nil {
+			// The phone going away is the reason this stopped, not
+			// whatever the cancelled socket said on its way out.
+			err = gone
+		}
 
 		// Rounds accumulate: what the exchange cost is all of them, not
 		// the last one.
-		used.Model = spent.Model
-		used.Prompt += spent.Prompt
-		used.Completion += spent.Completion
+		used.add(spent)
 
 		if err != nil || len(calls) == 0 {
 			break
 		}
 
-		messages = append(messages, chatMessage{Role: "assistant", ToolCalls: calls})
+		messages = append(messages, provider.Assistant(answer.String()[said:], calls...))
 		x.asked(calls)
 		for _, call := range calls {
 			started := time.Now()
 			// Capped for the same reason the record is: a card showing
 			// a whole file is a card nobody reads, on a phone.
-			_ = reply(Frame{ToolCall: &ToolCallFrame{ID: call.ID, Name: call.Function.Name,
-				Args: trim(call.Function.Arguments, maxRecordedArgs)}})
+			_ = reply(Frame{ToolCall: &ToolCallFrame{ID: call.ID, Name: call.Name,
+				Args: trim(call.Arguments, maxRecordedArgs)}})
 			result := m.invoke(ctx, msg.Conversation, msg.Device, x, call, reply)
 			delegations++
 			x.answered(call, result)
 			x.record(call, result, started)
 			last := x.notes[len(x.notes)-1]
 			_ = reply(Frame{ToolResult: &ToolResultFrame{ID: call.ID, Result: trim(result, 8000), DurationMs: last.TookMs, CostUSD: last.CostUSD}})
-			messages = append(messages, chatMessage{
-				Role:       "tool",
-				ToolCallID: call.ID,
-				Content:    result,
-			})
+			messages = append(messages, provider.Answer(call.ID, result))
 		}
 	}
 
@@ -245,6 +299,13 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		"delegations", delegations,
 		"gen_ai.usage.input_tokens", used.Prompt,
 		"gen_ai.usage.output_tokens", used.Completion,
+		// The two numbers that say whether the cached prefix is being
+		// read back. A cache_read of zero on the second exchange of a
+		// conversation means the prompt is not stable and the saving
+		// is not happening.
+		"gen_ai.usage.cache_read_tokens", used.CacheRead,
+		"gen_ai.usage.cache_write_tokens", used.CacheWrite,
+		"thinking_parts", x.thoughts,
 		"first_token_ms", x.firstMillis(),
 		"first_sign_ms", x.signMillis(),
 		"trace_id", x.traceID(),
@@ -276,182 +337,62 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 // It is a lookup and nothing else. Everything that used to be decided
 // here — which tool this is, whether it may run, what it cost, what
 // goes in the journal — is invokeTool's, for every tool alike.
-func (m *Mind) invoke(ctx context.Context, conversation, device string, x *exchange, call toolCall, reply func(Frame) error) string {
-	t, ok := m.Hands.Tool(call.Function.Name)
+func (m *Mind) invoke(ctx context.Context, conversation, device string, x *exchange, call provider.Call, reply func(Frame) error) string {
+	t, ok := m.Hands.Tool(call.Name)
 	if !ok {
 		return "That tool does not exist."
 	}
 	return m.invokeTool(ctx, conversation, device, x, t, call, reply)
 }
 
+// request is one turn as the provider is asked for it. It is here
+// rather than inline because dictation asks for the same thing with
+// no tools and no history, and the two should not drift.
+func (m *Mind) request(system string, messages []provider.Message, tools []tool.Definition) provider.Request {
+	req := provider.Request{
+		Model:    m.Model,
+		System:   system,
+		Messages: messages,
+		Tools:    tools,
+		Effort:   m.Effort,
+		// The stable prefix — the tools, then the part of the prompt
+		// that does not change — written once and read back on every
+		// turn after. A provider with no cache to be told about
+		// ignores it.
+		CacheSystem: true,
+	}
+	// Only when there are tools, because that is the only case the
+	// workaround was ever for. See Mind.Thinking.
+	if len(tools) > 0 {
+		req.Thinking = m.Thinking
+	}
+	return req
+}
+
+// usage is what an exchange spent, in the terms the record has always
+// used: Prompt is the WHOLE prompt, cached tokens included, because
+// that is what "input tokens" has meant in every journal line and
+// every dashboard so far. CacheRead and CacheWrite say how much of it
+// came from, or went into, the cache — they are part of Prompt, not
+// additions to it.
 type usage struct {
 	Model      string
 	Prompt     int
 	Completion int
+	CacheRead  int
+	CacheWrite int
 }
 
-// chatMessage is the wire shape of one message, including the two
-// shapes a tool round trip needs: an assistant turn that asked for a
-// tool, and a tool turn that answered.
-type chatMessage struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content,omitempty"`
-	ToolCalls  []toolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-}
-
-type toolCall struct {
-	ID       string       `json:"id"`
-	Type     string       `json:"type"`
-	Function toolFunction `json:"function"`
-}
-
-type toolFunction struct {
-	Name string `json:"name"`
-	// Arguments is JSON, as a string, and it arrives one fragment at a
-	// time across many chunks.
-	Arguments string `json:"arguments"`
-}
-
-// stream does one chat-completions call and hands back content as it
-// arrives, plus any tool calls the model asked for instead.
-func (m *Mind) stream(ctx context.Context, messages []chatMessage, tools []map[string]any, onDelta func(string) error, used *usage) ([]toolCall, error) {
-	body := map[string]any{
-		"model":  m.Model,
-		"stream": true,
-		// Without this the stream simply ends and the token counts —
-		// which is to say the cost — are never reported at all.
-		"stream_options": map[string]any{"include_usage": true},
-		"messages":       messages,
+// add folds one round's usage in. A provider reports its four counts
+// without overlap; Prompt puts them back together.
+func (u *usage) add(spent provider.Usage) {
+	if spent.Model != "" {
+		u.Model = spent.Model
 	}
-	if len(tools) > 0 {
-		body["tools"] = tools
-		// This model refuses function tools on /v1/chat/completions
-		// unless reasoning is off. Found at the socket, not in a doc.
-		body["reasoning_effort"] = "none"
-	}
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-
-	base := m.Base
-	if base == "" {
-		base = "https://api.openai.com/v1"
-	}
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		strings.TrimRight(base, "/")+"/chat/completions", bytes.NewReader(buf))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if m.Key != "" {
-		req.Header.Set("Authorization", "Bearer "+m.Key)
-	}
-
-	res, err := m.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("I couldn't reach the model.")
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		// The API's own words are more useful than a status code, but
-		// they are also long and full of JSON, so they go to the log
-		// and a short sentence goes to the phone.
-		detail, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		slog.Error("model refused", "status", res.StatusCode, "body", string(detail))
-		switch res.StatusCode {
-		case http.StatusUnauthorized:
-			return nil, errors.New("The model rejected my key.")
-		case http.StatusTooManyRequests:
-			return nil, errors.New("The model is rate limiting me.")
-		default:
-			return nil, fmt.Errorf("The model answered with %d.", res.StatusCode)
-		}
-	}
-
-	// Tool calls arrive in fragments keyed by index — the name in one
-	// chunk, the arguments a few characters at a time across dozens.
-	pending := map[int]*toolCall{}
-	var order []int
-
-	scan := bufio.NewScanner(res.Body)
-	scan.Buffer(make([]byte, 0, 64*1024), 1<<20)
-	for scan.Scan() {
-		line := strings.TrimSpace(scan.Text())
-		payload, ok := strings.CutPrefix(line, "data:")
-		if !ok {
-			continue
-		}
-		payload = strings.TrimSpace(payload)
-		if payload == "[DONE]" {
-			break
-		}
-		var chunk struct {
-			Model   string `json:"model"`
-			Choices []struct {
-				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
-						Index    int          `json:"index"`
-						ID       string       `json:"id"`
-						Type     string       `json:"type"`
-						Function toolFunction `json:"function"`
-					} `json:"tool_calls"`
-				} `json:"delta"`
-			} `json:"choices"`
-			Usage *struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
-			} `json:"usage"`
-		}
-		if json.Unmarshal([]byte(payload), &chunk) != nil {
-			continue
-		}
-		if chunk.Model != "" {
-			used.Model = chunk.Model
-		}
-		// The usage chunk arrives last and carries no choices.
-		if chunk.Usage != nil {
-			used.Prompt = chunk.Usage.PromptTokens
-			used.Completion = chunk.Usage.CompletionTokens
-		}
-		for _, choice := range chunk.Choices {
-			if choice.Delta.Content != "" {
-				if err := onDelta(choice.Delta.Content); err != nil {
-					return nil, err
-				}
-			}
-			for _, frag := range choice.Delta.ToolCalls {
-				call, seen := pending[frag.Index]
-				if !seen {
-					call = &toolCall{Type: "function"}
-					pending[frag.Index] = call
-					order = append(order, frag.Index)
-				}
-				if frag.ID != "" {
-					call.ID = frag.ID
-				}
-				if frag.Type != "" {
-					call.Type = frag.Type
-				}
-				if frag.Function.Name != "" {
-					call.Function.Name = frag.Function.Name
-				}
-				call.Function.Arguments += frag.Function.Arguments
-			}
-		}
-	}
-	if err := scan.Err(); err != nil {
-		return nil, err
-	}
-
-	calls := make([]toolCall, 0, len(order))
-	for _, i := range order {
-		calls = append(calls, *pending[i])
-	}
-	return calls, nil
+	u.Prompt += spent.Input + spent.CacheRead + spent.CacheWrite
+	u.Completion += spent.Output
+	u.CacheRead += spent.CacheRead
+	u.CacheWrite += spent.CacheWrite
 }
 
 // trim caps what the model is told. Every tool result goes through it:
@@ -520,6 +461,31 @@ func findKey(explicit string) string {
 // been asked to raise, and every answer turns into a performance of
 // how much it remembers.
 func (m *Mind) preface() string {
+	base := m.stable()
+	if m.Memory == nil {
+		return base
+	}
+	known := m.Memory.Recite()
+	if known == "" {
+		return base
+	}
+	return base + "\n\nWhat you know about them, from earlier conversations:\n" +
+		known + "\nUse this only when it is relevant. Do not mention it, list it, or bring it up unprompted."
+}
+
+// stable is the part of the system prompt that does not change while
+// the process runs: her voice, the profile's own words, where her home
+// is and what her memory files look like.
+//
+// It is a separate function because it is FIRST, and being first is
+// what makes it worth caching. A provider that caches a prefix caches
+// the longest run of the request it has seen before — the tools, then
+// this. Everything that changes goes after it, in order of how often:
+// the memory index (rarely, and only when she writes one), then the
+// paragraph about this minute (every exchange). Move any of it in
+// front of this and the cache is written fresh every time, which costs
+// more than not caching at all.
+func (m *Mind) stable() string {
 	base := m.Preface
 	if base == "" {
 		base = voice
@@ -530,15 +496,7 @@ func (m *Mind) preface() string {
 		}
 		base += m.Hands.Where() + m.aboutMemory()
 	}
-	if m.Memory == nil {
-		return base
-	}
-	known := m.Memory.Recite()
-	if known == "" {
-		return base
-	}
-	return base + "\n\nWhat you know about them, from earlier conversations:\n" +
-		known + "\nUse this only when it is relevant. Do not mention it, list it, or bring it up unprompted."
+	return base
 }
 
 // aboutMemory is the part of the prompt that makes memory hers.

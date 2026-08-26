@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/incantery/mote/provider"
 	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/journal"
 	"go.opentelemetry.io/otel/attribute"
@@ -69,6 +70,12 @@ type exchange struct {
 	notes   []journal.Round
 	pending journal.Round
 
+	// thoughts is how many pieces of reasoning arrived. The text is
+	// not kept — it is the model's working, and the journal is read by
+	// a person asking what Vera did, not what it nearly did — but that
+	// it thought at all is worth a number.
+	thoughts int
+
 	mind    *Mind
 	labels  []attribute.KeyValue
 	started time.Time
@@ -77,11 +84,14 @@ type exchange struct {
 	trace   string
 }
 
-func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int, system string, tools []map[string]any) (context.Context, *exchange) {
+func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int, system string, tools []tool.Definition) (context.Context, *exchange) {
 	x := &exchange{mind: m, started: time.Now()}
 	x.labels = []attribute.KeyValue{
 		attribute.String("gen_ai.operation.name", "chat"),
-		attribute.String("gen_ai.provider.name", "openai"),
+		// Which wire actually answered. It said "openai" unconditionally
+		// until there was a second one, which was true then and is a lie
+		// the moment a claude model is asked.
+		attribute.String("gen_ai.provider.name", m.vendor()),
 		attribute.String("gen_ai.request.model", m.Model),
 	}
 
@@ -90,7 +100,7 @@ func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int, s
 			ConversationID: msg.Conversation,
 			AgentName:      serviceName,
 			AgentVersion:   version,
-			Model:          agento11y.ModelRef{Provider: "openai", Name: m.Model},
+			Model:          agento11y.ModelRef{Provider: m.vendor(), Name: m.Model},
 			// The whole prompt, attention paragraph included: the point
 			// of the record is to see what the model saw.
 			SystemPrompt: system,
@@ -128,6 +138,10 @@ func (x *exchange) sign(ctx context.Context) {
 	x.mind.firstSign.Record(ctx, x.seen.Seconds(), metric.WithAttributes(x.labels...))
 }
 
+// thought counts one piece of the model's reasoning. It is not shown
+// and not kept; see exchange.thoughts.
+func (x *exchange) thought() { x.thoughts++ }
+
 // firstWord: the moment the wait ended, which is the number that
 // decides whether this feels alive.
 func (x *exchange) firstWord(ctx context.Context) {
@@ -154,8 +168,14 @@ func (x *exchange) finish(ctx context.Context, said, answered string, used usage
 			Input:  []agento11y.Message{agento11y.UserTextMessage(said)},
 			Output: output,
 			Usage: agento11y.TokenUsage{
-				InputTokens:  int64(used.Prompt),
-				OutputTokens: int64(used.Completion),
+				// Prompt already includes both cache buckets, which is
+				// exactly the inclusive contract — said out loud, so
+				// the far end does not have to guess.
+				InputTokens:           int64(used.Prompt),
+				OutputTokens:          int64(used.Completion),
+				CacheReadInputTokens:  int64(used.CacheRead),
+				CacheWriteInputTokens: int64(used.CacheWrite),
+				InputSemantics:        agento11y.TokenInputSemanticsInclusive,
 			},
 		}, err)
 		x.rec.End()
@@ -184,6 +204,24 @@ func (x *exchange) finish(ctx context.Context, said, answered string, used usage
 		x.mind.tokens.Record(ctx, int64(used.Completion), metric.WithAttributes(
 			append(append([]attribute.KeyValue{}, x.labels...),
 				attribute.String("gen_ai.token.type", "output"))...))
+	}
+	// Cached tokens are part of the prompt above, so they are not
+	// added to it — they are recorded under their own token.type, and
+	// that is a handful of series rather than one per conversation.
+	for _, cache := range []struct {
+		kind string
+		n    int
+	}{{"cache_read", used.CacheRead}, {"cache_write", used.CacheWrite}} {
+		if cache.n == 0 {
+			continue
+		}
+		x.span.SetAttributes(attribute.Int("gen_ai.usage."+cache.kind+"_tokens", cache.n))
+		x.mind.tokens.Record(ctx, int64(cache.n), metric.WithAttributes(
+			append(append([]attribute.KeyValue{}, x.labels...),
+				attribute.String("gen_ai.token.type", cache.kind))...))
+	}
+	if x.thoughts > 0 {
+		x.span.SetAttributes(attribute.Int("vera.thinking.parts", x.thoughts))
 	}
 	if captureContent() {
 		x.span.SetAttributes(attribute.String("gen_ai.output.messages", answered))
@@ -220,12 +258,12 @@ func shutdownGenerations(c *agento11y.Client) {
 // beginTool / endTool put a tool call on the record as a tool
 // execution — which agent observability models as a first-class thing
 // rather than as a gap in the middle of a generation.
-func (m *Mind) beginTool(ctx context.Context, conversation string, call toolCall) (context.Context, *agento11y.ToolExecutionRecorder) {
+func (m *Mind) beginTool(ctx context.Context, conversation string, call provider.Call) (context.Context, *agento11y.ToolExecutionRecorder) {
 	if m.Gen == nil {
 		return ctx, nil
 	}
 	return m.Gen.StartToolExecution(ctx, agento11y.ToolExecutionStart{
-		ToolName:       call.Function.Name,
+		ToolName:       call.Name,
 		ToolCallID:     call.ID,
 		ToolType:       "agent",
 		ConversationID: conversation,
@@ -307,13 +345,13 @@ func (x *exchange) decided(decision tool.Decision, answer, reason string) {
 }
 
 // record closes the round in progress for the journal.
-func (x *exchange) record(call toolCall, result string, started time.Time) {
+func (x *exchange) record(call provider.Call, result string, started time.Time) {
 	r := x.pending
 	x.pending = journal.Round{}
 	r.At = started
-	r.Tool = call.Function.Name
+	r.Tool = call.Name
 	r.CallID = call.ID
-	r.Args = capArgs(call.Function.Arguments)
+	r.Args = capArgs(call.Arguments)
 	r.Result = result
 	r.TookMs = time.Since(started).Milliseconds()
 	x.notes = append(x.notes, r)
@@ -354,15 +392,20 @@ func (x *exchange) entry(msg Message, system, said, answered string, used usage,
 		Error:        errText(err),
 		InputTokens:  used.Prompt,
 		OutputTokens: used.Completion,
-		FirstSignMs:  x.signMillis(),
-		FirstTokenMs: x.firstMillis(),
-		TookMs:       time.Since(x.started).Milliseconds(),
-		Rounds:       x.notes,
+		// Part of InputTokens rather than on top of it: what was read
+		// back from the cache, and what was written into it.
+		CacheReadTokens:  used.CacheRead,
+		CacheWriteTokens: used.CacheWrite,
+		ThinkingParts:    x.thoughts,
+		FirstSignMs:      x.signMillis(),
+		FirstTokenMs:     x.firstMillis(),
+		TookMs:           time.Since(x.started).Milliseconds(),
+		Rounds:           x.notes,
 	}
 }
 
 // asked records a round of tool calls the model made.
-func (x *exchange) asked(calls []toolCall) {
+func (x *exchange) asked(calls []provider.Call) {
 	if x.rec == nil || len(calls) == 0 {
 		return
 	}
@@ -370,15 +413,15 @@ func (x *exchange) asked(calls []toolCall) {
 	for _, c := range calls {
 		parts = append(parts, agento11y.ToolCallPart(agento11y.ToolCall{
 			ID:        c.ID,
-			Name:      c.Function.Name,
-			InputJSON: json.RawMessage(c.Function.Arguments),
+			Name:      c.Name,
+			InputJSON: json.RawMessage(capArgs(c.Arguments)),
 		}))
 	}
 	x.rounds = append(x.rounds, agento11y.Message{Role: agento11y.RoleAssistant, Parts: parts})
 }
 
 // answered records what a tool said back.
-func (x *exchange) answered(call toolCall, result string) {
+func (x *exchange) answered(call provider.Call, result string) {
 	if x.rec == nil {
 		return
 	}
@@ -386,27 +429,22 @@ func (x *exchange) answered(call toolCall, result string) {
 		Role: agento11y.RoleTool,
 		Parts: []agento11y.Part{agento11y.ToolResultPart(agento11y.ToolResult{
 			ToolCallID: call.ID,
-			Name:       call.Function.Name,
+			Name:       call.Name,
 			Content:    result,
 		})},
 	})
 }
 
-// toolDefinitions is the OpenAI tool list in the record's shape.
-func toolDefinitions(tools []map[string]any) []agento11y.ToolDefinition {
-	var out []agento11y.ToolDefinition
+// toolDefinitions is the registry's tool list in the record's shape.
+func toolDefinitions(tools []tool.Definition) []agento11y.ToolDefinition {
+	out := make([]agento11y.ToolDefinition, 0, len(tools))
 	for _, t := range tools {
-		fn, _ := t["function"].(map[string]any)
-		if fn == nil {
-			continue
-		}
-		d := agento11y.ToolDefinition{Type: "function"}
-		d.Name, _ = fn["name"].(string)
-		d.Description, _ = fn["description"].(string)
-		if schema, err := json.Marshal(fn["parameters"]); err == nil {
-			d.InputSchema = schema
-		}
-		out = append(out, d)
+		out = append(out, agento11y.ToolDefinition{
+			Type:        "function",
+			Name:        t.Function.Name,
+			Description: t.Function.Description,
+			InputSchema: t.Function.Parameters,
+		})
 	}
 	return out
 }

@@ -2,13 +2,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/incantery/mote/provider"
 )
 
 func TestAConversationRemembersItsOwnTurns(t *testing.T) {
@@ -92,19 +91,8 @@ func TestAbandonedConversationsAreDropped(t *testing.T) {
 
 // The point of all of it: the second question can refer to the first.
 func TestPriorTurnsReachTheModel(t *testing.T) {
-	var sent [][]map[string]string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Messages []map[string]string `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		sent = append(sent, body.Messages)
-		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n")
-		fmt.Fprint(w, "data: [DONE]\n\n")
-	}))
-	defer srv.Close()
-
-	mind := &Mind{Client: srv.Client(), Base: srv.URL, Model: "m",
+	model := scripted(t, says("ok"), says("ok"), says("ok"))
+	mind := &Mind{Provider: model, Model: "m",
 		History: newHistory(), instruments: newInstruments()}
 	swallow := func(Frame) error { return nil }
 
@@ -115,26 +103,34 @@ func TestPriorTurnsReachTheModel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(sent) != 2 {
-		t.Fatalf("made %d calls", len(sent))
+	if model.rounds() != 2 {
+		t.Fatalf("made %d calls", model.rounds())
 	}
-	// First call: system + the question. Second: system + both halves
-	// of the first exchange + the new question.
-	if len(sent[0]) != 2 {
-		t.Fatalf("first call carried %d messages, want 2", len(sent[0]))
+	// The system prompt is a field of the request now rather than the
+	// first message, so a first call carries the question alone, and a
+	// second carries both halves of the first exchange in front of it.
+	if n := len(model.asked(0).Messages); n != 1 {
+		t.Fatalf("first call carried %d messages, want 1", n)
 	}
-	if len(sent[1]) != 4 {
-		t.Fatalf("second call carried %d messages, want 4 — history did not reach the model", len(sent[1]))
+	if model.asked(0).System == "" {
+		t.Fatal("the system prompt did not reach the model at all")
 	}
-	if sent[1][1]["content"] != "my name is Seth" {
-		t.Fatalf("the second call did not carry the first question: %+v", sent[1])
+	second := model.asked(1).Messages
+	if len(second) != 3 {
+		t.Fatalf("second call carried %d messages, want 3 — history did not reach the model", len(second))
+	}
+	if second[0].Text != "my name is Seth" || second[0].Role != provider.RoleUser {
+		t.Fatalf("the second call did not carry the first question: %+v", second)
+	}
+	if second[1].Role != provider.RoleAssistant {
+		t.Fatalf("the answer came back as %q, not an assistant turn", second[1].Role)
 	}
 
-	// A different conversation on the same server starts clean.
+	// A different conversation on the same model starts clean.
 	if err := mind.think(context.Background(), Message{Text: "hello", Conversation: "other"}, swallow); err != nil {
 		t.Fatal(err)
 	}
-	if len(sent[2]) != 2 {
-		t.Fatalf("a new conversation inherited %d messages", len(sent[2]))
+	if n := len(model.asked(2).Messages); n != 1 {
+		t.Fatalf("a new conversation inherited %d messages", n)
 	}
 }
