@@ -81,10 +81,10 @@ struct ConversationView: View {
                 .padding(.bottom, 20)
             }
             .scrollDismissesKeyboard(.interactively)
-            .onChange(of: conversation.exchanges.last?.status) {
-                withAnimation(.easeOut(duration: 0.2)) { scroll.scrollTo("bottom", anchor: .bottom) }
-            }
-            .onChange(of: conversation.exchanges.last?.reply) {
+            // Every frame, not only every word: a tool printing while
+            // it runs and a question arriving are both things that grow
+            // the last exchange, and both are worth following.
+            .onChange(of: conversation.exchanges.last?.seen) {
                 withAnimation(.easeOut(duration: 0.2)) { scroll.scrollTo("bottom", anchor: .bottom) }
             }
             .onChange(of: conversation.exchanges.count) {
@@ -250,17 +250,38 @@ private struct ExchangeView: View {
                 .foregroundStyle(N.dim)
                 .fixedSize(horizontal: false, vertical: true)
 
+            // Everything that came back, where it came back. A question
+            // shown under the paragraph that follows it is a question
+            // about nothing.
+            ForEach(exchange.steps) { step in
+                switch step.body {
+                case .said(let words):
+                    if !words.isEmpty {
+                        Text(words)
+                            .font(N.body(17))
+                            .leading(17, 1.5)
+                            .foregroundStyle(N.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                case .tool(let run):
+                    ToolRow(run: run)
+                case .ask(let question):
+                    AskCard(question: question, exchange: exchange.id)
+                }
+            }
+
             if let failed = exchange.failed {
                 Text(failed)
                     .font(N.body(15))
                     .leading(15, 1.5)
                     .foregroundStyle(N.accent300)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if exchange.reply.isEmpty {
+            } else if waiting {
                 // A named wait is a different thing from a pause: the
                 // dots mean "thinking", the sentence means "doing", and
                 // only the second one is worth minutes of a person's
-                // patience.
+                // patience. A question needs neither — the card is the
+                // thing being waited on, and it says so itself.
                 if let status = exchange.status {
                     HStack(alignment: .top, spacing: 9) {
                         ThinkingDots()
@@ -271,17 +292,273 @@ private struct ExchangeView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .transition(.opacity)
-                } else {
+                } else if exchange.steps.isEmpty {
                     ThinkingDots()
                 }
+            }
+        }
+    }
+
+    private var waiting: Bool {
+        !exchange.done && exchange.openQuestion == nil
+    }
+}
+
+// MARK: - A tool round
+
+/// One call, compact: what it is, roughly what it was given, and how it
+/// is going. Opened, it is the arguments in full and whatever the tool
+/// printed — which is the difference between "she ran something" and
+/// knowing what she ran.
+private struct ToolRow: View {
+    let run: ToolRun
+    @State private var open = false
+
+    /// Enough of a long result to see what happened, not so much that
+    /// the transcript becomes the tool's output.
+    private static let bodyLines = 40
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { open.toggle() } label: { head }
+                .buttonStyle(.plain)
+            if open { details }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(N.surface.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var head: some View {
+        HStack(spacing: 8) {
+            Image(systemName: open ? "chevron.down" : "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(N.dim)
+                .frame(width: 10)
+            mark
+            Text(run.name)
+                .font(N.mono(13))
+                .foregroundStyle(N.accent300)
+                .lineLimit(1)
+                .layoutPriority(1)
+            let summary = Args.summary(run.args)
+            if !summary.isEmpty {
+                Text(summary)
+                    .font(N.mono(12))
+                    .foregroundStyle(N.dim)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 6)
+            if !aside.isEmpty {
+                Text(aside)
+                    .font(N.mono(11))
+                    .foregroundStyle(N.dim)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private var mark: some View {
+        if run.isRunning {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .scaleEffect(0.55)
+                .frame(width: 12, height: 12)
+        } else {
+            Image(systemName: run.stopped || run.isFailed ? "xmark" : "checkmark")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(run.stopped || run.isFailed ? N.accent300 : N.dim)
+                .frame(width: 12, height: 12)
+        }
+    }
+
+    /// The right-hand end of the row: how much a running tool has said,
+    /// and what a finished one took.
+    private var aside: String {
+        if run.stopped { return "stopped" }
+        if run.isRunning { return run.output.isEmpty ? "" : volume(run.output) }
+        var out = duration(run.durationMs)
+        if let cost = run.cost, cost > 0 {
+            out += out.isEmpty ? "" : "  "
+            out += cost >= 1 ? String(format: "$%.2f", cost) : String(format: "$%.4f", cost)
+        }
+        return out
+    }
+
+    @ViewBuilder private var details: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let fields = Args.fields(run.args), !fields.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(fields.prefix(8), id: \.key) { field in
+                        Text(field.key).font(N.mono(10)).foregroundStyle(N.dim)
+                        Text(Args.short(field.value, limit: 400))
+                            .font(N.mono(12))
+                            .foregroundStyle(N.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } else if !run.args.isEmpty {
+                Text(run.args)
+                    .font(N.mono(12))
+                    .foregroundStyle(N.text)
+                    .lineLimit(8)
+            }
+
+            if run.stopped && run.body.isEmpty {
+                Text("stopped — the exchange ended first")
+                    .font(N.body(12))
+                    .foregroundStyle(N.accent300)
+            } else if run.body.isEmpty {
+                Text(run.isRunning ? "running…" : "nothing came back")
+                    .font(N.body(12))
+                    .foregroundStyle(N.dim)
             } else {
-                Text(exchange.reply)
-                    .font(N.body(17))
-                    .leading(17, 1.5)
+                let lines = run.body.trimmingCharacters(in: .newlines).components(separatedBy: "\n")
+                let shown = lines.suffix(Self.bodyLines)
+                Text(run.result == nil ? "output · \(lines.count) lines" : "result · \(lines.count) lines")
+                    .font(N.mono(10))
+                    .foregroundStyle(N.dim)
+                Text(shown.joined(separator: "\n"))
+                    .font(N.mono(12))
+                    .foregroundStyle(run.isFailed ? N.accent300 : N.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func duration(_ ms: Int?) -> String {
+        guard let ms, ms > 0 else { return "" }
+        if ms < 1000 { return "\(ms)ms" }
+        if ms < 60_000 { return String(format: "%.2fs", Double(ms) / 1000) }
+        return "\(ms / 60_000)m\(String(format: "%02d", (ms % 60_000) / 1000))s"
+    }
+
+    /// Lines are what a person counts; the count is what says it is
+    /// still moving when the lines are long.
+    private func volume(_ text: String) -> String {
+        let lines = text.components(separatedBy: "\n").count
+        return lines == 1 ? "1 line" : "\(lines) lines"
+    }
+}
+
+// MARK: - A question
+
+/// The one thing on this screen that is not there to be read. Vera will
+/// not run this call without a word, and until a word goes back the
+/// exchange on the Mac is parked — so the card says what she wants to
+/// run, what she was going to run it with, why she is asking, and gives
+/// the three answers she understands.
+private struct AskCard: View {
+    let question: Question
+    let exchange: Exchange.ID
+    @Environment(Conversation.self) private var conversation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "hand.raised.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(question.isOpen ? N.accent300 : N.dim)
+                Text(question.name)
+                    .font(N.mono(13))
+                    .foregroundStyle(N.text)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                if !outcome.isEmpty {
+                    Text(outcome)
+                        .font(N.body(11))
+                        .foregroundStyle(N.dim)
+                        .lineLimit(1)
+                }
+            }
+
+            let summary = Args.summary(question.args)
+            if !summary.isEmpty {
+                Text(summary)
+                    .font(N.mono(12))
+                    .foregroundStyle(N.dim)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !question.reason.isEmpty {
+                Text(question.reason)
+                    .font(N.body(14))
+                    .leading(14, 1.45)
                     .foregroundStyle(N.text)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            if let trouble = question.trouble {
+                Text(trouble)
+                    .font(N.body(12))
+                    .foregroundStyle(N.accent300)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                ForEach(Choice.all) { option in
+                    ChoiceButton(option: option,
+                                 chosen: question.choice == option.choice,
+                                 enabled: question.isOpen) {
+                        conversation.answer(option.choice, to: question.id, in: exchange)
+                    }
+                }
+            }
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(N.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(question.isOpen ? N.accent.opacity(0.55) : .clear, lineWidth: 1)
+        }
+    }
+
+    /// What became of it, once it is no longer a question.
+    private var outcome: String {
+        switch question.state {
+        case .waiting: ""
+        case .answered: "you said \(question.choice ?? "")"
+        case .closed: "no answer went back"
+        }
+    }
+}
+
+private struct ChoiceButton: View {
+    let option: Choice.Option
+    let chosen: Bool
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(option.label)
+                .font(N.body(14, .medium))
+                .foregroundStyle(foreground)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(background, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .sensoryFeedback(.impact(weight: .light), trigger: chosen)
+        .accessibilityLabel("\(option.label) — \(option.help)")
+    }
+
+    private var foreground: Color {
+        if chosen { return .white }
+        return enabled ? N.text : N.dim.opacity(0.6)
+    }
+
+    private var background: Color {
+        if chosen { return N.accent }
+        return enabled ? N.bg.opacity(0.6) : N.bg.opacity(0.3)
     }
 }
 

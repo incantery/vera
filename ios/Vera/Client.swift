@@ -16,6 +16,64 @@ struct Frame: Decodable, Sendable {
     /// What is happening while nothing is being said. Replaces whatever
     /// came before it; never part of the answer.
     var status: String?
+
+    /// The exchange's tool rounds as they happen, so the phone can show
+    /// a row per call rather than a sentence about one.
+    var toolCall: ToolCall?
+    var toolResult: ToolResult?
+    /// What a tool is printing while it runs, in pieces, tied to its
+    /// call by id. A command that takes a minute is not a minute of
+    /// silence.
+    var toolOutput: ToolOutput?
+
+    /// A tool Vera will not run without a word from the person. It does
+    /// not end the exchange — the exchange is parked on the answer,
+    /// which goes back through POST /ask/{id}, and nothing else arrives
+    /// until it does. Silence is the one reply that leaves it hanging,
+    /// which is why the Mac answers itself "no" after two minutes.
+    var ask: Ask?
+
+    enum CodingKeys: String, CodingKey {
+        case delta, done, error, run, status, ask
+        case toolCall = "tool_call"
+        case toolResult = "tool_result"
+        case toolOutput = "tool_output"
+    }
+
+    struct ToolCall: Decodable, Sendable, Equatable {
+        var id: String
+        var name: String
+        var args: String
+    }
+
+    struct ToolOutput: Decodable, Sendable, Equatable {
+        var id: String
+        var text: String
+    }
+
+    struct ToolResult: Decodable, Sendable, Equatable {
+        var id: String
+        var result: String
+        /// Absent rather than zero on a wire that has not learned to
+        /// send them yet; the row simply says less.
+        var durationMs: Int?
+        var costUSD: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case id, result
+            case durationMs = "duration_ms"
+            case costUSD = "cost_usd"
+        }
+    }
+
+    /// Everything needed to show the question: which tool, with what
+    /// arguments, and the Mac's own sentence for why it is being asked.
+    struct Ask: Decodable, Sendable, Equatable {
+        var id: String
+        var name: String
+        var args: String
+        var text: String
+    }
 }
 
 enum ClientError: LocalizedError {
@@ -375,6 +433,42 @@ struct Client: Sendable {
                 return URLRequest(url: parts.url!)
             }
         )
+    }
+
+    /// Carry one word — yes, no or always — back to the call parked on
+    /// it. Its own request rather than a frame back up the stream,
+    /// because /say is one-way by construction: the answer is going the
+    /// other way while the exchange is still writing.
+    ///
+    /// Only over the network. The peer-to-peer link speaks two
+    /// requests, say and resume, and answering is neither of them — so
+    /// a question raised over the radio is a question this phone can
+    /// see and not answer, and says so rather than pretending.
+    func answer(_ choice: String, to id: String) async throws {
+        guard let address = await resolve() else { throw ClientError.unreachable }
+        let path = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        guard let url = URL(string: "http://\(address)/ask/\(path)") else {
+            throw ClientError.broken("That question has an id I can't send back.")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(pairing.secret)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["choice": choice])
+        let (data, response) = try await Self.session.data(for: request)
+        switch (response as? HTTPURLResponse)?.statusCode {
+        case 200, 204: return
+        case 400:
+            // The question is no longer open — answered somewhere else,
+            // or already timed out into a no.
+            let why = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            throw ClientError.broken(why.isEmpty ? "That question isn't waiting any more." : why)
+        case 401: throw ClientError.refused
+        case 404: throw ClientError.broken("That Mac has nothing waiting on an answer.")
+        case let code?: throw ClientError.broken("The Mac answered \(code) to that.")
+        case nil: throw ClientError.broken("The Mac answered with nothing at all.")
+        }
     }
 
     /// Try the network, and go around it if it will not carry the
