@@ -59,7 +59,11 @@ type Entry struct {
 	Conversation string    `json:"conversation"`
 	Device       string    `json:"device,omitempty"`
 	Model        string    `json:"model"`
-	TraceID      string    `json:"trace_id,omitempty"`
+	// Provider is which wire answered — "openai" or "anthropic". A
+	// model name does not always say: the same name can be reached
+	// through somebody's proxy.
+	Provider string `json:"provider,omitempty"`
+	TraceID  string `json:"trace_id,omitempty"`
 	// System is the whole system prompt, attention paragraph and all:
 	// the point of the record is to see what the model saw.
 	System       string `json:"system"`

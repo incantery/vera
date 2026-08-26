@@ -292,6 +292,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// aggregate answers that after the fact.
 	slog.Info("exchange",
 		"gen_ai.conversation.id", msg.Conversation,
+		"gen_ai.provider.name", m.vendor(),
 		"gen_ai.request.model", m.Model,
 		"gen_ai.prompt", text,
 		"gen_ai.completion", answer.String(),
