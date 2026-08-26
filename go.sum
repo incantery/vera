@@ -75,6 +75,8 @@ github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUq
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
 github.com/incantery/mote v0.0.0-20260825232319-2021c67696b6 h1:tT+KqAGxJ7onvh7mizH6/i2B+Xq4XEUfjqs7e6mQoPU=
 github.com/incantery/mote v0.0.0-20260825232319-2021c67696b6/go.mod h1:ntlabZAH0E7zsJTLjFzhMTl1ftWZOjmt/5MkiiHBoUA=
+github.com/incantery/mote v0.0.0-20260826002900-e082ae730c94 h1:+W+233NOTMdl4Lgrxra7fVEmMTNkeqrjso3/lGab+No=
+github.com/incantery/mote v0.0.0-20260826002900-e082ae730c94/go.mod h1:ntlabZAH0E7zsJTLjFzhMTl1ftWZOjmt/5MkiiHBoUA=
 github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc h1:z1d3g/fou7eW978AOY8riurgqK0oZQdHIkRxcjnWa8I=
 github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc/go.mod h1:Gv38TyMudM/6yaFxBn1EscKbGfSx/deU5NMIBB3X62I=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=

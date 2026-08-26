@@ -66,6 +66,11 @@ func translate(f Frame) []agent.Event {
 	if tc := f.ToolCall; tc != nil {
 		out = append(out, agent.Call(tc.ID, tc.Name, tc.Args))
 	}
+	// Nothing sends this yet (see Frame.ToolOutput); it is translated
+	// so that nothing has to when something does.
+	if to := f.ToolOutput; to != nil {
+		out = append(out, agent.Output(to.ID, to.Text))
+	}
 	if tr := f.ToolResult; tr != nil {
 		out = append(out, agent.Result(tr.ID, tr.Result, time.Duration(tr.DurationMs)*time.Millisecond, tr.CostUSD))
 	}

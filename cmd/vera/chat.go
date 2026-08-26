@@ -14,12 +14,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/incantery/mote/agent"
+	"github.com/incantery/mote/session"
 	"github.com/incantery/mote/tui"
 	"github.com/incantery/vera/dump"
 	"github.com/incantery/vera/fleet"
@@ -33,6 +35,7 @@ func runChat(args []string) {
 	fs := flag.NewFlagSet("vera chat", flag.ExitOnError)
 	url := fs.String("url", "", "where verad listens (default: the running one, started if needed)")
 	debug := fs.Bool("debug", false, "open with what Vera believes about where you are")
+	reopen := fs.String("c", "", "reopen this conversation (see `vera sessions`)")
 	_ = fs.Parse(args)
 
 	base := strings.TrimRight(*url, "/")
@@ -59,26 +62,35 @@ func runChat(args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w := newFleetWatch(c)
+	w.absorbStatus(st)
 	go w.run(ctx, fleetEvery)
 
-	s := &chatSession{c: c, w: w, conv: newConversation()}
-	greeting := "**" + st.Name + "** — say something, or `/` for the fleet. " +
-		"`/help` has the keys; the rail on the right is every task and what is believed about it."
+	// The conversation on disk. verad journals the exchange — that is
+	// its record of the model. This is the terminal's record of the
+	// screen: what was said, what was drawn, what was typed, kept so
+	// that quitting is not the same as forgetting.
+	dir := chatSessionDir()
+	conv := *reopen
+	if conv == "" {
+		conv = newConversation()
+	}
+	sess, err := session.Open(dir, conv)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "vera: cannot open "+dir+" ("+err.Error()+")")
+		os.Exit(1)
+	}
+	// /new opens another one, and every file this run opened has to be
+	// closed, so they are kept together.
+	open := &openSessions{list: []*session.Session{sess}}
+	defer open.closeAll()
+
+	s := &chatSession{c: c, w: w, conv: conv, dir: dir, open: open}
+	greeting := chatGreeting(st, sess)
 	if *debug {
 		greeting += "\n\n" + beliefMarkdown(st, s.conversation())
 	}
 
-	err = tui.Run(veraAgent{c}, tui.Options{
-		Name:         st.Name,
-		Model:        st.Mind,
-		Conversation: s.conversation(),
-		Greeting:     greeting,
-		Side:         w.side,
-		SideTitle:    "fleet",
-		Notices:      w.notices,
-		Commands:     chatCommands,
-		Handle:       s.handle,
-	})
+	err = tui.Run(veraAgent{c}, chatOptions(st, s, sess, greeting))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "vera: "+err.Error())
 		os.Exit(1)
@@ -87,11 +99,78 @@ func runChat(args []string) {
 
 func newConversation() string { return "chat-" + time.Now().Format("20060102-150405") }
 
+// chatOptions is everything Vera puts on mote's screen, in one place,
+// so that what a test drives is what `vera chat` runs.
+func chatOptions(st *Status, s *chatSession, sess *session.Session, greeting string) tui.Options {
+	return tui.Options{
+		Name:         st.Name,
+		Model:        st.Mind,
+		Conversation: s.conversation(),
+		Session:      sess,
+		Greeting:     greeting,
+		Side:         s.w.side,
+		SideTitle:    "fleet",
+		// One line of Vera's own beside the model name: where she
+		// believes the person is, refreshed with the rail.
+		StatusRight: s.w.where,
+		Notices:     s.w.notices,
+		Commands:    chatCommands,
+		Handle:      s.handle,
+		// The terminal owns the id — /new hands it one and it may hand
+		// back another — so the chat is told rather than keeping a
+		// guess of its own. /dump reads what it was told.
+		OnConversation: s.setConversation,
+	}
+}
+
+// chatSessionDir is where the terminal keeps its conversations: XDG
+// state, beside verad's own files, one directory of its own because
+// they are the chat's and not the daemon's.
+func chatSessionDir() string { return filepath.Join(stateDir(), "chat") }
+
+// chatGreeting is what is said once, at the top. A reopened
+// conversation says so and names the file, because a person who quit
+// and came back needs to know it was kept and where.
+func chatGreeting(st *Status, sess *session.Session) string {
+	g := "**" + st.Name + "** — say something, or `/` for the fleet. " +
+		"`/help` has the keys; the rail on the right is every task and what is believed about it."
+	if n := len(sess.Turns()); n > 0 {
+		turns := "turns"
+		if n == 1 {
+			turns = "turn"
+		}
+		g = fmt.Sprintf("Reopened **%s** — %d %s above, from `%s`.\n\n", sess.ID(), n, turns, sess.Path()) + g
+	}
+	return g
+}
+
+// openSessions is every conversation file this run has opened, so
+// that they can all be closed when it ends.
+type openSessions struct {
+	mu   sync.Mutex
+	list []*session.Session
+}
+
+func (o *openSessions) add(s *session.Session) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.list = append(o.list, s)
+}
+
+func (o *openSessions) closeAll() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for _, s := range o.list {
+		s.Close()
+	}
+}
+
 // --- the fleet, watched ---------------------------------------------------
 
-// fleetWatch keeps the fleet where the terminal can read it without a
-// request: the rail is drawn on the UI goroutine, so it gets a cached
-// answer, and anything worth saying out loud goes down notices.
+// fleetWatch keeps what a timer can answer where the terminal can read
+// it without a request: the rail is drawn on the UI goroutine, and so
+// is the right of the status line, so both get a cached answer.
+// Anything worth saying out loud goes down notices.
 type fleetWatch struct {
 	c       *chatClient
 	notices chan agent.Event
@@ -99,6 +178,7 @@ type fleetWatch struct {
 	mu     sync.Mutex
 	views  []fleet.View
 	states map[string]fleet.State // last state per task, to notice changes
+	status *Status                // what /status last said, for the status line
 }
 
 func newFleetWatch(c *chatClient) *fleetWatch {
@@ -119,6 +199,7 @@ func (w *fleetWatch) run(ctx context.Context, every time.Duration) {
 			return
 		case <-t.C:
 			w.poll(ctx)
+			w.pollStatus(ctx)
 		}
 	}
 }
@@ -133,20 +214,51 @@ func (w *fleetWatch) poll(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	for _, line := range w.absorb(v, time.Now()) {
+	for _, ev := range w.absorb(v, time.Now()) {
 		select {
-		case w.notices <- agent.Notice(line):
+		case w.notices <- ev:
 		default: // nobody reading, or a burst: the rail still says it
 		}
 	}
 }
 
+// pollStatus re-reads what Vera believes about where the person is.
+// It goes on the same timer as the fleet because it feeds the same
+// kind of thing: a line that is true all the time rather than news.
+func (w *fleetWatch) pollStatus(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	st, err := w.c.status(ctx)
+	if err != nil {
+		return // the last belief stands; a timeout is not a change of scene
+	}
+	w.absorbStatus(st)
+}
+
+func (w *fleetWatch) absorbStatus(st *Status) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.status = st
+}
+
+// where is the right of the status line: where Vera believes the
+// person is, in a phrase. It is read on the UI goroutine, so it reads
+// the cache and gets out.
+func (w *fleetWatch) where() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return whereYouAre(w.status)
+}
+
 // absorb replaces the cache and returns what is worth saying about it.
-func (w *fleetWatch) absorb(views []fleet.View, now time.Time) []string {
+// Each notice is about a task rather than about a moment: a task that
+// changes twice rewrites its line instead of adding one, and a landing
+// rewrites it one last time.
+func (w *fleetWatch) absorb(views []fleet.View, now time.Time) []agent.Event {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.views = views
-	var out []string
+	var out []agent.Event
 	for _, v := range views {
 		if v.Task == nil {
 			continue
@@ -154,7 +266,7 @@ func (w *fleetWatch) absorb(views []fleet.View, now time.Time) []string {
 		prev, seen := w.states[v.ID]
 		w.states[v.ID] = v.State
 		if line, ok := noticeFor(prev, seen, v, now); ok {
-			out = append(out, line)
+			out = append(out, agent.About(v.ID, line))
 		}
 	}
 	return out
@@ -292,17 +404,23 @@ var chatCommands = []tui.Command{
 	{Name: "land", Help: "/land <id> — merge its branch and close it"},
 	{Name: "stop", Help: "/stop <id> [force] — tear a task down"},
 	{Name: "seen", Help: "/seen <id> — you have read it"},
-	{Name: "new", Help: "a fresh conversation id"},
+	{Name: "new", Help: "a fresh conversation, in its own file"},
+	{Name: "sessions", Help: "the conversations on disk"},
 	{Name: "dump", Help: "/dump [note] — this conversation, in a folder, to report a problem"},
 	{Name: "debug", Help: "what Vera believes about where you are"},
 	{Name: "quit", Help: "leave"},
 }
 
 // chatSession is the little the commands need to share: the wire, the
-// fleet cache, and which conversation is current.
+// fleet cache, where the conversations are kept, and which one is
+// current. The id is not the chat's own idea — the terminal hands it
+// over through Options.OnConversation — but /dump needs to know it
+// without a screen to ask.
 type chatSession struct {
-	c *chatClient
-	w *fleetWatch
+	c    *chatClient
+	w    *fleetWatch
+	dir  string        // where the conversation files live
+	open *openSessions // the ones this run opened, to close at the end
 
 	mu   sync.Mutex
 	conv string
@@ -337,9 +455,27 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 		})
 
 	case "new":
+		// A new id needs a new file, or the next conversation is
+		// written into the last one's. The chat's own copy of the id
+		// is not set here: the terminal says so when the change lands.
 		conv := newConversation()
-		s.setConversation(conv)
-		return tea.Batch(tui.SetConversation(conv), tui.Note("new conversation %s", conv))
+		next, err := session.Open(s.dir, conv)
+		if err != nil {
+			return tui.Fail("session: %s", err)
+		}
+		s.open.add(next)
+		return tea.Batch(tui.SetConversation(conv), tui.SetSession(next),
+			tui.Note("new conversation %s — the last one is still in %s", conv, s.dir))
+
+	case "sessions":
+		list, err := session.List(s.dir)
+		if err != nil {
+			return tui.Fail("sessions: %s", err)
+		}
+		if len(list) == 0 {
+			return tui.Note("no conversations in %s", s.dir)
+		}
+		return tui.Note("%s", sessionLines(list, s.conversation(), time.Now()))
 
 	case "dump":
 		// This conversation and every task it touched, in a folder;
@@ -535,6 +671,34 @@ func fleetPhrase(v fleet.View, now time.Time) string {
 	default:
 		return string(v.State)
 	}
+}
+
+// whereYouAre is what Vera believes about where the person is, short
+// enough for the end of a status line: the app they are in front of
+// and, if that app is a terminal she can see into, what is in it. With
+// nothing focused — no device has reported, or the report has gone
+// stale — the honest thing left to say is what she is doing herself.
+func whereYouAre(s *Status) string {
+	if s == nil {
+		return ""
+	}
+	for _, d := range s.Devices {
+		if !d.Fresh || d.Focus == nil {
+			continue
+		}
+		where := d.Focus.Name
+		if d.Terminal != nil {
+			where += " · " + d.Terminal.Describe()
+		}
+		return trim(oneLine(where), 72)
+	}
+	switch n := s.RunsInFlight; {
+	case n == 1:
+		return "1 run in flight"
+	case n > 1:
+		return fmt.Sprintf("%d runs in flight", n)
+	}
+	return ""
 }
 
 // oneLine flattens a multi-line status into something a rail row or a
