@@ -55,6 +55,7 @@ func main() {
 	state := flag.String("state", "", "identity file (default ~/.local/state/vera/identity.json)")
 	model := flag.String("model", "gpt-5.6-luna", "model (a claude-* name goes to the Anthropic API; anything else to an OpenAI-compatible server); default: the profile's own model line, then this")
 	effort := flag.String("effort", "high", "how hard to think: low, medium, high, xhigh, max (where the model has the dial)")
+	thinkingDisplay := flag.String("thinking-display", "", "whether the model's reasoning comes back: summarized, or omitted (kept and signed, but not shown). Empty is the model's own default")
 	apiBase := flag.String("api-base", "", "API base URL (default OpenAI; ollama etc. work)")
 	keyFile := flag.String("key-file", "", "API key file (default $OPENAI_API_KEY, then ~/.config/vera/openai_key)")
 	echoOnly := flag.Bool("echo", false, "answer by repeating, without a model")
@@ -262,6 +263,12 @@ func main() {
 		}
 	}
 
+	display, err := displayFor(*thinkingDisplay)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "vera:", err)
+		os.Exit(1)
+	}
+
 	wanted, source := modelFor(*model, given["model"], own)
 	answer, mind, how := chooseMind(mindOptions{
 		Echo:      *echoOnly,
@@ -271,6 +278,7 @@ func main() {
 		KeyFile:   *keyFile,
 		Effort:    *effort,
 		EffortSet: given["effort"],
+		Display:   display,
 		Gen:       generations,
 		Preface:   preface,
 		Memory:    memory,
@@ -417,12 +425,26 @@ func main() {
 			own = append(own, &DelegateTool{Delegate: mind.Delegate, WithFleet: mind.Fleet != nil})
 		}
 		if mind.Fleet != nil {
-			own = append(own, &FleetTool{Fleet: mind.Fleet, Attention: mind.Attention})
+			own = append(own, &FleetTool{Fleet: mind.Fleet})
 		}
 		if err := mind.Hands.Adopt(own...); err != nil {
 			fmt.Fprintln(os.Stderr, "vera: cannot register her own tools ("+err.Error()+")")
 			os.Exit(1)
 		}
+		// Other people's tools, last: the profile has narrowed the
+		// registry and hers are in it, and an MCP server's tools are
+		// the registry's Own too, so a `tools:` line written before the
+		// server existed cannot drop them.
+		//
+		// A file that is there and wrong stops verad — that is a typo a
+		// person can fix. A server that will not answer does not: it is
+		// a line in the log and a line in `vera mcp`.
+		if err := mind.Hands.openServers(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, "vera: cannot read "+home.ProfileDir+"/mcp.toml ("+err.Error()+")")
+			os.Exit(1)
+		}
+		defer mind.Hands.closeServers()
+		lan.servers = mind.Hands.Servers
 	}
 
 	go func() {
@@ -525,6 +547,9 @@ type mindOptions struct {
 	// turned it. See below: on the OpenAI path the difference matters.
 	Effort    string
 	EffortSet bool
+	// Display is whether the reasoning comes back to be read. Empty is
+	// the provider's own default.
+	Display provider.Display
 
 	Gen      *agento11y.Client
 	Preface  string
@@ -558,15 +583,16 @@ func chooseMind(o mindOptions) (Handler, *Mind, string) {
 	}
 
 	mind := &Mind{
-		Provider:    p,
-		Vendor:      vendorOf(p),
-		Model:       o.Model,
-		History:     newHistory(),
-		Gen:         o.Gen,
-		Preface:     o.Preface,
-		Memory:      o.Memory,
-		Delegate:    o.Delegate,
-		instruments: newInstruments(),
+		Provider:        p,
+		Vendor:          vendorOf(p),
+		Model:           o.Model,
+		ThinkingDisplay: o.Display,
+		History:         newHistory(),
+		Gen:             o.Gen,
+		Preface:         o.Preface,
+		Memory:          o.Memory,
+		Delegate:        o.Delegate,
+		instruments:     newInstruments(),
 	}
 	if mind.Vendor == "anthropic" {
 		mind.Effort = provider.Effort(o.Effort)
@@ -587,6 +613,9 @@ func chooseMind(o mindOptions) (Handler, *Mind, string) {
 	if mind.Effort != "" {
 		how += ", effort " + string(mind.Effort)
 	}
+	if mind.ThinkingDisplay != "" {
+		how += ", thinking " + string(mind.ThinkingDisplay)
+	}
 	if o.Source != "" {
 		how += " (" + o.Source + ")"
 	}
@@ -601,6 +630,20 @@ func vendorOf(p provider.Provider) string {
 		return "anthropic"
 	}
 	return "openai"
+}
+
+// displayFor reads --thinking-display. It is checked here rather than
+// at the socket because a word the API does not know comes back as a
+// 400 on the first exchange, which is a long way to go to learn that
+// somebody typed "summarised".
+func displayFor(word string) (provider.Display, error) {
+	switch d := provider.Display(strings.TrimSpace(word)); d {
+	case "", provider.DisplaySummarized, provider.DisplayOmitted:
+		return d, nil
+	default:
+		return "", fmt.Errorf("--thinking-display %q: it is %q or %q, or nothing at all",
+			word, provider.DisplaySummarized, provider.DisplayOmitted)
+	}
 }
 
 // modelFor is which model to ask, and where that came from.

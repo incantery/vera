@@ -25,6 +25,7 @@ const usage = `vera — talk to her, and keep her running
   vera tasks              every task and what is believed about it
   vera task <verb> ...    start | answer | report | land | stop | resume | seen — the fleet, by hand
   vera sessions           the conversations the chat left behind
+  vera mcp                the MCP servers she can reach, and their tools
   vera dump [ids...]      a folder of everything about a conversation, to report a problem
   vera install            a launchd agent so verad starts at login
   vera uninstall          remove it
@@ -59,6 +60,8 @@ func main() {
 		err = showHome()
 	case "sessions":
 		err = runSessions(args[1:])
+	case "mcp":
+		err = runMCP(args[1:])
 	case "dump":
 		err = runDump(args[1:])
 	case "say":

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,6 +147,31 @@ func TestProfileIsSeededOnceAndIsMotesOwn(t *testing.T) {
 	if !strings.Contains(string(first), "start a task for that") {
 		t.Fatalf("that is not mote's worked example:\n%s", first)
 	}
+	// Plus the one rule mote's example cannot write, because mote has
+	// never heard of the fleet. The file a person reads says what
+	// actually happens, and the rule that decides is a rule they can
+	// edit.
+	for _, want := range []string{`tools = ["fleet"]`, `when = { action = "stop" }`, `then = "ask"`} {
+		if !strings.Contains(string(first), want) {
+			t.Errorf("the seeded policy never says %s:\n%s", want, first)
+		}
+	}
+	// And it is the file's own rule that fires, not the one built in
+	// behind it — which is what makes the file worth editing.
+	h, err := openHands(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Adopt(&FleetTool{Fleet: &fleet.Fleet{}}); err != nil {
+		t.Fatal(err)
+	}
+	v := decide(t, h, "conv", "fleet", map[string]any{"action": "stop", "task": "a1"})
+	if v.Decision != tool.Ask {
+		t.Errorf("stopping a task was %s", v.Decision)
+	}
+	if last := fmt.Sprintf("rule %d", len(h.policy.Rules)); v.Rule == last {
+		t.Errorf("the built-in fallback decided it rather than the file's own rule (%s)", v.Rule)
+	}
 
 	mine := string(first) + "\n# mine now\n"
 	if err := os.WriteFile(path, []byte(mine), 0o600); err != nil {
@@ -255,10 +280,11 @@ func TestLongArgumentsAreCapped(t *testing.T) {
 
 // --- the one path ------------------------------------------------------
 
-// sayingTool does the two things only Vera's own tools do: it says
-// something while it works, and it reaches something — a task, a
-// session, a cost — that the journal keeps beside the result. mote's
-// Run carries neither, so both come through the round.
+// sayingTool does the three things only Vera's own tools do: it says
+// something in the harness's voice while it works, it reads what the
+// harness knows about the call, and it reaches something — a task, a
+// session, a cost — that the journal keeps beside the result. All
+// three arrive on, or leave by, the Handle.
 type sayingTool struct{ err error }
 
 func (sayingTool) Name() string        { return "saying" }
@@ -267,15 +293,22 @@ func (sayingTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{}}`)
 }
 
-func (t sayingTool) Run(ctx context.Context, args json.RawMessage, out io.Writer) (tool.Result, error) {
-	r := roundOf(ctx)
-	r.say("Opening a room for that…")
-	r.link("task-9", "session-9", 0.25)
-	_, _ = out.Write([]byte("half way"))
-	if t.err != nil {
-		return tool.Result{}, t.err
+func (t sayingTool) Run(ctx context.Context, args json.RawMessage, h tool.Handle) (tool.Result, error) {
+	h.Say("Opening a room for that…")
+	_, _ = h.Write([]byte("half way"))
+	meta := map[string]any{
+		tool.MetaTask:    "task-9",
+		tool.MetaSession: "session-9",
+		tool.MetaCost:    0.25,
 	}
-	return tool.Result{Text: "done, for " + r.device}, nil
+	if t.err != nil {
+		return tool.Result{Meta: meta}, t.err
+	}
+	return tool.Result{
+		Text: "done, for " + h.Value(tool.Device) + ", in " + h.Value(tool.Cwd) +
+			", on " + h.Value(keyConversation),
+		Meta: meta,
+	}, nil
 }
 
 // oneCall builds the exchange the way think does and runs a single
@@ -286,7 +319,9 @@ func oneCall(t *testing.T, h *Hands, tl tool.Tool) (string, []Frame, *exchange) 
 		t.Fatal(err)
 	}
 	h.policy.Tools[tl.Name()] = tool.Allow
-	m := &Mind{Hands: h, Model: "m", instruments: newInstruments()}
+	m := &Mind{Hands: h, Model: "m", Attention: newAttention(), instruments: newInstruments()}
+	m.Attention.Observe(Observation{Device: "phone", Type: "terminal.focus",
+		Terminal: &TerminalFocus{Session: "s", Window: "w", Path: "/src/rook"}})
 	ctx, x := m.begin(context.Background(), Message{Conversation: "c", Device: "phone"}, "hi", 0, "system", nil)
 	var frames []Frame
 	call := provider.Call{ID: "call_1", Name: tl.Name(), Arguments: `{}`}
@@ -297,12 +332,12 @@ func oneCall(t *testing.T, h *Hands, tl tool.Tool) (string, []Frame, *exchange) 
 	return said, frames, x
 }
 
-func TestARoundCarriesWhatRunCannot(t *testing.T) {
+func TestAHandleCarriesWhatRunCannot(t *testing.T) {
 	h, _, _ := newHands(t)
 	said, frames, x := oneCall(t, h, sayingTool{})
 
-	if said != "done, for phone" {
-		t.Errorf("the tool never saw which device asked: %q", said)
+	if said != "done, for phone, in /src/rook, on c" {
+		t.Errorf("the tool did not get what the harness knows: %q", said)
 	}
 	var status, output string
 	for _, f := range frames {
@@ -324,7 +359,8 @@ func TestARoundCarriesWhatRunCannot(t *testing.T) {
 	if x.signMillis() < 0 || x.seen == 0 {
 		t.Error("a status line did not count as something appearing")
 	}
-	// And the journal's round knows what the call reached.
+	// And the journal's round knows what the call reached, out of the
+	// Result's Meta.
 	if x.pending.Task != "task-9" || x.pending.Session != "session-9" || x.pending.CostUSD != 0.25 {
 		t.Errorf("the round did not record what it reached: %+v", x.pending)
 	}
@@ -379,5 +415,43 @@ func TestSeedProfileDropsTheExampleModel(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "tools:") {
 		t.Fatal("the rest of the front matter must survive")
+	}
+}
+
+// Result.Meta is the harness's half of a tool call: it never reaches
+// the model, and it is what the journal and the phone's result card
+// are made of.
+func TestMetaReachesTheJournalAndTheCard(t *testing.T) {
+	mind, _, journalDir := askingMind(t,
+		callsTool(t, "call_s", "saying", map[string]any{}),
+		says("Done."))
+	if err := mind.Hands.Adopt(sayingTool{}); err != nil {
+		t.Fatal(err)
+	}
+	mind.Hands.policy.Tools["saying"] = tool.Allow
+
+	var card *ToolResultFrame
+	var told string
+	err := mind.think(context.Background(), Message{Text: "do a thing", Conversation: "c1"},
+		func(f Frame) error {
+			if f.ToolResult != nil {
+				card, told = f.ToolResult, f.ToolResult.Result
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	round := onlyRound(t, journalDir, "c1")
+	if round.Task != "task-9" || round.Session != "session-9" || round.CostUSD != 0.25 {
+		t.Errorf("the journal did not keep what the call reached: %+v", round)
+	}
+	if card == nil || card.CostUSD != 0.25 {
+		t.Errorf("the result card did not carry the cost: %+v", card)
+	}
+	// And none of it is in what the model was told.
+	if strings.Contains(told, "task-9") || strings.Contains(told, "session-9") {
+		t.Errorf("the harness's own record leaked into the model's context: %q", told)
 	}
 }

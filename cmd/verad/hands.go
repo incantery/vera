@@ -26,7 +26,7 @@
 //     delegate and the fleet are Vera rather than the profile's to
 //     choose, and a file that never heard of them would send every
 //     one of those calls to the phone to be asked about. See
-//     policyTools and Adopt.
+//     policyTools and Registry.Own.
 package main
 
 import (
@@ -42,6 +42,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/incantery/mote/mcp"
 	"github.com/incantery/mote/profile"
 	"github.com/incantery/mote/profiles"
 	"github.com/incantery/mote/provider"
@@ -68,17 +69,14 @@ type Hands struct {
 	// suits this agent, and what verad asks when nobody said --model.
 	// Empty is fine: then the flag's default is the answer.
 	Model string
+	// Dir is the profile directory: profile.md, policy.toml, and
+	// mcp.toml if she has any servers.
+	Dir string
 	// Wait bounds an ask. Zero means askTimeout.
 	Wait time.Duration
 
 	registry *tool.Registry
 	policy   *tool.Policy
-	defs     []tool.Definition
-	// profile is what the profile chose, in its order; own is what
-	// Vera brought — the delegate, the fleet — which goes in front of
-	// it. Kept apart so Adopt can rebuild the registry in that order.
-	profile []tool.Tool
-	own     []tool.Tool
 	// fileRoots are the roots policy.toml itself listed. The fleet's
 	// are added to them rather than replacing them: a repository the
 	// fleet has not noticed yet is still not hers to edit.
@@ -98,6 +96,12 @@ type Hands struct {
 	// choices remembers what was answered, for the journal: Wait
 	// reports whether the call may run, not which word was said.
 	choices map[string]string
+
+	// servers is what mcp.toml declared, clients are the ones that
+	// answered, and failed is why the others did not. See mcp.go.
+	servers []mcp.Server
+	clients []*mcp.Client
+	failed  map[string]string
 }
 
 // gate is one conversation's gate and when it was last used, so the
@@ -135,12 +139,11 @@ func openHands(root string, projects *fleet.Projects) (*Hands, error) {
 
 	h := &Hands{
 		Root:      root,
+		Dir:       dir,
 		Prompt:    strings.TrimSpace(prof.Prompt),
 		Model:     strings.TrimSpace(prof.Model),
 		registry:  reg,
 		policy:    policy,
-		defs:      reg.Definitions(),
-		profile:   reg.List(),
 		fileRoots: append([]string(nil), policy.Roots...),
 		Projects:  projects,
 		gates:     map[string]*gate{},
@@ -184,15 +187,18 @@ func policyRules(rules []tool.Rule, root string) []tool.Rule {
 	// fleet has adds something or reports something; this is the one
 	// that subtracts, so it is the one she asks about.
 	//
-	// It is expressed the only way a rule can key on an argument: the
-	// fleet says its verb as its Command, and a rule matches a command
-	// by prefix. It goes LAST, after the file's own rules, so a person
-	// who writes a rule about `fleet` in policy.toml overrides it.
+	// A rule keys on the argument that is the whole of the question.
+	// It used to have to smuggle the verb out through Commander,
+	// because a command prefix was the only thing a rule could see
+	// inside a call; `when` is that, said plainly. It goes LAST, after
+	// the file's own rules, so a person who writes a rule about
+	// `fleet` in policy.toml overrides it — and the seeded file now
+	// has one, so most people are overriding it with the same words.
 	stop := tool.Rule{
-		Tools:    []string{"fleet"},
-		Commands: []string{"stop"},
-		Then:     tool.Ask,
-		Reason:   "stopping a task abandons the work in it — check they meant to",
+		Tools:  []string{"fleet"},
+		When:   map[string]string{"action": "stop"},
+		Then:   tool.Ask,
+		Reason: "stopping a task abandons the work in it — check they meant to",
 	}
 	out := make([]tool.Rule, 0, len(rules)+3)
 	out = append(out, mine)
@@ -251,6 +257,9 @@ func seedProfile(dir string) error {
 			// the person adds a line when they mean it.
 			b = withoutModelLine(b)
 		}
+		if name == "policy.toml" {
+			b = withFleetRule(b)
+		}
 		if err := os.WriteFile(path, b, 0o600); err != nil {
 			return err
 		}
@@ -259,39 +268,64 @@ func seedProfile(dir string) error {
 	return nil
 }
 
-// Adopt registers tools of Vera's own, in front of the profile's.
+// Adopt registers tools of Vera's own.
 //
 // The built-ins come from mote and the profile picks among them by
 // name; these do not go through that gate. The delegate and the fleet
 // are Vera — a profile that forgot to list them would be a Vera who
-// cannot hand work to anybody — and they go first because handing
-// work away is what she should reach for before doing it herself.
+// cannot hand work to anybody — and the registry knows that word now:
+// Own marks a tool as the harness's, and a `tools:` line narrows
+// around it rather than through it.
 //
-// Called at startup, before anything is served: the registry and the
-// definitions are read without a lock on every exchange.
+// It used to build a second registry and re-add both lists in order,
+// which was the only way to put a tool in front of the profile's. Own
+// does that itself, so the registry a profile handed back is the one
+// that is served from and nothing has to be rebuilt.
+//
+// Called at startup, before anything is served, and again by anything
+// that adds tools later — the registry takes its own lock, and the
+// definitions are recomputed from it.
 func (h *Hands) Adopt(tools ...tool.Tool) error {
 	if h == nil || len(tools) == 0 {
 		return nil
 	}
-	h.own = append(h.own, tools...)
-	reg := &tool.Registry{}
-	for _, t := range append(append([]tool.Tool{}, h.own...), h.profile...) {
-		if err := reg.Add(t); err != nil {
-			return err
+	if err := h.registry.Own(tools...); err != nil {
+		return err
+	}
+	// Own appends, and mote puts what a harness owns in FRONT only
+	// when a profile narrows the registry — so narrowing it to what is
+	// already in it is how the order gets said out loud. It is one
+	// call to mote's own function rather than the two-list rebuild
+	// this used to be, and it happens once, at startup.
+	var profile []string
+	for _, t := range h.registry.List() {
+		if !h.registry.Owns(t.Name()) {
+			profile = append(profile, t.Name())
 		}
 	}
+	reg, err := h.registry.Only(profile...)
+	if err != nil {
+		return err
+	}
 	h.registry = reg
-	h.defs = reg.Definitions()
 	return nil
 }
 
 // Definitions is what the model is told it can reach for, in the shape
 // the registry hands out — which is the shape every provider takes.
+//
+// Asked of the registry every time rather than kept, because the set
+// changes while she is running: an MCP server that says its tool list
+// changed writes to the registry from a goroutine of its own, and a
+// cached copy would go on describing tools that are gone. It is once
+// per exchange over a handful of tools, and the caller keeps the
+// answer for the whole of a tool loop — so the model is told one
+// stable list per exchange, which is what it should be told.
 func (h *Hands) Definitions() []tool.Definition {
 	if h == nil {
 		return nil
 	}
-	return h.defs
+	return h.registry.Definitions()
 }
 
 // Names is the tools she has, for the startup banner.
@@ -496,55 +530,21 @@ func (w *toolStream) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// --- the round, as a tool sees it ------------------------------------
+// keyConversation is Vera's own Handle value: which conversation a
+// call belongs to, for a tool that logs about itself. mote documents
+// tool.Device and tool.Cwd and leaves the rest of the map to the
+// harness, so this word never has to reach it.
+const keyConversation = "conversation"
 
-// round is the one call in progress, carried in its context.
-//
-// mote's Run takes arguments and a writer and gives back text. Three
-// things Vera's own tools need are not in that shape: which device
-// asked (a fleet start with no project means the repository in front
-// of them), a line to put on the phone before there is any result,
-// and what the call reached — a task id, a Claude Code session, what
-// it cost — which the journal keeps beside the round. They ride in
-// the context, the one thing that is already per-call. If mote's
-// Result ever carries more than text, most of this goes away.
-type round struct {
-	// conversation is which conversation this call belongs to, for a
-	// tool that logs about itself.
-	conversation string
-	// device is which of the person's devices asked.
-	device string
-	// say puts a line on the phone, in Vera's voice, while the work
-	// happens.
-	say func(string)
-	// link ties this round to what it reached.
-	link func(task, session string, cost float64)
-}
-
-type roundKey struct{}
-
-func withRound(ctx context.Context, r *round) context.Context {
-	return context.WithValue(ctx, roundKey{}, r)
-}
-
-// roundOf is the call in progress, or a round that goes nowhere — so
-// a tool run from a test, or from anywhere that is not an exchange,
-// needs no ceremony.
-func roundOf(ctx context.Context) *round {
-	if r, ok := ctx.Value(roundKey{}).(*round); ok && r != nil {
-		return r.filled()
+// looking is the directory the person is looking at on that device —
+// "the repo in front of them", which a tool cannot learn any other
+// way. Empty when nothing has been reported, which is a tool's cue to
+// ask rather than to guess.
+func (m *Mind) looking(device string) string {
+	if m == nil || m.Attention == nil {
+		return ""
 	}
-	return (&round{}).filled()
-}
-
-func (r *round) filled() *round {
-	if r.say == nil {
-		r.say = func(string) {}
-	}
-	if r.link == nil {
-		r.link = func(string, string, float64) {}
-	}
-	return r
+	return m.Attention.TerminalPath(device)
 }
 
 // --- one call, decided and run -----------------------------------------
@@ -611,18 +611,30 @@ func (m *Mind) invokeTool(ctx context.Context, conversation, device string, x *e
 	// is what a delegate's own telemetry hangs off — so the context
 	// the tool runs in is this one.
 	ctx, rec := m.beginTool(ctx, conversation, call)
-	res, err := t.Run(withRound(ctx, &round{
-		conversation: conversation,
-		device:       device,
-		say: func(text string) {
+	res, err := t.Run(ctx, c.Args, tool.Handle{
+		Output: &toolStream{id: call.ID, reply: reply},
+		Status: func(text string) {
 			// A status IS something appearing, so it stops the "first
 			// sign" clock even though no token has been produced.
 			x.sign(ctx)
 			_ = reply(Frame{Status: text})
 		},
-		link: x.link,
-	}), c.Args, &toolStream{id: call.ID, reply: reply})
+		Values: map[string]any{
+			tool.Device: device,
+			// The repository in front of them, which is what a fleet
+			// start with no project named means. It is what the
+			// harness knows and the arguments do not say.
+			tool.Cwd: m.looking(device),
+			// Vera's own key; mote documents the two above and lets a
+			// harness add what it knows.
+			keyConversation: conversation,
+		},
+	})
 	elapsed := time.Since(started)
+	// What the call reached, out of the tool's own Meta: the journal
+	// keeps it beside the round, and the phone's result card shows
+	// the cost. The model never sees any of it.
+	x.link(res.Meta)
 	m.endTool(ctx, rec, c.Tool, x.pending.CostUSD, elapsed, err)
 
 	// One line per call, whatever the tool was. Both what was asked
@@ -657,6 +669,31 @@ func jsonArgs(s string) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return json.RawMessage(s)
+}
+
+// withFleetRule adds the one rule mote's example cannot write: the
+// fleet is Vera's tool, not the profile's, and mote has never heard
+// of it.
+//
+// It is seeded rather than only built in so that the file a person
+// reads says what actually happens. policyRules appends the same rule
+// behind everything the file says, for a home written before this
+// existed; a file that has this one hits it first and the built-in
+// never fires. Both say the same thing, so which one decided is
+// invisible until the person edits theirs — which is the point.
+func withFleetRule(b []byte) []byte {
+	return append(b, []byte(`
+# Stopping a task abandons the work in it. Every other fleet verb adds
+# something or reports something; this is the one that subtracts, so
+# it is the one to be asked about. `+"`when`"+` matches an argument by
+# name — which is how one tool with several verbs gets several
+# answers.
+[[rules]]
+tools = ["fleet"]
+when = { action = "stop" }
+then = "ask"
+reason = "stopping a task abandons the work in it — check they meant to"
+`)...)
 }
 
 // withoutModelLine drops a `model:` line from a profile's front matter.

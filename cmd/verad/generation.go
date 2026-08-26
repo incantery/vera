@@ -322,16 +322,22 @@ func (m *Mind) recordSecondary(ctx context.Context, operation string, used usage
 	}
 }
 
-// link ties the round in progress to what it reached: a fleet task,
-// a Claude Code session, a cost. Empty values leave what is there.
-func (x *exchange) link(task, session string, cost float64) {
-	if task != "" {
+// link ties the round in progress to what the call reached, out of
+// the tool's own Result.Meta: a fleet task, a Claude Code session, a
+// cost. This is the journal's half of a tool call — the model is told
+// Result.Text and nothing here.
+//
+// Meta is the harness's map and mote agrees only on the three names,
+// so anything else a tool put in it is ignored rather than guessed
+// at. A missing or wrongly-typed value leaves what is already there.
+func (x *exchange) link(meta map[string]any) {
+	if task, _ := meta[tool.MetaTask].(string); task != "" {
 		x.pending.Task = task
 	}
-	if session != "" {
+	if session, _ := meta[tool.MetaSession].(string); session != "" {
 		x.pending.Session = session
 	}
-	if cost != 0 {
+	if cost, _ := meta[tool.MetaCost].(float64); cost != 0 {
 		x.pending.CostUSD = cost
 	}
 }

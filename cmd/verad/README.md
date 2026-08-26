@@ -266,6 +266,20 @@ turns  in_tok  out    ttft  prompt
     4     183   13   832ms  what day did I say
 ```
 
+It also keeps what the model kept. A model that thinks signs its
+reasoning, and the Messages API wants those blocks handed back on the
+next turn — in front of the tool call they led to — or it refuses the
+whole conversation. mote's `provider.Message` carries them opaquely as
+`Raw`; verad puts one on every assistant turn it builds, inside the
+tool loop and across exchanges, and stamps the thread with the model
+that produced it. Change model mid-conversation and what was said
+survives; how it was reasoned does not, because one model's signature
+is not another model's to read.
+
+`--thinking-display omitted` asks for the reasoning to be kept and
+signed but not returned; `summarized` is what happens when nobody
+says. It is a different dial from whether the model thinks at all.
+
 It is held in memory and dies with the process. A conversation is a
 session; a restart ends it. That is the honest description of what this
 is, and it stops it being mistaken for the memory system it is not.
@@ -532,10 +546,64 @@ file cannot know them:
   `fleet`, so a file with nothing to say about them would send every
   delegation to the phone to be asked about. Both are `allow` unless
   the file says otherwise — except `fleet` with `action: stop`, which
-  asks, because it abandons work somebody did. A policy rule can key on
-  a tool, a path or a command prefix, and a command is the only one of
-  the three that can see an argument; so the fleet reports its verb as
-  its command and the rule is `tools = ["fleet"], commands = ["stop"]`.
+  asks, because it abandons work somebody did. A rule keys on the
+  argument that is the whole of the question:
+
+  ```toml
+  [[rules]]
+  tools = ["fleet"]
+  when = { action = "stop" }
+  then = "ask"
+  reason = "stopping a task abandons the work in it — check they meant to"
+  ```
+
+  That is seeded into your `policy.toml`, so the file you read says
+  what happens and you can change it; the same rule is built in behind
+  everything the file says, for a home written before it existed.
+
+They are the registry's **own** rather than the profile's: `tools:` in
+`profile.md` narrows *around* them, so a profile that forgot to list
+`fleet` is not a Vera who cannot hand work away.
+
+### Other people's tools
+
+The third file in a profile is `mcp.toml`:
+
+```toml
+[[servers]]
+name    = "files"
+command = "mcp-server-filesystem"
+args    = ["~/notes"]
+
+[[servers]]
+name    = "docs"
+url     = "https://mcp.example.com/mcp"
+headers = { Authorization = "Bearer ${DOCS_TOKEN}" }
+```
+
+verad connects to them at startup, and every tool every server offers
+lands in the same registry as `read` and `write` — as `files__read`,
+with the server's own JSON Schema — decided by the same policy. The
+supervisor's `default = "ask"` means the first call to one stops and
+asks; a `[tools]` line by name is how you stop being asked.
+
+The separator is `__` rather than the `.` mote reads best. A function
+name in an OpenAI request body and a tool name in an Anthropic one
+must match `[a-zA-Z0-9_-]{1,64}`, and a dot is not in it.
+
+No file means no servers, which is not an error. A file that is there
+and wrong stops verad — a typo somebody can fix. A **server** that
+will not answer does not: it is a line in the log and a line in
+`vera mcp`, which prints every server, whether it answered, and every
+tool under the name the model sees:
+
+```
+$ vera mcp
+files  (stdio) mcp-server-filesystem ~/notes
+  calls itself filesystem 1.2
+  files__read   Read a file.
+  files__write  Write a file.
+```
 
 ### The ask
 
@@ -559,8 +627,10 @@ wanted to stderr: a script that answered yes on a person's behalf would
 be the worst possible client.
 
 An **always** is remembered for the rest of that conversation and no
-other — the tool plus a reach, which is the directory for a file and
-the program for a command. A grant that outlived the conversation would
+other — the tool plus a reach, which is the directory for a file, the
+program for a command, and whatever the tool itself says its scope is.
+The fleet says its verb, so an always said to `fleet stop` covers
+stopping and not starting. A grant that outlived the conversation would
 be a policy edit, and policy edits belong in the file.
 
 A tool's output streams as `tool_output` frames while it runs, capped
@@ -744,6 +814,14 @@ something routine.
 question goes out on the /say stream the exchange is streaming to. A
 phone that has gone into a pocket sees it on `resume`; a second client
 watching the same run sees it too, and either may answer.
+
+**MCP is tools and nothing else.** Resources, prompts, sampling and
+progress notifications are ignored. A server that asks *our* model
+something is a loop mote does not have yet.
+
+**Nothing bounds an MCP call.** A server that never answers holds the
+exchange open behind it; the exchange's own context is the only limit,
+and the two-minute ask timeout does not cover a run.
 
 **A shared secret, not a trust ceremony.** Good against the other guests
 on the wifi; not against someone who has read your disk.

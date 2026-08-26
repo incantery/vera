@@ -70,6 +70,10 @@ type lanTransport struct {
 	// answer carries a person's word on an ask back to the exchange
 	// parked on it. Nil when Vera has no tools of her own to gate.
 	answer func(ctx context.Context, id, choice string) error
+	// servers is the profile's MCP servers and what they offer, for a
+	// person asking what she can reach. Nil when she has no tools at
+	// all — which is not the same as having no servers.
+	servers func() Servers
 
 	mu   sync.Mutex
 	port string
@@ -138,6 +142,7 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("GET /commands", l.watchCommands)
 	mux.HandleFunc("POST /transcribe", l.transcribe)
 	mux.HandleFunc("GET /stt", l.sttStatus)
+	mux.HandleFunc("GET /mcp", l.mcpServers)
 	mux.HandleFunc("POST /stt/install", l.sttInstall)
 	mux.HandleFunc("POST /poke/{who}", loopbackOnly(l.pokeHandler))
 	if l.fleet != nil {
@@ -685,6 +690,26 @@ type Status struct {
 	// Targets is the frecency-ranked places on the device that asked,
 	// best first — the phone's home screen.
 	Targets []TargetStatus `json:"targets"`
+}
+
+// mcpServers is what `vera mcp` prints: the servers this profile
+// declared, whether they answered, and every tool under the name the
+// model sees and a policy rule has to be written against.
+//
+// Authed like everything else, and a GET because it changes nothing.
+// It is asked of verad rather than read off disk because the file
+// says what was declared and only a connected server says what it
+// actually offers.
+func (l *lanTransport) mcpServers(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.servers == nil {
+		writeJSON(w, Servers{List: []ServerInfo{}})
+		return
+	}
+	writeJSON(w, l.servers())
 }
 
 func (l *lanTransport) status(w http.ResponseWriter, r *http.Request) {

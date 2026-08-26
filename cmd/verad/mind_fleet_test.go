@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -131,11 +132,11 @@ func TestOnlyAStartNamesAPath(t *testing.T) {
 	if got := f.Paths([]byte(`{"action":"stop","task":"a1"}`)); got != nil {
 		t.Errorf("stop named a path: %v", got)
 	}
-	if got := f.Command([]byte(`{"action":"stop","task":"a1"}`)); got != "stop" {
-		t.Errorf("the verb a rule keys on is %q", got)
+	if got := f.Scope([]byte(`{"action":"stop","task":"a1"}`)); got != "stop" {
+		t.Errorf("the verb an \"always\" is about is %q", got)
 	}
-	if got := f.Command([]byte(`not json`)); got != "" {
-		t.Errorf("unreadable arguments produced a command: %q", got)
+	if got := f.Scope([]byte(`not json`)); got != "" {
+		t.Errorf("unreadable arguments produced a scope: %q", got)
 	}
 }
 
@@ -198,5 +199,95 @@ func TestDefinitionsAreUnchanged(t *testing.T) {
 	}
 	if string(got) != strings.TrimRight(string(want), "\n") {
 		t.Errorf("delegate_alone.json changed:\n got %s\nwant %s", got, want)
+	}
+}
+
+// The repository in front of them is the harness's to know, not the
+// model's to say, and it arrives on the Handle. Without it a start
+// with no project named has to ask which one.
+func TestAStartWithNoProjectUsesWhatTheHandleKnows(t *testing.T) {
+	f := &FleetTool{Fleet: &fleet.Fleet{}}
+	args := json.RawMessage(`{"action":"start","brief":"fix it"}`)
+
+	_, err := f.Run(context.Background(), args, tool.Handle{})
+	if err == nil || !strings.Contains(err.Error(), "no repository was named") {
+		t.Fatalf("a start with nothing in front of them said: %v", err)
+	}
+
+	// With a repository on the Handle it gets as far as trying to open
+	// a room, which is a different failure — there is no multiplexer
+	// in a test.
+	said := make(chan string, 4)
+	_, err = f.Run(context.Background(), args, tool.Handle{
+		Status: func(text string) { said <- text },
+		Values: map[string]any{tool.Cwd: "/src/rook"},
+	})
+	if err != nil && strings.Contains(err.Error(), "no repository was named") {
+		t.Fatalf("the repository on the Handle was ignored: %v", err)
+	}
+	select {
+	case line := <-said:
+		if line != "Opening a room for that…" {
+			t.Errorf("the harness said %q while it worked", line)
+		}
+	default:
+		t.Error("nothing was said while a room was being opened")
+	}
+}
+
+// A task id is what the call reached, and it is on the Result whether
+// or not the call succeeded — a round that failed still says which
+// task it failed on.
+func TestTheFleetSaysWhichTaskItWasAbout(t *testing.T) {
+	f := &FleetTool{Fleet: &fleet.Fleet{}}
+	res, err := f.Run(context.Background(), json.RawMessage(`{"action":"land"}`), tool.Handle{})
+	if err == nil {
+		t.Fatal("a land with no task id succeeded")
+	}
+	if res.Meta[tool.MetaTask] != nil {
+		t.Errorf("a call about no task named one: %v", res.Meta)
+	}
+	// An answer with no text does not reach the fleet either, and it
+	// still says which task it was about.
+	res, err = f.Run(context.Background(), json.RawMessage(`{"action":"answer","task":"a1"}`), tool.Handle{})
+	if err == nil {
+		t.Fatal("an answer with nothing to say succeeded")
+	}
+	if res.Meta[tool.MetaTask] != "a1" {
+		t.Errorf("the task the call was about is %v", res.Meta[tool.MetaTask])
+	}
+}
+
+// An "always" said to one verb is not an always said to another. The
+// fleet says its Scope, so the Gate does not have to guess.
+func TestAlwaysToOneVerbIsNotAlwaysToAnother(t *testing.T) {
+	h, _, project := newHands(t)
+	if err := h.Adopt(&FleetTool{Fleet: &fleet.Fleet{}}); err != nil {
+		t.Fatal(err)
+	}
+	tl, _ := h.Tool("fleet")
+	stop := tool.NewCall("call_1", tl, json.RawMessage(`{"action":"stop","task":"a1"}`))
+
+	v, g := h.Decide("conv", stop)
+	if v.Decision != tool.Ask {
+		t.Fatalf("stopping a task was %s before anybody said always", v.Decision)
+	}
+	if got := g.Grant(stop).String(); got != "fleet stop" {
+		t.Fatalf("an always about stopping would cover %q", got)
+	}
+	// Say it, the way the wire does, and stopping stops asking.
+	h.Asking("call_1", g)
+	go func() { _ = h.Answer(context.Background(), "call_1", tool.Always) }()
+	if ok, alive := h.waitFor(context.Background(), g, stop); !ok || !alive {
+		t.Fatal("the always was never taken")
+	}
+	if again, _ := h.Decide("conv", stop); again.Decision != tool.Allow {
+		t.Errorf("stopping still asks after an always: %s", again.Decision)
+	}
+	// And a start, which was allowed anyway, did not become an always
+	// about the fleet as a whole.
+	start := tool.NewCall("call_2", tl, json.RawMessage(`{"action":"start","brief":"x","project":"`+project+`"}`))
+	if got := g.Grant(start).String(); got != "fleet start" {
+		t.Errorf("an always about starting would cover %q", got)
 	}
 }
