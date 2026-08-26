@@ -6,26 +6,10 @@ import Observation
 // The Mac holds what was said (history) and what is true about you
 // (memory). This holds neither — only what is on screen, and only so
 // that reopening the app does not look like nothing ever happened.
-
-struct Exchange: Identifiable, Codable, Sendable {
-    var id = UUID()
-    var said: String
-    var reply = ""
-    var failed: String?
-    var done = false
-
-    /// What Vera is doing while it has nothing to say yet. Some work
-    /// takes minutes, and a silent screen for that long reads as
-    /// broken.
-    var status: String?
-
-    /// The work on the Mac this came from, and how much of it has been
-    /// seen. Together they are enough to rejoin it after the app has
-    /// been closed — the Mac kept going, so there is something to
-    /// rejoin.
-    var run: String?
-    var seen = 0
-}
+//
+// What an exchange is made of lives in Reply.swift: this is the part
+// that talks to the Mac, and the part that decides when what is on
+// screen is worth writing down.
 
 @Observable
 @MainActor
@@ -119,34 +103,48 @@ final class Conversation {
             do {
                 for try await frame in client.say(said) {
                     guard let self, !Task.isCancelled else { return }
-                    exchanges[index].seen += 1
-                    if let run = frame.run {
-                        exchanges[index].run = run
-                        // Saved the moment it is known. Waiting until
-                        // the exchange settles would mean the one case
-                        // this exists for — the app dying mid-answer —
-                        // is the one case with nothing to rejoin.
-                        persist()
-                    }
-                    if let delta = frame.delta {
-                        exchanges[index].reply += delta
-                        // The first real word means the waiting is over.
-                        exchanges[index].status = nil
-                    }
-                    if let status = frame.status { exchanges[index].status = status }
-                    if let error = frame.error { exchanges[index].failed = error }
+                    exchanges[index].apply(frame)
+                    // Saved the moment the run is known. Waiting until
+                    // the exchange settles would mean the one case this
+                    // exists for — the app dying mid-answer — is the
+                    // one case with nothing to rejoin. A question is
+                    // saved for the same reason: it is the one thing on
+                    // screen that is worth coming back to.
+                    if frame.run != nil || frame.ask != nil { persist() }
                     if frame.done == true || frame.error != nil { break }
                 }
-                self?.exchanges[index].done = true
-                self?.exchanges[index].status = nil
+                self?.exchanges[index].close()
                 self?.persist()
             } catch {
                 self?.exchanges[index].failed = error.localizedDescription
-                self?.exchanges[index].done = true
-                self?.exchanges[index].status = nil
+                self?.exchanges[index].close()
                 self?.persist()
             }
             self?.replying = false
+        }
+    }
+
+    /// One word — yes, no or always — back to the call parked on it.
+    ///
+    /// The card closes on the tap, not on the reply: the answer is
+    /// theirs the moment they give it. If it does not reach the Mac the
+    /// question opens again with the reason under it, because the
+    /// exchange on the other end is still waiting for one.
+    func answer(_ choice: String, to questionID: String, in exchangeID: Exchange.ID) {
+        guard let pairing else { return }
+        guard let index = exchanges.firstIndex(where: { $0.id == exchangeID }) else { return }
+        guard exchanges[index].answering(questionID, choice) else { return }
+        persist()
+
+        let client = Client(pairing: pairing, conversation: conversationID)
+        Task { @MainActor [weak self] in
+            do {
+                try await client.answer(choice, to: questionID)
+            } catch {
+                guard let self, let index = exchanges.firstIndex(where: { $0.id == exchangeID }) else { return }
+                exchanges[index].answerFailed(questionID, error.localizedDescription)
+                persist()
+            }
         }
     }
 }
@@ -171,19 +169,14 @@ extension Conversation {
                 do {
                     for try await frame in client.resume(run: run, from: seen) {
                         guard let self, index < exchanges.count else { return }
-                        exchanges[index].seen += 1
                         // It was not interrupted after all.
                         exchanges[index].failed = nil
-                        if let delta = frame.delta {
-                            exchanges[index].reply += delta
-                            exchanges[index].status = nil
-                        }
-                        if let status = frame.status { exchanges[index].status = status }
-                        if let error = frame.error { exchanges[index].failed = error }
+                        exchanges[index].done = false
+                        exchanges[index].apply(frame)
+                        if frame.ask != nil { persist() }
                         if frame.done == true || frame.error != nil { break }
                     }
-                    self?.exchanges[index].done = true
-                    self?.exchanges[index].status = nil
+                    self?.exchanges[index].close()
                     self?.persist()
                 } catch {
                     // The run is gone, or the Mac is. The exchange stays
