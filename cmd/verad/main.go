@@ -423,6 +423,20 @@ func main() {
 			fmt.Fprintln(os.Stderr, "vera: cannot register her own tools ("+err.Error()+")")
 			os.Exit(1)
 		}
+		// Other people's tools, last: the profile has narrowed the
+		// registry and hers are in it, and an MCP server's tools are
+		// the registry's Own too, so a `tools:` line written before the
+		// server existed cannot drop them.
+		//
+		// A file that is there and wrong stops verad — that is a typo a
+		// person can fix. A server that will not answer does not: it is
+		// a line in the log and a line in `vera mcp`.
+		if err := mind.Hands.openServers(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, "vera: cannot read "+home.ProfileDir+"/mcp.toml ("+err.Error()+")")
+			os.Exit(1)
+		}
+		defer mind.Hands.closeServers()
+		lan.servers = mind.Hands.Servers
 	}
 
 	go func() {

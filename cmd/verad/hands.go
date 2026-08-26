@@ -42,6 +42,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/incantery/mote/mcp"
 	"github.com/incantery/mote/profile"
 	"github.com/incantery/mote/profiles"
 	"github.com/incantery/mote/provider"
@@ -68,6 +69,9 @@ type Hands struct {
 	// suits this agent, and what verad asks when nobody said --model.
 	// Empty is fine: then the flag's default is the answer.
 	Model string
+	// Dir is the profile directory: profile.md, policy.toml, and
+	// mcp.toml if she has any servers.
+	Dir string
 	// Wait bounds an ask. Zero means askTimeout.
 	Wait time.Duration
 
@@ -96,6 +100,12 @@ type Hands struct {
 	// choices remembers what was answered, for the journal: Wait
 	// reports whether the call may run, not which word was said.
 	choices map[string]string
+
+	// servers is what mcp.toml declared, clients are the ones that
+	// answered, and failed is why the others did not. See mcp.go.
+	servers []mcp.Server
+	clients []*mcp.Client
+	failed  map[string]string
 }
 
 // gate is one conversation's gate and when it was last used, so the
@@ -133,6 +143,7 @@ func openHands(root string, projects *fleet.Projects) (*Hands, error) {
 
 	h := &Hands{
 		Root:      root,
+		Dir:       dir,
 		Prompt:    strings.TrimSpace(prof.Prompt),
 		Model:     strings.TrimSpace(prof.Model),
 		registry:  reg,
