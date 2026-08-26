@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 	"io"
 	"log/slog"
@@ -57,7 +58,7 @@ type Mind struct {
 	Effort   string
 	Preface  string
 	History  *History
-	Memory   *Memory
+	Memory   *home.Memory
 	Delegate *Delegate
 	// Fleet is where work that outlives the conversation goes. Nil
 	// when there is no multiplexer to put a pane in.
@@ -507,6 +508,11 @@ func findKey(explicit string) string {
 
 // preface is the system prompt actually in force, with whatever Vera
 // remembers folded in.
+//
+// What goes in is MEMORY.md — the index of her home, one line per
+// memory, whole. Not the memory files themselves: the index is what is
+// small enough to send on every exchange, and the bodies are for a
+// person reading them and for the tools Vera gets shortly.
 //
 // Memory is stated as things known rather than as instructions, and
 // with an explicit note not to bring them up unprompted — otherwise a

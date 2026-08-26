@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 	"github.com/incantery/vera/mux"
 	"log/slog"
@@ -59,7 +60,7 @@ func main() {
 	evalSuite := flag.String("eval", "", "run an eval suite against the real handler and exit (e.g. cmd/vera/evals/smoke.yaml)")
 	evalPublish := flag.Bool("eval-publish", true, "publish the eval run to agent observability (needs AGENTO11Y_*)")
 	prefaceFile := flag.String("preface-file", "", "replace the system prompt with the contents of a file")
-	memoryFile := flag.String("memory-file", "", "where memory lives (default ~/.local/state/vera/memory.json)")
+	homeDir := flag.String("home", "", "Vera's home, where memory lives (default $VERA_HOME, then ~/vera)")
 	noMemory := flag.Bool("no-memory", false, "answer without long-term memory, and learn nothing")
 	workspace := flag.String("workspace", "", "where delegated work runs (default ~/.local/state/vera/workspace)")
 	permission := flag.String("permission-mode", "acceptEdits", "how much the delegate may do without asking")
@@ -173,17 +174,32 @@ func main() {
 	// the real one would let cases teach each other, make results
 	// depend on run order, and quietly write test fixtures into what
 	// Vera believes about you.
-	if *evalSuite != "" && *memoryFile == "" {
-		scratch, err := os.MkdirTemp("", "vera-eval-memory")
+	if *evalSuite != "" && *homeDir == "" {
+		scratch, err := os.MkdirTemp("", "vera-eval-home")
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "vera: "+err.Error())
 			os.Exit(1)
 		}
 		defer os.RemoveAll(scratch)
-		*memoryFile = filepath.Join(scratch, "memory.json")
+		*homeDir = scratch
 	}
 
-	memory := newMemory(memoryPath(*memoryFile))
+	// Home before anything that writes to it. A verad that cannot make
+	// its own home is a verad with nowhere to put what it learns, and
+	// that is worth saying out loud rather than discovering in a month
+	// of empty memory.
+	place, err := home.Open(home.Path(*homeDir))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "vera: cannot open "+home.Path(*homeDir)+" ("+err.Error()+")")
+		os.Exit(1)
+	}
+	if n, err := place.Migrate(legacyMemoryPath()); err != nil {
+		slog.Warn("could not migrate the old memory.json", "error", err.Error())
+	} else if n > 0 {
+		slog.Info("migrated memory.json into home", "facts", n, "home", place.Root)
+	}
+	slog.Info("home", "path", place.Root)
+	memory := place.Memory()
 	if *showUsage {
 		u, err := scrapeUsage(ctx)
 		if err != nil {
@@ -194,7 +210,7 @@ func main() {
 		return
 	}
 	if *showMemory {
-		printMemories(memory)
+		printMemories(place, memory)
 		return
 	}
 	if *forget != "" {
@@ -306,6 +322,9 @@ func main() {
 			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/status"
 		}
 		f.Env = fleetEnv(telemetryConfigured() && !*noDelegateTelemetry)
+		// What the fleet learns about a repository goes in her home,
+		// beside what she knows about the person.
+		f.Notes = place
 		f.Observe = func(ev fleet.Event) { lan.attention.Observe(fleetObservation(id.Name, ev)) }
 		lan.fleet = f
 		if mind != nil {
@@ -345,7 +364,7 @@ func main() {
 		if radio != nil {
 			peering = radio.Ready(10 * time.Second)
 		}
-		announce(transports[0], id, *addr, how, telemetry, conversations, memory, hands, peering)
+		announce(transports[0], id, *addr, how, telemetry, conversations, place, memory, hands, peering)
 	}()
 
 	// Every transport carries the same handler. A failure in the radio
@@ -428,7 +447,7 @@ func echo(ctx context.Context, msg Message, reply func(Frame) error) error {
 // echo — said out loud rather than discovered. A binary that silently
 // degrades to repeating your words is a binary you will spend an hour
 // debugging the model behind.
-func chooseMind(echoOnly bool, model, apiBase, keyFile string, generations *agento11y.Client, preface string, memory *Memory, hands *Delegate) (Handler, *Mind, string) {
+func chooseMind(echoOnly bool, model, apiBase, keyFile string, generations *agento11y.Client, preface string, memory *home.Memory, hands *Delegate) (Handler, *Mind, string) {
 	if echoOnly {
 		return echo, nil, "echoing, no model (--echo)"
 	}
@@ -454,16 +473,17 @@ func chooseMind(echoOnly bool, model, apiBase, keyFile string, generations *agen
 }
 
 // announce prints where to pair, once the listener has a real port.
-func announce(t Transport, id Identity, addr, how, telemetry, conversations string, memory *Memory, hands *Delegate, peering string) {
+func announce(t Transport, id Identity, addr, how, telemetry, conversations string, place *home.Home, memory *home.Memory, hands *Delegate, peering string) {
 	time.Sleep(150 * time.Millisecond)
 	fmt.Printf("vera — %s\n", id.Name)
 	fmt.Printf("  answering with  %s\n", how)
 	fmt.Printf("  telemetry  %s\n", telemetry)
 	fmt.Printf("  generations  %s\n", conversations)
+	fmt.Printf("  home  %s\n", place.Root)
 	if memory == nil {
 		fmt.Println("  memory  off (--no-memory)")
 	} else {
-		fmt.Printf("  memory  %s remembered\n", quantity(memory.Count(), "thing", "things"))
+		fmt.Printf("  memory  %s remembered, in %s/\n", quantity(memory.Count(), "thing", "things"), home.MemoryDir)
 	}
 	if hands == nil {
 		fmt.Println("  delegate  off (--no-tools)")
@@ -571,36 +591,45 @@ func checkTelemetry(ctx context.Context, p *providers, generations *agento11y.Cl
 	fmt.Println("look for service.name=" + serviceName + " and gen_ai.conversation.id=vera-check")
 }
 
-func printMemories(m *Memory) {
+func printMemories(place *home.Home, m *home.Memory) {
 	facts := m.All()
+	fmt.Println(place.Root)
 	if len(facts) == 0 {
-		fmt.Println("Vera remembers nothing yet.")
+		fmt.Println("\nVera remembers nothing yet.")
 		return
 	}
-	fmt.Printf("%s:\n\n", quantity(len(facts), "thing remembered", "things remembered"))
+	fmt.Printf("\n%s:\n\n", quantity(len(facts), "thing remembered", "things remembered"))
 	for _, f := range facts {
-		fmt.Printf("  %3d  %s\n", f.ID, f.Text)
-		fmt.Printf("       learned %s\n", f.Learned.Format("2 Jan, 15:04"))
+		fmt.Printf("  %s\n", f.Description)
+		fmt.Printf("      %s/%s.md · %s · since %s\n", home.MemoryDir, f.Name, f.Type, f.Since.Format("2 Jan 2006"))
 	}
 }
 
-func forgetFacts(m *Memory, spec string) {
+// Forgetting is by slug, which is also the file name — so "forget it"
+// and "delete that file" are the same act, and either one works.
+func forgetFacts(m *home.Memory, spec string) {
 	if strings.EqualFold(strings.TrimSpace(spec), "all") {
 		fmt.Printf("forgot %s\n", quantity(m.ForgetAll(), "thing", "things"))
 		return
 	}
-	var ids []int
+	var names []string
 	for _, piece := range strings.Split(spec, ",") {
-		var id int
-		if _, err := fmt.Sscanf(strings.TrimSpace(piece), "%d", &id); err == nil {
-			ids = append(ids, id)
+		if piece = strings.TrimSpace(piece); piece != "" {
+			names = append(names, strings.TrimSuffix(piece, ".md"))
 		}
 	}
-	if len(ids) == 0 {
-		fmt.Fprintln(os.Stderr, "vera: nothing to forget — pass ids like \"3,7\" or \"all\"")
+	if len(names) == 0 {
+		fmt.Fprintln(os.Stderr, "vera: nothing to forget — pass slugs like \"lives-in-vienna,owns-a-dog\" or \"all\"")
 		os.Exit(1)
 	}
-	fmt.Printf("forgot %s\n", quantity(m.Forget(ids...), "thing", "things"))
+	fmt.Printf("forgot %s\n", quantity(m.Forget(names...), "thing", "things"))
+}
+
+// legacyMemoryPath is where memory lived before home: one JSON array
+// under the state directory. Read once, migrated, and kept beside its
+// replacement as memory.json.migrated.
+func legacyMemoryPath() string {
+	return filepath.Join(stateDir(), "vera", "memory.json")
 }
 
 func quantity(n int, one, many string) string {
