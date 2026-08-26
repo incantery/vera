@@ -13,7 +13,7 @@
 // "start a task for that" — which is what the model is told when it
 // tries. Anywhere else she asks, and the question goes to the phone.
 //
-// Three things are decided here rather than in the file, and each one
+// Four things are decided here rather than in the file, and each one
 // is a thing the file cannot know:
 //
 //   - where her home actually is ($VERA_HOME moves it, and the file
@@ -515,7 +515,8 @@ func (w *toolStream) Write(p []byte) (int, error) {
 // of them), a line to put on the phone before there is any result,
 // and what the call reached — a task id, a Claude Code session, what
 // it cost — which the journal keeps beside the round. They ride in
-// the context, the one thing already per-call. See GAPS.
+// the context, the one thing that is already per-call. If mote's
+// Result ever carries more than text, most of this goes away.
 type round struct {
 	// conversation is which conversation this call belongs to, for a
 	// tool that logs about itself.
