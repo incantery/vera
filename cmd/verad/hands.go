@@ -455,6 +455,11 @@ func (m *Mind) invokeTool(ctx context.Context, conversation string, x *exchange,
 		// the "first sign" clock the way a status line does.
 		x.sign(ctx)
 		m.Hands.Asking(call.ID, g)
+		// A status beside the ask, for a client that does not know the
+		// frame yet. The phone ignores unknown fields, so without this
+		// an ask there is two minutes of silence that reads as broken
+		// — and then a no it never saw the question for.
+		_ = reply(Frame{Status: "Waiting for you: " + c.Tool + "…"})
 		_ = reply(Frame{Ask: &AskFrame{ID: call.ID, Name: c.Tool,
 			Args: trim(string(c.Args), maxRecordedArgs), Text: verdict.Reason}})
 		ok, alive := m.Hands.waitFor(ctx, g, c)
