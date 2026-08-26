@@ -54,7 +54,7 @@ func main() {
 	noPeer := flag.Bool("no-peer", false, "do not advertise over peer-to-peer")
 	state := flag.String("state", "", "identity file (default ~/.local/state/vera/identity.json)")
 	model := flag.String("model", "gpt-5.6-luna", "model (a claude-* name goes to the Anthropic API; anything else to an OpenAI-compatible server); default: the profile's own model line, then this")
-	effort := flag.String("effort", "high", "how hard to think: low, medium, high, xhigh, max (where the model has the dial)")
+	effort := flag.String("effort", "high", "how hard to think: none, minimal, low, medium, high, xhigh, max (where the model has the dial)")
 	thinkingDisplay := flag.String("thinking-display", "", "whether the model's reasoning comes back: summarized, or omitted (kept and signed, but not shown). Empty is the model's own default")
 	apiBase := flag.String("api-base", "", "API base URL (default OpenAI; ollama etc. work)")
 	keyFile := flag.String("key-file", "", "API key file (default $OPENAI_API_KEY, then ~/.config/vera/openai_key)")
@@ -604,6 +604,7 @@ func chooseMind(o mindOptions) (Handler, *Mind, string) {
 		// because an explicit dial is a stronger statement than a
 		// workaround for a different model.
 		mind.Thinking = provider.ThinkingOff
+		mind.Effort = provider.Effort("none")
 		if o.EffortSet {
 			mind.Effort = provider.Effort(o.Effort)
 		}
@@ -662,7 +663,7 @@ func modelFor(flagValue string, given bool, own *Hands) (model, source string) {
 func validEffort(s string) bool {
 	switch provider.Effort(s) {
 	case provider.EffortLow, provider.EffortMedium, provider.EffortHigh,
-		provider.EffortXHigh, provider.EffortMax:
+		provider.EffortXHigh, provider.EffortMax, "none", "minimal":
 		return true
 	}
 	return false
