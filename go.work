@@ -11,7 +11,7 @@
 // a push round-trip. After changing drive/, `go get
 // github.com/incantery/vera/drive@<commit>` is what makes the change
 // real for everyone else.
-go 1.25.7
+go 1.25.8
 
 use (
 	.

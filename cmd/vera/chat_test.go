@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/incantery/mote/agent"
 	"github.com/incantery/mote/session"
 	"github.com/incantery/mote/tui"
@@ -578,7 +577,7 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera", Mind: "echo"}, s, nil, "say something")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
-	view := m.View()
+	view := screen(m)
 	for _, want := range []string{"vera", "echo", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o", "1 run in flight"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the screen is missing %q:\n%s", want, view)
@@ -586,11 +585,11 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	}
 
 	deliver(m, s.handle("report", "a1"))
-	if v := m.View(); !strings.Contains(v, "Findings") || !strings.Contains(v, "It works.") {
+	if v := screen(m); !strings.Contains(v, "Findings") || !strings.Contains(v, "It works.") {
 		t.Errorf("/report should print what it fetched:\n%s", v)
 	}
 	deliver(m, s.handle("start", ""))
-	if v := m.View(); !strings.Contains(v, "/start [@repo] <brief>") {
+	if v := screen(m); !strings.Contains(v, "/start [@repo] <brief>") {
 		t.Errorf("a command that cannot run says how:\n%s", v)
 	}
 }
@@ -601,7 +600,6 @@ func headless(opts tui.Options) tui.Options {
 	pal := tui.DefaultPalette()
 	pal.Markdown = "ascii"
 	opts.Palette = &pal
-	opts.Renderer = lipgloss.NewRenderer(io.Discard)
 	return opts
 }
 
@@ -646,8 +644,8 @@ func drive(t *testing.T, m *tui.Model, done func() bool, cmds ...tea.Cmd) {
 }
 
 func say(m *tui.Model, text string) tea.Cmd {
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text)})
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.Update(tea.KeyPressMsg{Code: []rune(text)[0], Text: text})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	return cmd
 }
 
@@ -682,7 +680,7 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 
 	drive(t, m, func() bool { return len(sess.Turns()) == 1 }, m.Init(), say(m, "what is on the rail?"))
 	deliver(m, say(m, "/tasks")) // a command line, typed, for the history
-	live := m.View()
+	live := screen(m)
 	for _, want := range []string{"what is on the rail?", "You said:", "fleet"} {
 		if !strings.Contains(live, want) {
 			t.Fatalf("the live screen is missing %q:\n%s", want, live)
@@ -701,7 +699,7 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 	m2 := tui.New(veraAgent{c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
 	m2.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
-	view := m2.View()
+	view := screen(m2)
 	for _, want := range []string{"Reopened", "chat-1", "1 turn", "what is on the rail?", "You said:", "fleet"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("the rebuilt screen is missing %q:\n%s", want, view)
@@ -709,8 +707,8 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 	}
 	// The input history came back with it: the up arrow finds the
 	// last line that was sent, commands and all.
-	m2.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if v := m2.View(); !strings.Contains(v, "/tasks") {
+	m2.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if v := screen(m2); !strings.Contains(v, "/tasks") {
 		t.Errorf("the up arrow found nothing:\n%s", v)
 	}
 
@@ -770,3 +768,7 @@ func TestNewMovesTheConversationAndItsFile(t *testing.T) {
 		t.Fatalf("on disk: %+v", list) // chat-1 was never said to, so it left nothing
 	}
 }
+
+// screen is the terminal's frame as plain text: v2 hands back a
+// tea.View, and the tests read words, not colours.
+func screen(m tea.Model) string { return ansi.Strip(m.View().Content) }
