@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/grafana/agento11y/go/agento11y"
+	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/journal"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -291,6 +292,14 @@ func (x *exchange) link(task, session string, cost float64) {
 	if cost != 0 {
 		x.pending.CostUSD = cost
 	}
+}
+
+// decided records what the policy said about the round in progress,
+// and what the person answered if it was put to them.
+func (x *exchange) decided(decision tool.Decision, answer, reason string) {
+	x.pending.Decision = string(decision)
+	x.pending.Answer = answer
+	x.pending.Reason = reason
 }
 
 // record closes the round in progress for the journal.

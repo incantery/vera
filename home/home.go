@@ -117,7 +117,10 @@ func (h *Home) ensure() error {
 	if err := writeIfMissing(h.path(Index), ""); err != nil {
 		return err
 	}
-	if err := writeIfMissing(h.path(filepath.FromSlash(ProfileDir), "README.md"), supervisorReadme); err != nil {
+	// The README used to say this directory was empty on purpose and
+	// that nothing read it. It is read now, so an old home gets the
+	// new words rather than a stale note beside a live profile.
+	if err := writeIfStale(h.path(filepath.FromSlash(ProfileDir), "README.md"), supervisorReadme, "Empty on purpose."); err != nil {
 		return err
 	}
 	return writeIfMissing(h.path(NotesDir, "README.md"), notesReadme)
@@ -125,10 +128,20 @@ func (h *Home) ensure() error {
 
 const supervisorReadme = `# supervisor
 
-Empty on purpose. This is where the supervisor profile goes — how Vera
-runs the fleet: what she starts without asking, when she interrupts,
-what she says when a task wants a person. mote (../mote) defines it;
-until then, nothing here is read.
+Vera's profile, and the only place her rules live.
+
+  profile.md   what she is, in her own prompt
+  policy.toml  what her tools may touch: allow, ask or deny, by tool,
+               by path, by command prefix
+
+verad reads both at startup and writes mote's worked example here the
+first time, if there is nothing. After that these are yours: edit them
+and restart verad.
+
+Two things are not in the file, because the file cannot know them.
+The repositories ` + "`${root}`" + ` stands for are the ones the fleet knows
+about, added to the list here. And this directory is denied to her
+tools whatever the rules say — a rule she can rewrite is not a rule.
 `
 
 const notesReadme = `# notes
@@ -136,6 +149,23 @@ const notesReadme = `# notes
 Hers. Nothing reads this directory yet — it is where Vera writes what
 she is working out, once she has the tools to write at all.
 `
+
+// writeIfStale replaces a file this package wrote earlier, when it
+// still begins the way the old version did and nobody has made it
+// theirs. A file a person has edited is left alone.
+func writeIfStale(path, content, was string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return write(path, content)
+		}
+		return err
+	}
+	if !strings.Contains(string(b), was) {
+		return nil
+	}
+	return write(path, content)
+}
 
 func writeIfMissing(path, content string) error {
 	if _, err := os.Stat(path); err == nil {

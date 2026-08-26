@@ -40,13 +40,18 @@ type Frame struct {
 	ToolCall   *ToolCallFrame   `json:"tool_call,omitempty"`
 	ToolResult *ToolResultFrame `json:"tool_result,omitempty"`
 	// ToolOutput is what a tool is printing while it runs, in pieces.
-	//
-	// TODO: verad does not send these yet — /say goes from tool_call
-	// straight to tool_result, so a tool that takes a minute says
-	// nothing until it is done. The frame and its translation are
-	// here so that the day verad starts streaming one, the card fills
-	// in without a change on this side.
 	ToolOutput *ToolOutputFrame `json:"tool_output,omitempty"`
+	// Ask is a tool verad will not run without a word from the person.
+	// The exchange is parked on it: nothing else arrives until the
+	// answer goes back through POST /ask/{id}.
+	Ask *AskFrame `json:"ask,omitempty"`
+}
+
+type AskFrame struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Args string `json:"args"`
+	Text string `json:"text"`
 }
 
 type ToolCallFrame struct {
@@ -223,6 +228,11 @@ func (c *chatClient) post(ctx context.Context, path string, body any) error {
 	}
 	resp.Body.Close()
 	return nil
+}
+
+// answer carries one word back to a tool call that is waiting on it.
+func (c *chatClient) answer(ctx context.Context, id, choice string) error {
+	return c.post(ctx, "/ask/"+url.PathEscape(id), map[string]string{"choice": choice})
 }
 
 // openSay starts an exchange. It is separate from reading it because

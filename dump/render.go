@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/incantery/vera/journal"
 )
 
 // Transcripts and the README: what a person opens first. Everything
@@ -32,6 +34,9 @@ func renderConversation(c conversation) string {
 		b.WriteString("\n\n**you:** " + e.Said + "\n")
 		for _, r := range e.Rounds {
 			fmt.Fprintf(&b, "\n> **%s** `%s`", r.Tool, oneLine(string(r.Args), 300))
+			if d := decided(r); d != "" {
+				b.WriteString(" · " + d)
+			}
 			if r.Task != "" {
 				fmt.Fprintf(&b, " → task `%s`", r.Task)
 			}
@@ -51,6 +56,43 @@ func renderConversation(c conversation) string {
 		}
 	}
 	return b.String()
+}
+
+// decided is what the policy said about a round, in the words a
+// person reading the transcript wants: what happened, and why.
+//
+// The reason matters more than the verdict. "denied" tells you a tool
+// did not run; "denied — start a task for that" tells you the profile
+// was working.
+func decided(r journal.Round) string {
+	switch r.Decision {
+	case "":
+		return "" // fleet and delegate are hers; nothing gates them
+	case "allow":
+		if r.Reason != "" && strings.HasPrefix(r.Reason, "you said always") {
+			return "allowed (" + r.Reason + ")"
+		}
+		return "allowed"
+	case "deny":
+		return withReason("denied", r.Reason)
+	case "ask":
+		switch r.Answer {
+		case "":
+			return withReason("asked — no answer", r.Reason)
+		case "no":
+			return withReason("asked → no", r.Reason)
+		default:
+			return withReason("asked → "+r.Answer, r.Reason)
+		}
+	}
+	return r.Decision
+}
+
+func withReason(what, reason string) string {
+	if reason == "" {
+		return what
+	}
+	return what + " (" + oneLine(reason, 120) + ")"
 }
 
 func renderCosts(c *collected, res Result) string {

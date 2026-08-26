@@ -49,6 +49,14 @@ func (a veraAgent) Send(ctx context.Context, conversation, text string) (<-chan 
 	return out, nil
 }
 
+// Answer is agent.Answerer: the terminal's y / n / a, back to the
+// exchange parked on the question. The terminal finds this by type
+// assertion, so an agent without it renders the card and says the
+// question went nowhere rather than locking up.
+func (a veraAgent) Answer(ctx context.Context, id, choice string) error {
+	return a.c.answer(ctx, id, choice)
+}
+
 // translate turns one frame into the events it means. Done is not
 // among them: the end of the stream is the end of the exchange, and
 // Send is the one place that says so, exactly once.
@@ -66,8 +74,9 @@ func translate(f Frame) []agent.Event {
 	if tc := f.ToolCall; tc != nil {
 		out = append(out, agent.Call(tc.ID, tc.Name, tc.Args))
 	}
-	// Nothing sends this yet (see Frame.ToolOutput); it is translated
-	// so that nothing has to when something does.
+	if ask := f.Ask; ask != nil {
+		out = append(out, agent.Asking(ask.ID, ask.Name, ask.Args, ask.Text))
+	}
 	if to := f.ToolOutput; to != nil {
 		out = append(out, agent.Output(to.ID, to.Text))
 	}

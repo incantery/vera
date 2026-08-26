@@ -67,6 +67,9 @@ type lanTransport struct {
 	stt Transcriber
 	// fleet is the supervisor, when one is running.
 	fleet *fleet.Fleet
+	// answer carries a person's word on an ask back to the exchange
+	// parked on it. Nil when Vera has no tools of her own to gate.
+	answer func(ctx context.Context, id, choice string) error
 
 	mu   sync.Mutex
 	port string
@@ -121,6 +124,7 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("POST /say", l.say(h))
 	mux.HandleFunc("GET /resume", l.resume)
 	mux.HandleFunc("GET /ping", l.ping)
+	mux.HandleFunc("POST /ask/{id}", l.answerAsk)
 	mux.HandleFunc("POST /observe", l.observe)
 	mux.HandleFunc("GET /status", l.status)
 	mux.HandleFunc("GET /watch", l.watchStatus)
@@ -207,6 +211,41 @@ func (l *lanTransport) say(h Handler) http.HandlerFunc {
 
 		l.watch(w, r, run, 0)
 	}
+}
+
+// answerAsk carries one word — yes, no or always — back to a tool call
+// that is waiting for it.
+//
+// It is a separate request rather than a frame back up the /say
+// stream because /say is one-way by construction: the exchange is
+// already streaming out, and the phone that reads it is not the only
+// thing that may answer. A client that cannot ask a person should
+// answer "no": silence is the one reply that leaves the exchange
+// hanging.
+func (l *lanTransport) answerAsk(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.answer == nil {
+		http.Error(w, "nothing here asks", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		Choice string `json:"choice"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+		http.Error(w, "bad answer", http.StatusBadRequest)
+		return
+	}
+	if err := l.answer(r.Context(), r.PathValue("id"), strings.TrimSpace(body.Choice)); err != nil {
+		// A question that is no longer open and a word that is not one
+		// of the three are both the caller's mistake, and both are
+		// worth saying out loud rather than swallowing.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]string{"answered": r.PathValue("id")})
 }
 
 // resume shows an existing run, starting after the frames the caller

@@ -38,6 +38,17 @@ type Round struct {
 	Session string `json:"session,omitempty"`
 	// CostUSD is what that session reported it cost, when it did.
 	CostUSD float64 `json:"cost_usd,omitempty"`
+
+	// What the policy said about this call, and what the person said
+	// if it was put to them. Decision is allow, ask or deny; Answer is
+	// yes, no or always, and is set only when it was asked. Reason is
+	// the profile's own sentence — the one the model was told.
+	//
+	// A round with no Decision is a tool that has no policy: `fleet`
+	// and `delegate` are Vera's own, and are not gated.
+	Decision string `json:"decision,omitempty"`
+	Answer   string `json:"answer,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 }
 
 // Entry is one exchange: a thing said, and everything until the reply

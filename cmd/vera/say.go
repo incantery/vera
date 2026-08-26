@@ -52,6 +52,17 @@ func runSay(args []string) error {
 	wrote := false
 	err = c.say(ctx, text, *conv, func(f Frame) {
 		switch {
+		case f.Ask != nil:
+			// Nobody is watching this. A script that answered yes on a
+			// person's behalf would be the worst possible client, and
+			// one that answered nothing would park the exchange until
+			// it timed out — so it says no, out loud, and the person
+			// sees what was wanted the next time they read the output.
+			fmt.Fprintf(os.Stderr, "? %s %s — %s\n  no (nobody is here to ask; say it in the chat if you meant it)\n",
+				f.Ask.Name, trim(oneLine(f.Ask.Args), 160), f.Ask.Text)
+			if err := c.answer(ctx, f.Ask.ID, "no"); err != nil {
+				fmt.Fprintln(os.Stderr, "✗ could not answer: "+err.Error())
+			}
 		case f.Delta != "":
 			fmt.Print(f.Delta)
 			wrote = true

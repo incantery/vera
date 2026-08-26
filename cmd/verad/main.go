@@ -242,6 +242,18 @@ func main() {
 		// `vera dump` hands to whoever is asked why Vera did that.
 		mind.Journal = &journal.Writer{Dir: filepath.Join(stateDir(), "vera", "conversations")}
 		mind.Home = place
+		// Tools of her own, under the profile in her home. Same flag
+		// as the delegate: they are both a grant of capability on this
+		// machine, and --no-tools means none of it.
+		if !*noTools {
+			hands, err := openHands(place.Root, nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "vera: cannot read the supervisor profile ("+err.Error()+")")
+				os.Exit(1)
+			}
+			mind.Hands = hands
+			lan.answer = hands.Answer
+		}
 	}
 	lan.how = how
 	// Speech to text lives on this machine; the phone sends audio and
@@ -331,6 +343,10 @@ func main() {
 		if mind != nil {
 			mind.Fleet = f
 			mind.Projects = f.Projects
+			// The policy's ${root} is these, refreshed per exchange.
+			if mind.Hands != nil {
+				mind.Hands.Projects = f.Projects
+			}
 		}
 		go func() { _ = f.Supervise(ctx) }()
 		// The side rail, when the mux has one: the fleet as rows.
@@ -365,7 +381,7 @@ func main() {
 		if radio != nil {
 			peering = radio.Ready(10 * time.Second)
 		}
-		announce(transports[0], id, *addr, how, telemetry, conversations, place, memory, hands, peering)
+		announce(transports[0], id, *addr, how, telemetry, conversations, place, memory, hands, mind.Tools(), peering)
 	}()
 
 	// Every transport carries the same handler. A failure in the radio
@@ -474,7 +490,7 @@ func chooseMind(echoOnly bool, model, apiBase, keyFile string, generations *agen
 }
 
 // announce prints where to pair, once the listener has a real port.
-func announce(t Transport, id Identity, addr, how, telemetry, conversations string, place *home.Home, memory *home.Memory, hands *Delegate, peering string) {
+func announce(t Transport, id Identity, addr, how, telemetry, conversations string, place *home.Home, memory *home.Memory, hands *Delegate, tools *Hands, peering string) {
 	time.Sleep(150 * time.Millisecond)
 	fmt.Printf("vera — %s\n", id.Name)
 	fmt.Printf("  answering with  %s\n", how)
@@ -485,6 +501,11 @@ func announce(t Transport, id Identity, addr, how, telemetry, conversations stri
 		fmt.Println("  memory  off (--no-memory)")
 	} else {
 		fmt.Printf("  memory  %s remembered, in %s/\n", quantity(memory.Count(), "thing", "things"), home.MemoryDir)
+	}
+	if tools == nil {
+		fmt.Println("  tools  off (--no-tools)")
+	} else {
+		fmt.Printf("  tools  %s, by %s/%s\n", strings.Join(tools.Names(), " "), tools.Root, home.ProfileDir)
 	}
 	if hands == nil {
 		fmt.Println("  delegate  off (--no-tools)")
