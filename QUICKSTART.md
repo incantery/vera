@@ -94,5 +94,12 @@ output, reading state) graduate to a Go provider.
   `/dump what happened` in the chat) writes a folder and a `.tar.gz`
   under `~/.local/state/vera/dumps/`: the conversation with every tool
   round and the prompt the model saw, the fleet tasks it touched with
-  their agents' Claude Code sessions and what they cost, and verad's log
-  for those minutes — secrets redacted. Send the tarball.
+  their agents' Claude Code sessions and what they cost, what she
+  believed about you at the time (`home/MEMORY.md` and the memory
+  files), and verad's log for those minutes — secrets redacted. Send
+  the tarball.
+- **She has a fact about you wrong.** Her memory is files: `vera home`
+  prints the directory, `MEMORY.md` lists what she knows, and each
+  memory is one Markdown file under `memory/`. Edit one, or delete it —
+  a deleted file is a forgotten fact, and she reads the directory again
+  on the next exchange.
