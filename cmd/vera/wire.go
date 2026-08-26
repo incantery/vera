@@ -39,12 +39,25 @@ type Frame struct {
 	// draw a card per call instead of a status line about one.
 	ToolCall   *ToolCallFrame   `json:"tool_call,omitempty"`
 	ToolResult *ToolResultFrame `json:"tool_result,omitempty"`
+	// ToolOutput is what a tool is printing while it runs, in pieces.
+	//
+	// TODO: verad does not send these yet — /say goes from tool_call
+	// straight to tool_result, so a tool that takes a minute says
+	// nothing until it is done. The frame and its translation are
+	// here so that the day verad starts streaming one, the card fills
+	// in without a change on this side.
+	ToolOutput *ToolOutputFrame `json:"tool_output,omitempty"`
 }
 
 type ToolCallFrame struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Args string `json:"args"`
+}
+
+type ToolOutputFrame struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
 }
 
 type ToolResultFrame struct {

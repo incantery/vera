@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/grafana/agento11y/go v0.17.0
-	github.com/incantery/mote v0.0.0-20260825232319-2021c67696b6
+	github.com/incantery/mote v0.0.0-20260826002900-e082ae730c94
 	github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.opentelemetry.io/contrib/exporters/autoexport v0.70.0
