@@ -204,6 +204,10 @@ func playCase(ctx context.Context, c experiments.TestCase, answer Handler, settl
 
 	var saidAll []string
 	for i, turn := range in.Turns {
+		// Nothing runs behind a reply any more: memory is written
+		// inside the exchange that decided to write it, so a turn that
+		// waits for learning is already past it. The flag stays for
+		// the day something does.
 		if turn.AfterLearning && settle != nil {
 			settle()
 		}

@@ -248,3 +248,47 @@ func TestTheDumpCarriesWhatSheBelieved(t *testing.T) {
 		t.Errorf("the README does not point at it:\n%s", readme)
 	}
 }
+
+// The transcript is what a person opens when they ask why Vera did
+// that. A tool round that was denied, or asked about, has to say so
+// there — the decision is the answer to the question they came with.
+func TestTranscriptShowsWhatThePolicySaid(t *testing.T) {
+	c := conversation{id: "c1", entries: []journal.Entry{{
+		At:    time.Now(),
+		Model: "m",
+		Said:  "tidy up the repo",
+		Rounds: []journal.Round{
+			{Tool: "edit", Args: json.RawMessage(`{"path":"/p/main.go"}`),
+				Decision: "deny", Reason: "start a task for that", Result: "Not allowed: start a task for that"},
+			{Tool: "write", Args: json.RawMessage(`{"path":"/tmp/x"}`),
+				Decision: "ask", Answer: "yes", Reason: "nothing said otherwise", Result: "wrote 3 bytes"},
+			{Tool: "write", Args: json.RawMessage(`{"path":"/tmp/y"}`),
+				Decision: "ask", Answer: "no", Reason: "nothing said otherwise", Result: "They said no."},
+			{Tool: "read", Args: json.RawMessage(`{"path":"/tmp/z"}`), Decision: "allow", Result: "hello"},
+			{Tool: "fleet", Args: json.RawMessage(`{"action":"list"}`), Result: "nothing running"},
+		},
+		Answered: "Started a task.",
+	}}}
+
+	out := renderConversation(c)
+	for _, want := range []string{
+		"denied (start a task for that)",
+		"asked → yes",
+		"asked → no",
+		"allowed",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the transcript never says %q:\n%s", want, out)
+		}
+	}
+	// fleet and delegate are hers and nothing gates them; a verdict
+	// beside one would be a lie about what happened.
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "**fleet**") {
+			continue
+		}
+		if strings.ContainsAny(line, "→") || strings.Contains(line, "allowed") || strings.Contains(line, "denied") {
+			t.Errorf("an ungated tool was given a verdict: %s", line)
+		}
+	}
+}

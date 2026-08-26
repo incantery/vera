@@ -64,12 +64,38 @@ type Frame struct {
 	// A client that does not know them ignores them.
 	ToolCall   *ToolCallFrame   `json:"tool_call,omitempty"`
 	ToolResult *ToolResultFrame `json:"tool_result,omitempty"`
+	// ToolOutput is what a tool is printing while it runs, in pieces,
+	// tied to its call by id. A command that takes a minute is not a
+	// minute of silence.
+	ToolOutput *ToolOutputFrame `json:"tool_output,omitempty"`
+
+	// Ask is a tool the policy will not run without a word from the
+	// person. It does not end the exchange: the exchange is parked on
+	// the answer, which comes back through POST /ask/{id}, and nothing
+	// else arrives until it does. A client that cannot answer should
+	// answer "no" rather than leave it hanging.
+	Ask *AskFrame `json:"ask,omitempty"`
 }
 
 type ToolCallFrame struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Args string `json:"args"`
+}
+
+type ToolOutputFrame struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// AskFrame is the question, with everything needed to show it: which
+// tool, with what arguments, and the policy's own sentence for why it
+// is being asked at all.
+type AskFrame struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Args string `json:"args"`
+	Text string `json:"text"`
 }
 
 type ToolResultFrame struct {

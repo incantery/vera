@@ -76,6 +76,10 @@ type Mind struct {
 	// it; this is the rest — the project files, read when a repository
 	// is what the exchange is about.
 	Home *home.Home
+	// Hands is what she can do herself: mote's tools, under the
+	// supervisor profile's policy. Nil is a Vera who can only ask
+	// somebody else to look.
+	Hands *Hands
 
 	instruments
 
@@ -84,8 +88,19 @@ type Mind struct {
 	learning sync.WaitGroup
 }
 
-// Settle waits for outstanding extraction. Without it a short-lived
-// run exits mid-thought and remembers nothing.
+// Tools is her hands, if she has any — nil-safe, because the echo
+// mind is a nil *Mind and the banner is printed either way.
+func (m *Mind) Tools() *Hands {
+	if m == nil {
+		return nil
+	}
+	return m.Hands
+}
+
+// Settle waits for anything still running behind a reply. Nothing does
+// today — extraction used to, and memory is now written inside the
+// exchange that decided to write it — so this is the hook rather than
+// a wait, kept because an eval turn can still say "after learning".
 func (m *Mind) Settle() {
 	if m != nil {
 		m.learning.Wait()
@@ -128,8 +143,11 @@ func newInstruments() instruments {
 // side of the interface, which is why this can be swapped for the echo
 // without either of them knowing.
 // maxRounds bounds the loop. A model that keeps delegating is a model
-// stuck, and an unbounded agent loop is an unbounded bill.
-const maxRounds = 4
+// stuck, and an unbounded agent loop is an unbounded bill. Four was
+// right when every tool handed work away and came back with a result;
+// with tools of her own, reading a file and then writing one and then
+// saying so is three rounds before a word is spoken.
+const maxRounds = 8
 
 func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) error {
 	text := strings.TrimSpace(msg.Text)
@@ -138,6 +156,10 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	}
 
 	prior := m.History.recall(msg.Conversation)
+	// The policy's ${root} is the fleet's projects, and they change
+	// while the process runs — a repository opened this morning is a
+	// project this afternoon.
+	m.Hands.Refresh(ctx)
 	system := m.preface() + m.present(msg.Device, text)
 	var tools []map[string]any
 	if m.Delegate != nil {
@@ -146,6 +168,9 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	if m.Fleet != nil {
 		tools = append(tools, fleetTool())
 	}
+	// Hers last: the two above are about handing work away, which is
+	// the thing she should reach for first.
+	tools = append(tools, m.Hands.Definitions()...)
 	ctx, x := m.begin(ctx, msg, text, len(prior), system, tools)
 
 	messages := make([]chatMessage, 0, len(prior)+2+2*maxRounds)
@@ -184,7 +209,10 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		x.asked(calls)
 		for _, call := range calls {
 			started := time.Now()
-			_ = reply(Frame{ToolCall: &ToolCallFrame{ID: call.ID, Name: call.Function.Name, Args: call.Function.Arguments}})
+			// Capped for the same reason the record is: a card showing
+			// a whole file is a card nobody reads, on a phone.
+			_ = reply(Frame{ToolCall: &ToolCallFrame{ID: call.ID, Name: call.Function.Name,
+				Args: trim(call.Function.Arguments, maxRecordedArgs)}})
 			result := m.invoke(ctx, msg.Conversation, msg.Device, x, call, reply)
 			delegations++
 			x.answered(call, result)
@@ -240,14 +268,11 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// happen, and half of one poisons every exchange after it.
 	m.History.remember(msg.Conversation, text, answer.String())
 
-	// And behind the reply, never in front of it.
-	if m.Memory != nil {
-		m.learning.Add(1)
-		go func(said, answered string) {
-			defer m.learning.Done()
-			m.remember(msg.Conversation, said, answered)
-		}(text, answer.String())
-	}
+	// Extraction used to run here, behind the reply: a second model
+	// call that read the exchange and decided what was worth keeping.
+	// It is gone. She keeps her own memory now, with read, write and
+	// edit, inside the exchange — a thing she does deliberately rather
+	// than a thing that happens to her. See aboutMemory.
 
 	return reply(Frame{Done: true})
 }
@@ -260,6 +285,9 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 func (m *Mind) invoke(ctx context.Context, conversation, device string, x *exchange, call toolCall, reply func(Frame) error) string {
 	if call.Function.Name == "fleet" && m.Fleet != nil {
 		return m.invokeFleet(ctx, conversation, device, x, call, reply)
+	}
+	if t, ok := m.Hands.Tool(call.Function.Name); ok {
+		return m.invokeTool(ctx, conversation, x, t, call, reply)
 	}
 	if call.Function.Name != "delegate" || m.Delegate == nil {
 		return "That tool does not exist."
@@ -468,6 +496,16 @@ func (m *Mind) stream(ctx context.Context, messages []chatMessage, tools []map[s
 	return calls, nil
 }
 
+// trim caps what the model is told. Every tool result goes through it:
+// four megabytes of a log file has not helped anybody, least of all
+// the model paying for it by the token.
+func trim(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
 // errorType is the low-cardinality label; the sentence itself is too
 // various to be a metric dimension.
 func errorType(err error) string {
@@ -528,6 +566,12 @@ func (m *Mind) preface() string {
 	if base == "" {
 		base = voice
 	}
+	if m.Hands != nil {
+		if p := strings.TrimSpace(m.Hands.Prompt); p != "" {
+			base += "\n\n" + p
+		}
+		base += m.Hands.Where() + m.aboutMemory()
+	}
 	if m.Memory == nil {
 		return base
 	}
@@ -537,6 +581,36 @@ func (m *Mind) preface() string {
 	}
 	return base + "\n\nWhat you know about them, from earlier conversations:\n" +
 		known + "\nUse this only when it is relevant. Do not mention it, list it, or bring it up unprompted."
+}
+
+// aboutMemory is the part of the prompt that makes memory hers.
+//
+// It used to be a second model call behind every reply that read the
+// exchange and wrote what it thought was worth keeping. That is the
+// wrong shape for the same reason a diary written by somebody else is:
+// she never chose any of it, could not correct it, and the one thing
+// she could not do was throw a wrong fact away. Now the files are just
+// files and she has the tools, so this says where they are and what
+// they look like — and, mostly, that changing them is rare.
+func (m *Mind) aboutMemory() string {
+	root := "~/vera"
+	if m.Home != nil && m.Home.Root != "" {
+		root = m.Home.Root
+	}
+	return "\n\nYour memory is yours to keep, in " + root + ".\n" +
+		home.Index + " is the index — one line per fact, `- [slug](" + home.MemoryDir + "/slug.md) — the fact in one line`. " +
+		home.MemoryDir + "/<slug>.md is the fact itself: front matter with name, description, type " +
+		"(user, feedback, project or reference) and since (a date), then a sentence or two of prose. " +
+		"A slug says what the fact is about, in lowercase words joined by hyphens — `lives-in-vienna`, " +
+		"`prefers-short-answers` — and the name in the front matter is that same slug, spelled the same " +
+		"way as the file.\n" +
+		"Read them with read and search. Maintain them with write and edit: when they say something that " +
+		"will still be true next month, write its file and add its line to the index; when something you " +
+		"know turns out to be wrong, rewrite that file rather than adding a second one that contradicts it. " +
+		"To drop a fact entirely, take its line out of the index and delete the file with run — that one " +
+		"will ask them first. The index line and the file must say the same thing.\n" +
+		"Do this quietly and rarely, and never announce it. Most conversations change nothing, and a memory " +
+		"that grows every turn has learned nothing in particular."
 }
 
 // present is the paragraph about this moment — which application has
