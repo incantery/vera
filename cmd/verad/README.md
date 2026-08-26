@@ -124,7 +124,8 @@ five verbs (`list start answer land stop`) — so "have someone add dark
 mode while I'm out" opens a room in the repo in front of the person,
 and "how's it going" reads back the picture above in their nouns.
 `delegate` stays for the minute of work they wait on; `stop` never
-forces, so unlanded work is only ever discarded at the machine.
+forces, so unlanded work is only ever discarded at the machine — and it
+puts the question to the person first (see Hands).
 
 Every hook is a doorbell, not a fact: the supervisor re-reads the pane
 and the worktree after it rings, and a hook that stops firing degrades
@@ -479,9 +480,10 @@ will never speak again is the one state worse than a failure.
 
 Vera is never a coding agent, and she was also never able to open a
 file. Those are different claims, and only the first one is worth
-keeping. She has mote's six now — `read`, `list`, `search`, `write`,
-`edit`, `run` — decided by a policy that lives in her home as a file a
-person can read:
+keeping. She has mote's seven now — `read`, `list`, `search`, `write`,
+`edit`, `delete`, `run` — and `delegate` and `fleet` beside them in the
+same registry, all of them decided by a policy that lives in her home
+as a file a person can read:
 
 ```
 ~/vera/profiles/supervisor/
@@ -503,7 +505,15 @@ what the model is told when it tries is the profile's own sentence,
 *"start a task for that"*, rather than a status code. A refusal that
 says what to do instead is a refusal the model can act on.
 
-Three things are decided in code rather than in the file, because the
+There is one path from a call to a result: the policy decides it, the
+tool runs it, the journal records it — the same for `read` as for
+`fleet`. Every call is an `execute_tool` on the record now, labelled
+with the tool's own name, so what a delegation cost and how long a
+search took are read the same way. Handing work away is what she should reach for before doing it
+herself, so `delegate` and `fleet` are listed first, which is the order
+the model reads them in.
+
+Four things are decided in code rather than in the file, because the
 file cannot know them:
 
 - **Where her home actually is.** The file says `~/vera`; `$VERA_HOME`
@@ -517,6 +527,15 @@ file cannot know them:
   policy she disliked by rewriting it — an escalation that survives a
   restart and reads, in the journal, like an ordinary allowed write. A
   rule she can rewrite is not a rule.
+- **What to say about the two tools that are not mote's.** The profile
+  chooses among built-ins by name and never heard of `delegate` or
+  `fleet`, so a file with nothing to say about them would send every
+  delegation to the phone to be asked about. Both are `allow` unless
+  the file says otherwise — except `fleet` with `action: stop`, which
+  asks, because it abandons work somebody did. A policy rule can key on
+  a tool, a path or a command prefix, and a command is the only one of
+  the three that can see an argument; so the fleet reports its verb as
+  its command and the rule is `tools = ["fleet"], commands = ["stop"]`.
 
 ### The ask
 

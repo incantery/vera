@@ -184,7 +184,7 @@ func policyRules(rules []tool.Rule, root string) []tool.Rule {
 	// who writes a rule about `fleet` in policy.toml overrides it.
 	stop := tool.Rule{
 		Tools:    []string{"fleet"},
-		Commands: []string{"fleet stop"},
+		Commands: []string{"stop"},
 		Then:     tool.Ask,
 		Reason:   "stopping a task abandons the work in it — check they meant to",
 	}

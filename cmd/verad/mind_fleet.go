@@ -116,17 +116,21 @@ func (t *FleetTool) Paths(args json.RawMessage) []string {
 //
 // A policy matches a tool by name, a path by glob and a command by
 // prefix, and the command is the only one of the three that can see
-// an argument. The fleet needs one — `list` reports and `stop`
+// an argument at all. The fleet needs one — `list` reports and `stop`
 // abandons a person's work, and those are not the same question — so
-// it says its verb here and `commands = ["fleet stop"]` is a rule
-// about a verb. See GAPS in the report: a policy that could match an
-// argument by name would not need this.
+// it says its verb here and `tools = ["fleet"], commands = ["stop"]`
+// is a rule about a verb.
+//
+// The verb alone rather than "fleet stop": mote reads the first word
+// of a command as what an "always" covers, so this way a person who
+// says always to stopping one task has said it about stopping, and
+// the grant reads back as "fleet stop" rather than "fleet fleet".
 func (t *FleetTool) Command(args json.RawMessage) string {
 	var a fleetArgs
-	if json.Unmarshal(args, &a) != nil || a.Action == "" {
+	if json.Unmarshal(args, &a) != nil {
 		return ""
 	}
-	return "fleet " + a.Action
+	return a.Action
 }
 
 // Run does one fleet call and says what the model is told.
