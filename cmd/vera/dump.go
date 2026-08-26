@@ -97,7 +97,7 @@ func describeDump(res dump.Result) string {
 	if res.Tarball != "" {
 		fmt.Fprintf(&b, "%s  ← send this\n", res.Tarball)
 	}
-	fmt.Fprintf(&b, "%d file(s): %d conversation(s), %d task(s), %d Claude Code session(s)", res.Files, len(res.Conversations), len(res.Tasks), res.Sessions)
+	fmt.Fprintf(&b, "%d file(s): %d conversation(s), %d task(s), %d Claude Code session(s), %d memory file(s)", res.Files, len(res.Conversations), len(res.Tasks), res.Sessions, res.Memories)
 	if res.Sessions > 0 {
 		if res.Priced {
 			fmt.Fprintf(&b, " ≈ $%.2f", res.CostUSD)

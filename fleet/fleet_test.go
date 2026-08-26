@@ -624,3 +624,87 @@ func TestScoutClosesWhenSeen(t *testing.T) {
 		t.Error("scout pane not killed")
 	}
 }
+
+// notebook is a Notes that keeps what it was told, in memory.
+type notebook struct {
+	projects map[string]string // name → root, branch and conventions, joined
+	landings []string
+}
+
+func (n *notebook) Project(name, root, branch string, conventions []string) error {
+	if n.projects == nil {
+		n.projects = map[string]string{}
+	}
+	n.projects[name] = root + " " + branch + " " + strings.Join(conventions, "; ")
+	return nil
+}
+
+func (n *notebook) Landed(name, root, task, brief string) error {
+	n.landings = append(n.landings, name+" "+task+" "+brief)
+	return nil
+}
+
+// The fleet already learns where a repository is and what its
+// conventions say on every task, and then throws it away. This is
+// where it stops throwing it away.
+func TestTheFleetWritesDownTheRepositoryItWorksIn(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	note := &notebook{}
+	f.Notes = note
+	ctx := context.Background()
+
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "do the thing\nand tell nobody", Kind: Ship})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := note.projects["proj"]
+	if !ok {
+		t.Fatalf("spawning taught Vera nothing about the repo: %+v", note.projects)
+	}
+	if !strings.Contains(got, r.Root) || !strings.Contains(got, "main") {
+		t.Errorf("the project note misses where the repo is: %q", got)
+	}
+	// rook.toml is the conventions a person already wrote down once.
+	if !strings.Contains(got, ".env") {
+		t.Errorf("the conventions did not make it into the note: %q", got)
+	}
+
+	os.WriteFile(filepath.Join(task.Worktree, "thing.txt"), []byte("x\n"), 0o644)
+	gitRun(t, task.Worktree, "add", "thing.txt")
+	gitRun(t, task.Worktree, "commit", "-q", "-m", "the thing")
+	if err := f.Land(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(note.landings) != 1 || !strings.Contains(note.landings[0], task.Name) {
+		t.Fatalf("the landing was not written down: %+v", note.landings)
+	}
+	if !strings.Contains(note.landings[0], "do the thing") {
+		t.Errorf("the landing line does not say what the task was: %q", note.landings[0])
+	}
+}
+
+// A notebook that cannot be written in must not stop work.
+func TestANotebookFailureDoesNotStopATask(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	f.Notes = brokenNotes{}
+	if _, err := f.Spawn(context.Background(), Request{Project: r.Root, Brief: "still works", Kind: Scout}); err != nil {
+		t.Fatalf("a task refused to start because a note could not be written: %v", err)
+	}
+}
+
+type brokenNotes struct{}
+
+func (brokenNotes) Project(string, string, string, []string) error {
+	return errors.New("read-only file system")
+}
+func (brokenNotes) Landed(string, string, string, string) error {
+	return errors.New("read-only file system")
+}

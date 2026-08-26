@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 )
 
@@ -80,7 +81,17 @@ func fixture(t *testing.T) Options {
 	session(projectDir(claude, worktree), "mine", "claude-opus-5")
 	session(filepath.Join(claude, "projects", "-somewhere-else"), "sess-1", "claude-mystery-9")
 
-	return Options{StateDir: state, ClaudeDir: claude, ConfigDir: config, Out: filepath.Join(root, "out"), Now: now.Add(time.Minute), Version: "test"}
+	// Her home: what she believed while all this was happening.
+	place, err := home.Open(filepath.Join(root, "vera"))
+	must(err)
+	must(place.Memory().Apply(home.Revision{Add: []home.Note{
+		{Name: "lives-in-vienna", Type: home.TypeUser, Fact: "Lives in Vienna."},
+		{Name: "pairing", Type: home.TypeReference, Fact: "Pairs with the secret pairing-secret-value."},
+	}}, "chat-new"))
+	must(place.Project("repo", filepath.Join(root, "repo"), "main", nil))
+	must(os.WriteFile(filepath.Join(place.Root, home.NotesDir, "private.md"), []byte("hers\n"), 0o600))
+
+	return Options{StateDir: state, ClaudeDir: claude, ConfigDir: config, HomeDir: place.Root, Out: filepath.Join(root, "out"), Now: now.Add(time.Minute), Version: "test"}
 }
 
 func read(t *testing.T, dir, rel string) string {
@@ -116,7 +127,8 @@ func TestBuildLatestConversation(t *testing.T) {
 		"conversations/chat-new.md", "conversations/chat-new.jsonl", "conversations/chat-new.system.md",
 		"fleet/abc12345/task.json", "fleet/abc12345/status.log", "fleet/abc12345/report.md", "fleet/abc12345/brief.md",
 		"fleet/abc12345/env.keys", "fleet/abc12345/sessions/fbe5.jsonl", "fleet/abc12345/sessions.md",
-		"delegate/sess-1.jsonl", "delegate/sess-1.md", "verad/verad.log", "verad/verad.json"} {
+		"delegate/sess-1.jsonl", "delegate/sess-1.md", "verad/verad.log", "verad/verad.json",
+		"home/MEMORY.md", "home/memory/lives-in-vienna.md", "home/memory/pairing.md", "home/projects/repo.md"} {
 		text := read(t, res.Dir, rel)
 		if strings.Contains(text, secret) || strings.Contains(text, "sk-openai") || strings.Contains(text, "pairing-secret-value") {
 			t.Errorf("%s leaks a secret", rel)
@@ -204,5 +216,35 @@ func TestRedactorShapes(t *testing.T) {
 		if got := r.apply(in); got != want {
 			t.Errorf("%q → %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A dump exists to answer "why did Vera say that", and half of that
+// answer is usually a fact she was carrying in the prompt.
+func TestTheDumpCarriesWhatSheBelieved(t *testing.T) {
+	o := fixture(t)
+	res, err := Build(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Memories != 2 {
+		t.Fatalf("copied %d memory files, want 2", res.Memories)
+	}
+	if index := read(t, res.Dir, "home/MEMORY.md"); !strings.Contains(index, "lives-in-vienna") {
+		t.Errorf("the index did not come along:\n%s", index)
+	}
+	if fact := read(t, res.Dir, "home/memory/pairing.md"); strings.Contains(fact, "pairing-secret-value") {
+		t.Errorf("a memory leaked a secret; the home is redacted like everything else:\n%s", fact)
+	}
+	if proj := read(t, res.Dir, "home/projects/repo.md"); !strings.Contains(proj, "default branch") {
+		t.Errorf("the project file did not come along:\n%s", proj)
+	}
+	// notes/ are hers. A dump is something a person hands to somebody
+	// else, and that is a decision, not a default.
+	if _, err := os.Stat(filepath.Join(res.Dir, "home", "notes")); err == nil {
+		t.Error("her notes went into the dump")
+	}
+	if readme := read(t, res.Dir, "README.md"); !strings.Contains(readme, "What she knew") {
+		t.Errorf("the README does not point at it:\n%s", readme)
 	}
 }

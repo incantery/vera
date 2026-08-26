@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/incantery/vera/home"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -145,4 +147,39 @@ func attributeSets(m metricdata.Metrics) [][]attributeKV {
 		}
 	}
 	return out
+}
+
+// What the prompt carries is MEMORY.md, whole, under the heading it
+// has always had — the wording is what the evals were written
+// against, and memory becoming a directory should not have moved it.
+func TestThePromptCarriesTheIndex(t *testing.T) {
+	place, err := home.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &Mind{Memory: place.Memory()}
+
+	// Nothing known: no section at all, rather than an empty heading
+	// the model has to interpret.
+	if got := m.preface(); strings.Contains(got, "What you know about them") {
+		t.Fatalf("an empty memory still added a section:\n%s", got)
+	}
+
+	place.Memory().Apply(home.Revision{Add: []home.Note{
+		{Name: "lives-in-vienna", Type: home.TypeUser, Fact: "Lives in Vienna."},
+	}}, "c1")
+
+	got := m.preface()
+	if !strings.Contains(got, "What you know about them, from earlier conversations:") {
+		t.Fatalf("the heading changed:\n%s", got)
+	}
+	if !strings.Contains(got, "Lives in Vienna.") {
+		t.Fatalf("the fact did not reach the prompt:\n%s", got)
+	}
+	if !strings.Contains(got, "Do not mention it, list it, or bring it up unprompted.") {
+		t.Fatalf("the instruction not to perform its memory went missing:\n%s", got)
+	}
+	if !strings.HasPrefix(got, voice) {
+		t.Fatal("memory displaced the system prompt rather than following it")
+	}
 }
