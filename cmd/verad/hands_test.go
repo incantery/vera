@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,6 +146,31 @@ func TestProfileIsSeededOnceAndIsMotesOwn(t *testing.T) {
 	}
 	if !strings.Contains(string(first), "start a task for that") {
 		t.Fatalf("that is not mote's worked example:\n%s", first)
+	}
+	// Plus the one rule mote's example cannot write, because mote has
+	// never heard of the fleet. The file a person reads says what
+	// actually happens, and the rule that decides is a rule they can
+	// edit.
+	for _, want := range []string{`tools = ["fleet"]`, `when = { action = "stop" }`, `then = "ask"`} {
+		if !strings.Contains(string(first), want) {
+			t.Errorf("the seeded policy never says %s:\n%s", want, first)
+		}
+	}
+	// And it is the file's own rule that fires, not the one built in
+	// behind it — which is what makes the file worth editing.
+	h, err := openHands(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Adopt(&FleetTool{Fleet: &fleet.Fleet{}}); err != nil {
+		t.Fatal(err)
+	}
+	v := decide(t, h, "conv", "fleet", map[string]any{"action": "stop", "task": "a1"})
+	if v.Decision != tool.Ask {
+		t.Errorf("stopping a task was %s", v.Decision)
+	}
+	if last := fmt.Sprintf("rule %d", len(h.policy.Rules)); v.Rule == last {
+		t.Errorf("the built-in fallback decided it rather than the file's own rule (%s)", v.Rule)
 	}
 
 	mine := string(first) + "\n# mine now\n"
@@ -389,5 +415,43 @@ func TestSeedProfileDropsTheExampleModel(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "tools:") {
 		t.Fatal("the rest of the front matter must survive")
+	}
+}
+
+// Result.Meta is the harness's half of a tool call: it never reaches
+// the model, and it is what the journal and the phone's result card
+// are made of.
+func TestMetaReachesTheJournalAndTheCard(t *testing.T) {
+	mind, _, journalDir := askingMind(t,
+		callsTool(t, "call_s", "saying", map[string]any{}),
+		says("Done."))
+	if err := mind.Hands.Adopt(sayingTool{}); err != nil {
+		t.Fatal(err)
+	}
+	mind.Hands.policy.Tools["saying"] = tool.Allow
+
+	var card *ToolResultFrame
+	var told string
+	err := mind.think(context.Background(), Message{Text: "do a thing", Conversation: "c1"},
+		func(f Frame) error {
+			if f.ToolResult != nil {
+				card, told = f.ToolResult, f.ToolResult.Result
+			}
+			return nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	round := onlyRound(t, journalDir, "c1")
+	if round.Task != "task-9" || round.Session != "session-9" || round.CostUSD != 0.25 {
+		t.Errorf("the journal did not keep what the call reached: %+v", round)
+	}
+	if card == nil || card.CostUSD != 0.25 {
+		t.Errorf("the result card did not carry the cost: %+v", card)
+	}
+	// And none of it is in what the model was told.
+	if strings.Contains(told, "task-9") || strings.Contains(told, "session-9") {
+		t.Errorf("the harness's own record leaked into the model's context: %q", told)
 	}
 }
