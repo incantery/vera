@@ -97,8 +97,10 @@ func (m *Mind) Tools() *Hands {
 	return m.Hands
 }
 
-// Settle waits for outstanding extraction. Without it a short-lived
-// run exits mid-thought and remembers nothing.
+// Settle waits for anything still running behind a reply. Nothing does
+// today — extraction used to, and memory is now written inside the
+// exchange that decided to write it — so this is the hook rather than
+// a wait, kept because an eval turn can still say "after learning".
 func (m *Mind) Settle() {
 	if m != nil {
 		m.learning.Wait()
@@ -264,10 +266,10 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	m.History.remember(msg.Conversation, text, answer.String())
 
 	// Extraction used to run here, behind the reply: a second model
-	// call that decided what was worth keeping and wrote it. It is off
-	// now — she keeps her own memory with the tools, which is a thing
-	// she does deliberately rather than a thing that happens to her.
-	// See remember.go, which is kept one more commit.
+	// call that read the exchange and decided what was worth keeping.
+	// It is gone. She keeps her own memory now, with read, write and
+	// edit, inside the exchange — a thing she does deliberately rather
+	// than a thing that happens to her. See aboutMemory.
 
 	return reply(Frame{Done: true})
 }
@@ -489,6 +491,16 @@ func (m *Mind) stream(ctx context.Context, messages []chatMessage, tools []map[s
 		calls = append(calls, *pending[i])
 	}
 	return calls, nil
+}
+
+// trim caps what the model is told. Every tool result goes through it:
+// four megabytes of a log file has not helped anybody, least of all
+// the model paying for it by the token.
+func trim(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // errorType is the low-cardinality label; the sentence itself is too
