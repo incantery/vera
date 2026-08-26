@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/incantery/mote/agent"
+	"github.com/incantery/mote/session"
 	"github.com/incantery/mote/tui"
 	"github.com/incantery/vera/fleet"
 )
@@ -145,6 +148,12 @@ func TestFramesBecomeEvents(t *testing.T) {
 			"tool call",
 			Frame{ToolCall: &ToolCallFrame{ID: "t1", Name: "fleet", Args: `{"verb":"tasks"}`}},
 			[]agent.Event{agent.Call("t1", "fleet", `{"verb":"tasks"}`)},
+		},
+		{
+			// Nothing sends one yet; the terminal is ready for it.
+			"tool output, streamed into the open card",
+			Frame{ToolOutput: &ToolOutputFrame{ID: "t1", Text: "reading the fleet\n"}},
+			[]agent.Event{agent.Output("t1", "reading the fleet\n")},
 		},
 		{
 			"tool result, with what it cost",
@@ -294,37 +303,110 @@ func TestNoticesWhenATaskNeedsYou(t *testing.T) {
 	now := time.Now()
 	running := fleet.View{Task: &fleet.Task{ID: "a1", Brief: "Scout the panel"}, State: fleet.Running}
 
-	if lines := w.absorb([]fleet.View{running}, now); len(lines) != 0 {
-		t.Fatalf("first sighting is not news: %+v", lines)
+	if evs := w.absorb([]fleet.View{running}, now); len(evs) != 0 {
+		t.Fatalf("first sighting is not news: %+v", evs)
 	}
 	quiet := running
 	quiet.State = fleet.Quiet
-	if lines := w.absorb([]fleet.View{quiet}, now); len(lines) != 0 {
-		t.Fatalf("a change nobody has to act on is not news: %+v", lines)
+	if evs := w.absorb([]fleet.View{quiet}, now); len(evs) != 0 {
+		t.Fatalf("a change nobody has to act on is not news: %+v", evs)
 	}
 
 	done := running
 	done.State = fleet.Finished
 	done.Last = &fleet.Status{Verb: fleet.Done, Text: "report written"}
 	done.Report = "# Findings"
-	lines := w.absorb([]fleet.View{done}, now)
-	if len(lines) != 1 || !strings.Contains(lines[0], "a1 finished") || !strings.Contains(lines[0], "report written") || !strings.Contains(lines[0], "/report a1") {
-		t.Fatalf("lines: %+v", lines)
+	evs := w.absorb([]fleet.View{done}, now)
+	if len(evs) != 1 || !strings.Contains(evs[0].Text, "a1 finished") || !strings.Contains(evs[0].Text, "report written") || !strings.Contains(evs[0].Text, "/report a1") {
+		t.Fatalf("events: %+v", evs)
 	}
-	if lines := w.absorb([]fleet.View{done}, now); len(lines) != 0 {
-		t.Fatalf("unchanged state is not news: %+v", lines)
+	if evs := w.absorb([]fleet.View{done}, now); len(evs) != 0 {
+		t.Fatalf("unchanged state is not news: %+v", evs)
 	}
 
 	landed := done
 	landed.State = fleet.Closed
-	lines = w.absorb([]fleet.View{landed}, now)
-	if len(lines) != 1 || !strings.HasPrefix(lines[0], "✓ a1") || !strings.Contains(lines[0], "report written") {
-		t.Fatalf("a landing says so: %+v", lines)
+	evs = w.absorb([]fleet.View{landed}, now)
+	if len(evs) != 1 || !strings.HasPrefix(evs[0].Text, "✓ a1") || !strings.Contains(evs[0].Text, "report written") {
+		t.Fatalf("a landing says so: %+v", evs)
 	}
 
 	// The rail agrees: what closed is off it.
 	if items := w.side(); len(items) != 0 {
 		t.Errorf("rail: %+v", items)
+	}
+}
+
+// Every notice about a task carries the task's id, so the terminal
+// rewrites that task's line instead of stacking one per change — and
+// the landing rewrites the same line one last time.
+func TestNoticesAreAboutTheTask(t *testing.T) {
+	w := newFleetWatch(nil)
+	now := time.Now()
+	view := func(id string, st fleet.State) fleet.View {
+		return fleet.View{Task: &fleet.Task{ID: id, Brief: "Port the chat"}, State: st}
+	}
+	w.absorb([]fleet.View{view("a1", fleet.Running), view("b2", fleet.Running)}, now)
+
+	var ids []string
+	for _, st := range []fleet.State{fleet.Decision, fleet.Finished, fleet.Closed} {
+		evs := w.absorb([]fleet.View{view("a1", st), view("b2", fleet.Running)}, now)
+		if len(evs) != 1 {
+			t.Fatalf("%s: %+v", st, evs)
+		}
+		if evs[0].Kind != agent.KindNotice {
+			t.Errorf("%s: kind %q", st, evs[0].Kind)
+		}
+		ids = append(ids, evs[0].ID)
+	}
+	for _, id := range ids {
+		if id != "a1" {
+			t.Fatalf("one task, three states, ids %v — a notice is about the task", ids)
+		}
+	}
+}
+
+// The right of the status line: where Vera believes you are, or, when
+// nobody has told her, what she is doing herself.
+func TestStatusRightSaysWhereYouAre(t *testing.T) {
+	focused := &Status{
+		RunsInFlight: 2,
+		Devices: []DeviceStatus{
+			{Name: "stale-mac", Focus: &ObservedApp{Name: "Xcode"}}, // not fresh: not where you are
+			{Name: "seths-mbp", Fresh: true,
+				Focus:    &ObservedApp{Name: "Ghostty"},
+				Terminal: &TerminalFocus{Session: "main", Window: "3", Agent: "claude-code", Title: "✳ port the chat"}},
+		},
+	}
+	got := whereYouAre(focused)
+	if !strings.Contains(got, "Ghostty") || !strings.Contains(got, "port the chat") || !strings.Contains(got, "main:3") {
+		t.Errorf("focused: %q", got)
+	}
+	if strings.Contains(got, "Xcode") {
+		t.Errorf("a device that has gone quiet is not where you are: %q", got)
+	}
+
+	if got := whereYouAre(&Status{RunsInFlight: 2}); got != "2 runs in flight" {
+		t.Errorf("nothing focused: %q", got)
+	}
+	if got := whereYouAre(&Status{RunsInFlight: 1}); got != "1 run in flight" {
+		t.Errorf("one run: %q", got)
+	}
+	if got := whereYouAre(&Status{}); got != "" {
+		t.Errorf("nothing to say is nothing said: %q", got)
+	}
+	if got := whereYouAre(nil); got != "" {
+		t.Errorf("no status yet: %q", got)
+	}
+
+	// The watcher answers from the cache, so the UI goroutine never waits.
+	w := newFleetWatch(nil)
+	if got := w.where(); got != "" {
+		t.Errorf("before the first poll: %q", got)
+	}
+	w.absorbStatus(focused)
+	if got := w.where(); !strings.Contains(got, "Ghostty") {
+		t.Errorf("after: %q", got)
 	}
 }
 
@@ -353,7 +435,8 @@ func joined(cmd tea.Cmd) string { return strings.Join(texts(cmd), "\n") }
 
 func TestCommandsSayWhatTheyNeed(t *testing.T) {
 	f := newFakeVerad(t)
-	s := &chatSession{c: f.client(), w: newFleetWatch(f.client()), conv: "chat-1"}
+	s := &chatSession{c: f.client(), w: newFleetWatch(f.client()), conv: "chat-1",
+		dir: t.TempDir(), open: &openSessions{}}
 
 	for _, tc := range []struct{ line, want string }{
 		{"answer", "/answer <id> <text>"},
@@ -376,11 +459,16 @@ func TestCommandsSayWhatTheyNeed(t *testing.T) {
 		t.Error("/quit should quit")
 	}
 
-	// /new moves the conversation, and says which one it moved to.
+	// /new moves the conversation and says which one it moved to. The
+	// chat's own copy does not move here — the terminal says so when
+	// the change lands, which the terminal test checks.
 	before := s.conversation()
 	got := joined(s.handle("new", ""))
-	if s.conversation() == before || !strings.Contains(got, s.conversation()) {
-		t.Errorf("/new: %q, conversation %q", got, s.conversation())
+	if !strings.Contains(got, "new conversation chat-") || strings.Contains(got, before) {
+		t.Errorf("/new: %q", got)
+	}
+	if s.conversation() != before {
+		t.Errorf("the chat guessed the id instead of being told: %q", s.conversation())
 	}
 }
 
@@ -392,7 +480,7 @@ func TestCommandsReachVerad(t *testing.T) {
 		Report: "# Findings\n\nIt works.",
 	})
 	c := f.client()
-	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1"}
+	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
 
 	if got := joined(s.handle("tasks", "")); !strings.Contains(got, "a1") || !strings.Contains(got, "Port the chat") {
 		t.Errorf("/tasks: %q", got)
@@ -484,27 +572,14 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	})
 	w := newFleetWatch(c)
 	w.poll(context.Background())
-	s := &chatSession{c: c, w: w, conv: "chat-1"}
+	w.absorbStatus(&Status{RunsInFlight: 1})
+	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
 
-	pal := tui.DefaultPalette()
-	pal.Markdown = "ascii"
-	m := tui.New(veraAgent{c}, tui.Options{
-		Name:         "vera",
-		Model:        "echo",
-		Conversation: s.conversation(),
-		Greeting:     "say something",
-		Side:         w.side,
-		SideTitle:    "fleet",
-		Notices:      w.notices,
-		Commands:     chatCommands,
-		Handle:       s.handle,
-		Palette:      &pal,
-		Renderer:     lipgloss.NewRenderer(io.Discard),
-	})
+	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera", Mind: "echo"}, s, nil, "say something")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
 	view := m.View()
-	for _, want := range []string{"vera", "echo", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
+	for _, want := range []string{"vera", "echo", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o", "1 run in flight"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the screen is missing %q:\n%s", want, view)
 		}
@@ -517,5 +592,181 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	deliver(m, s.handle("start", ""))
 	if v := m.View(); !strings.Contains(v, "/start [@repo] <brief>") {
 		t.Errorf("a command that cannot run says how:\n%s", v)
+	}
+}
+
+// headless is the chat's own options with the colour turned off, so a
+// test can draw the real screen without a terminal.
+func headless(opts tui.Options) tui.Options {
+	pal := tui.DefaultPalette()
+	pal.Markdown = "ascii"
+	opts.Palette = &pal
+	opts.Renderer = lipgloss.NewRenderer(io.Discard)
+	return opts
+}
+
+// drive runs the terminal the way a bubbletea program does: every
+// command runs off the UI goroutine and its message comes back here,
+// where Update is the only thing that touches the model. It returns
+// when done says so — which is how a test waits for a whole exchange,
+// events, tool round and all, to have landed.
+func drive(t *testing.T, m *tui.Model, done func() bool, cmds ...tea.Cmd) {
+	t.Helper()
+	msgs := make(chan tea.Msg, 128)
+	var start func(tea.Cmd)
+	start = func(c tea.Cmd) {
+		if c == nil {
+			return
+		}
+		go func() {
+			switch msg := c().(type) {
+			case nil:
+			case tea.BatchMsg:
+				for _, b := range msg {
+					start(b)
+				}
+			default:
+				msgs <- msg
+			}
+		}()
+	}
+	for _, c := range cmds {
+		start(c)
+	}
+	deadline := time.After(10 * time.Second)
+	for !done() {
+		select {
+		case msg := <-msgs:
+			_, next := m.Update(msg)
+			start(next)
+		case <-deadline:
+			t.Fatal("the exchange never finished")
+		}
+	}
+}
+
+func say(m *tui.Model, text string) tea.Cmd {
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text)})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	return cmd
+}
+
+func openChat(t *testing.T, dir, id string) *session.Session {
+	t.Helper()
+	s, err := session.Open(dir, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+// A conversation had in the chat is on disk when the chat is gone, and
+// `vera chat -c` puts it back on the screen — the whole exchange, the
+// tool round included, and the line that was typed to get it.
+func TestAConversationOutlivesTheTerminal(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := chatSessionDir()
+	if want := filepath.Join(os.Getenv("XDG_STATE_HOME"), "vera", "chat"); dir != want {
+		t.Fatalf("conversations go beside verad's own files: %s, want %s", dir, want)
+	}
+
+	f := newFakeVerad(t)
+	c := f.client()
+	st := &Status{Name: "vera", Mind: "echo"}
+
+	sess := openChat(t, dir, "chat-1")
+	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
+	m := tui.New(veraAgent{c}, headless(chatOptions(st, s, sess, chatGreeting(st, sess))))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	drive(t, m, func() bool { return len(sess.Turns()) == 1 }, m.Init(), say(m, "what is on the rail?"))
+	deliver(m, say(m, "/tasks")) // a command line, typed, for the history
+	live := m.View()
+	for _, want := range []string{"what is on the rail?", "You said:", "fleet"} {
+		if !strings.Contains(live, want) {
+			t.Fatalf("the live screen is missing %q:\n%s", want, live)
+		}
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// `vera chat -c chat-1`, in the next process.
+	again := openChat(t, dir, "chat-1")
+	if n := len(again.Turns()); n != 1 {
+		t.Fatalf("%d turns on disk, want the one exchange", n)
+	}
+	s2 := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{}}
+	m2 := tui.New(veraAgent{c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
+	m2.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	view := m2.View()
+	for _, want := range []string{"Reopened", "chat-1", "1 turn", "what is on the rail?", "You said:", "fleet"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("the rebuilt screen is missing %q:\n%s", want, view)
+		}
+	}
+	// The input history came back with it: the up arrow finds the
+	// last line that was sent, commands and all.
+	m2.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if v := m2.View(); !strings.Contains(v, "/tasks") {
+		t.Errorf("the up arrow found nothing:\n%s", v)
+	}
+
+	// And `vera sessions` lists it.
+	list, err := session.List(dir)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list: %v %+v", err, list)
+	}
+	var b strings.Builder
+	if err := writeSessions(&b, dir, list, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "chat-1") || !strings.Contains(b.String(), dir) {
+		t.Errorf("vera sessions:\n%s", b.String())
+	}
+	if got := sessionLines(list, "chat-1", time.Now()); !strings.Contains(got, "← this one") || !strings.Contains(got, "1 turn") {
+		t.Errorf("/sessions: %q", got)
+	}
+}
+
+// /new moves the conversation to a file of its own, and the chat's
+// copy of the id is the terminal's answer, not a guess.
+func TestNewMovesTheConversationAndItsFile(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := chatSessionDir()
+	f := newFakeVerad(t)
+	c := f.client()
+	st := &Status{Name: "vera", Mind: "echo"}
+
+	sess := openChat(t, dir, "chat-1")
+	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
+	m := tui.New(veraAgent{c}, headless(chatOptions(st, s, sess, "hello")))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	deliver(m, s.handle("new", ""))
+	conv := m.Conversation()
+	if conv == "chat-1" || !strings.HasPrefix(conv, "chat-") {
+		t.Fatalf("the terminal is on %q", conv)
+	}
+	if s.conversation() != conv {
+		t.Errorf("the chat was told %q, the terminal is on %q", s.conversation(), conv)
+	}
+	if n := len(s.open.list); n != 2 {
+		t.Errorf("%d files open, want the old one and the new", n)
+	}
+
+	// The new conversation is written to its own file.
+	drive(t, m, func() bool { return len(s.open.list[1].Turns()) == 1 }, m.Init(), say(m, "still here?"))
+	if n := len(sess.Turns()); n != 0 {
+		t.Errorf("the old conversation grew by %d", n)
+	}
+	list, err := session.List(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != conv {
+		t.Fatalf("on disk: %+v", list) // chat-1 was never said to, so it left nothing
 	}
 }

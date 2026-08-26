@@ -13,6 +13,7 @@ var version = "dev"
 const usage = `vera — talk to her, and keep her running
 
   vera                    chat (starts verad if it is not running)
+  vera chat [-c id]       chat, reopening a conversation
   vera start [verad flags] start verad detached, if it is not running
   vera stop               stop verad
   vera restart [flags]    stop, then start
@@ -22,6 +23,7 @@ const usage = `vera — talk to her, and keep her running
   vera say [-c id] <text> one exchange, reply on stdout — for scripts and other agents
   vera tasks              every task and what is believed about it
   vera task <verb> ...    start | answer | report | land | stop | resume | seen — the fleet, by hand
+  vera sessions           the conversations the chat left behind
   vera dump [ids...]      a folder of everything about a conversation, to report a problem
   vera install            a launchd agent so verad starts at login
   vera uninstall          remove it
@@ -52,6 +54,8 @@ func main() {
 		err = showLog(len(args) > 1 && args[1] == "-f")
 	case "url":
 		err = showURL()
+	case "sessions":
+		err = runSessions(args[1:])
 	case "dump":
 		err = runDump(args[1:])
 	case "say":
