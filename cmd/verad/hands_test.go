@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -247,5 +249,120 @@ func TestLongArgumentsAreCapped(t *testing.T) {
 	small := `{"path":"/tmp/x"}`
 	if string(capArgs(small)) != small {
 		t.Fatalf("a short argument was rewritten: %s", capArgs(small))
+	}
+}
+
+// --- the one path ------------------------------------------------------
+
+// sayingTool does the two things only Vera's own tools do: it says
+// something while it works, and it reaches something — a task, a
+// session, a cost — that the journal keeps beside the result. mote's
+// Run carries neither, so both come through the round.
+type sayingTool struct{ err error }
+
+func (sayingTool) Name() string        { return "saying" }
+func (sayingTool) Description() string { return "says things" }
+func (sayingTool) Schema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{}}`)
+}
+
+func (t sayingTool) Run(ctx context.Context, args json.RawMessage, out io.Writer) (tool.Result, error) {
+	r := roundOf(ctx)
+	r.say("Opening a room for that…")
+	r.link("task-9", "session-9", 0.25)
+	_, _ = out.Write([]byte("half way"))
+	if t.err != nil {
+		return tool.Result{}, t.err
+	}
+	return tool.Result{Text: "done, for " + r.device}, nil
+}
+
+// oneCall builds the exchange the way think does and runs a single
+// call through invoke, which is now the whole of the dispatch.
+func oneCall(t *testing.T, h *Hands, tl tool.Tool) (string, []Frame, *exchange) {
+	t.Helper()
+	if err := h.Adopt(tl); err != nil {
+		t.Fatal(err)
+	}
+	h.policy.Tools[tl.Name()] = tool.Allow
+	m := &Mind{Hands: h, Model: "m", instruments: newInstruments()}
+	ctx, x := m.begin(context.Background(), Message{Conversation: "c", Device: "phone"}, "hi", 0, "system", nil)
+	var frames []Frame
+	call := toolCall{ID: "call_1", Function: toolFunction{Name: tl.Name(), Arguments: `{}`}}
+	said := m.invoke(ctx, "c", "phone", x, call, func(f Frame) error {
+		frames = append(frames, f)
+		return nil
+	})
+	return said, frames, x
+}
+
+func TestARoundCarriesWhatRunCannot(t *testing.T) {
+	h, _, _ := newHands(t)
+	said, frames, x := oneCall(t, h, sayingTool{})
+
+	if said != "done, for phone" {
+		t.Errorf("the tool never saw which device asked: %q", said)
+	}
+	var status, output string
+	for _, f := range frames {
+		if f.Status != "" {
+			status = f.Status
+		}
+		if f.ToolOutput != nil {
+			output = f.ToolOutput.Text
+		}
+	}
+	if status != "Opening a room for that…" {
+		t.Errorf("the status line did not reach the phone: %q", status)
+	}
+	if output != "half way" {
+		t.Errorf("what the tool wrote while it ran did not reach the phone: %q", output)
+	}
+	// The clock that measures what the wait felt like starts at the
+	// status, not at the first token.
+	if x.signMillis() < 0 || x.seen == 0 {
+		t.Error("a status line did not count as something appearing")
+	}
+	// And the journal's round knows what the call reached.
+	if x.pending.Task != "task-9" || x.pending.Session != "session-9" || x.pending.CostUSD != 0.25 {
+		t.Errorf("the round did not record what it reached: %+v", x.pending)
+	}
+	if x.pending.Decision != string(tool.Allow) {
+		t.Errorf("the policy's word is not on the round: %+v", x.pending)
+	}
+}
+
+// A tool that could not run at all says so in mote's words, and the
+// terminal already marks that card failed.
+func TestAToolThatCouldNotRunSaysSo(t *testing.T) {
+	h, _, _ := newHands(t)
+	said, _, _ := oneCall(t, h, sayingTool{err: errors.New("no room to open one in")})
+	if said != "error: no room to open one in" {
+		t.Errorf("a failed call said %q", said)
+	}
+}
+
+// The policy decides every tool alike now, including the two that
+// used to be dispatched by name before anything was asked.
+func TestEveryToolGoesThroughThePolicy(t *testing.T) {
+	h, _, _ := newHands(t)
+	if err := h.Adopt(sayingTool{}); err != nil {
+		t.Fatal(err)
+	}
+	h.policy.Tools["saying"] = tool.Deny
+	m := &Mind{Hands: h, Model: "m", instruments: newInstruments()}
+	ctx, x := m.begin(context.Background(), Message{Conversation: "c"}, "hi", 0, "system", nil)
+	call := toolCall{ID: "call_1", Function: toolFunction{Name: "saying", Arguments: `{}`}}
+	said := m.invoke(ctx, "c", "", x, call, func(Frame) error { return nil })
+	if !strings.HasPrefix(said, "Not allowed:") {
+		t.Errorf("a denied call said %q", said)
+	}
+	if x.pending.Decision != string(tool.Deny) {
+		t.Errorf("the refusal is not on the round: %+v", x.pending)
+	}
+
+	// And a name nothing answers to is still a name nothing answers to.
+	if got := m.invoke(ctx, "c", "", x, toolCall{ID: "x", Function: toolFunction{Name: "nonesuch"}}, func(Frame) error { return nil }); got != "That tool does not exist." {
+		t.Errorf("an unknown tool said %q", got)
 	}
 }

@@ -161,16 +161,10 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// project this afternoon.
 	m.Hands.Refresh(ctx)
 	system := m.preface() + m.present(msg.Device, text)
-	var tools []map[string]any
-	if m.Delegate != nil {
-		tools = append(tools, m.Delegate.tool(m.Fleet != nil))
-	}
-	if m.Fleet != nil {
-		tools = append(tools, fleetTool())
-	}
-	// Hers last: the two above are about handing work away, which is
-	// the thing she should reach for first.
-	tools = append(tools, m.Hands.Definitions()...)
+	// Every tool she has, in one list from one registry: the delegate
+	// and the fleet first — handing work away is what she should reach
+	// for before doing it herself — and mote's built-ins after them.
+	tools := m.Hands.Definitions()
 	ctx, x := m.begin(ctx, msg, text, len(prior), system, tools)
 
 	messages := make([]chatMessage, 0, len(prior)+2+2*maxRounds)
@@ -278,52 +272,16 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 }
 
 // invoke runs one tool call and returns what the model should be told.
-// Errors come back as text rather than as a failed exchange: a delegate
-// that could not finish is information the model can work with, and a
-// person asking a question should not get a stack trace because a
-// subprocess was unhappy.
+//
+// It is a lookup and nothing else. Everything that used to be decided
+// here — which tool this is, whether it may run, what it cost, what
+// goes in the journal — is invokeTool's, for every tool alike.
 func (m *Mind) invoke(ctx context.Context, conversation, device string, x *exchange, call toolCall, reply func(Frame) error) string {
-	if call.Function.Name == "fleet" && m.Fleet != nil {
-		return m.invokeFleet(ctx, conversation, device, x, call, reply)
-	}
-	if t, ok := m.Hands.Tool(call.Function.Name); ok {
-		return m.invokeTool(ctx, conversation, x, t, call, reply)
-	}
-	if call.Function.Name != "delegate" || m.Delegate == nil {
+	t, ok := m.Hands.Tool(call.Function.Name)
+	if !ok {
 		return "That tool does not exist."
 	}
-
-	var args struct {
-		Task string `json:"task"`
-	}
-	if json.Unmarshal([]byte(call.Function.Arguments), &args) != nil || strings.TrimSpace(args.Task) == "" {
-		return "The task was not readable. Say what you want done in plain prose."
-	}
-
-	// A status IS something appearing, so it stops the "first sign"
-	// clock even though no token has been produced.
-	x.sign(ctx)
-	_ = reply(Frame{Status: delegating(args.Task)})
-
-	started := time.Now()
-	ctx, rec := m.beginTool(ctx, conversation, call, args.Task)
-	out, err := m.Delegate.run(ctx, args.Task)
-	elapsed := time.Since(started)
-
-	m.endTool(ctx, rec, out, elapsed, err)
-	logDelegation(conversation, args.Task, out, elapsed, err)
-	x.link("", out.Session, out.Cost)
-
-	if err != nil {
-		return "The task could not be completed: " + err.Error()
-	}
-	if out.Failed {
-		return "The task did not succeed. What came back: " + trim(out.Result, 4000)
-	}
-	if strings.TrimSpace(out.Result) == "" {
-		return "The task finished but reported nothing."
-	}
-	return trim(out.Result, 8000)
+	return m.invokeTool(ctx, conversation, device, x, t, call, reply)
 }
 
 type usage struct {

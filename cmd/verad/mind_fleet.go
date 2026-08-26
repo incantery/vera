@@ -6,72 +6,87 @@
 // starting one is not a result but a receipt — and what it gets from
 // asking is a picture in the person's nouns: this task is waiting on
 // you, that one finished, this one has said nothing for twenty minutes.
+//
+// It is one of mote's tools, in the same registry as read and write
+// and decided by the same policy, so that there is one path from a
+// call to a result and one place a person can say what is allowed.
 package main
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
+	"io"
 	"strings"
 	"time"
 
+	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/fleet"
 )
 
-// fleetTool is the one tool with five verbs. One tool rather than five
+// FleetTool is the one tool with five verbs. One tool rather than five
 // keeps the model's choice binary — answer, or reach for the fleet —
 // and the verb is a detail it fills in after.
-func fleetTool() map[string]any {
-	return map[string]any{
-		"type": "function",
-		"function": map[string]any{
-			"name": "fleet",
-			"description": "The way to get work done on code or in a repository: start, check on, answer, land " +
-				"or stop tasks. Each task is a separate Claude Code agent working in its own copy of a " +
-				"repository, in its own terminal pane, and it keeps going after this conversation ends. Use " +
-				"`start` for ANY work in a repository — inspecting, changing, investigating — and for anything " +
-				"that will take more than a couple of minutes; `delegate` is only for a quick lookup they wait " +
-				"on. Use `list` whenever they ask how things are going. " +
-				"Use `answer` to pass their reply to a task that is waiting on them. Vera lands a task by " +
-				"itself when it says done; `land` is only for landing early or retrying after a landing " +
-				"failed. `stop` abandons one — only when they clearly said so.",
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"action": map[string]any{
-						"type": "string",
-						"enum": []string{"list", "start", "answer", "resume", "land", "stop"},
-					},
-					"brief": map[string]any{
-						"type": "string",
-						"description": "start: what to accomplish, in plain prose, with everything the agent " +
-							"needs to act alone. Say the goal, not the steps.",
-					},
-					"project": map[string]any{
-						"type": "string",
-						"description": "start: the repository, by the name or path listed in the prompt. Leave " +
-							"empty only when they mean the one in front of them.",
-					},
-					"kind": map[string]any{
-						"type":        "string",
-						"enum":        []string{"ship", "scout"},
-						"description": "start: ship changes code; scout only investigates and reports.",
-					},
-					"task": map[string]any{
-						"type":        "string",
-						"description": "answer/land/stop: the task id from list.",
-					},
-					"text": map[string]any{
-						"type":        "string",
-						"description": "answer: what to tell the task, in the person's words.",
-					},
-				},
-				"required": []string{"action"},
-			},
-		},
-	}
+type FleetTool struct {
+	// Fleet is the rooms themselves. Nil is not registered: a Vera
+	// with no multiplexer has no fleet to offer.
+	Fleet *fleet.Fleet
+	// Attention is where the person is looking, which is how a start
+	// with no project named means the repository in front of them.
+	Attention *Attention
 }
+
+func (t *FleetTool) Name() string { return "fleet" }
+
+func (t *FleetTool) Description() string { return fleetDescription }
+
+const fleetDescription = "The way to get work done on code or in a repository: start, check on, answer, land " +
+	"or stop tasks. Each task is a separate Claude Code agent working in its own copy of a " +
+	"repository, in its own terminal pane, and it keeps going after this conversation ends. Use " +
+	"`start` for ANY work in a repository — inspecting, changing, investigating — and for anything " +
+	"that will take more than a couple of minutes; `delegate` is only for a quick lookup they wait " +
+	"on. Use `list` whenever they ask how things are going. " +
+	"Use `answer` to pass their reply to a task that is waiting on them. Vera lands a task by " +
+	"itself when it says done; `land` is only for landing early or retrying after a landing " +
+	"failed. `stop` abandons one — only when they clearly said so."
+
+// Schema is written out rather than built from a map because it is
+// the one thing about a tool the model ever sees, and a literal is
+// what a person reviewing it can read.
+func (t *FleetTool) Schema() json.RawMessage { return json.RawMessage(fleetSchema) }
+
+const fleetSchema = `{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["list", "start", "answer", "resume", "land", "stop"]
+    },
+    "brief": {
+      "type": "string",
+      "description": "start: what to accomplish, in plain prose, with everything the agent needs to act alone. Say the goal, not the steps."
+    },
+    "project": {
+      "type": "string",
+      "description": "start: the repository, by the name or path listed in the prompt. Leave empty only when they mean the one in front of them."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["ship", "scout"],
+      "description": "start: ship changes code; scout only investigates and reports."
+    },
+    "task": {
+      "type": "string",
+      "description": "answer/land/stop: the task id from list."
+    },
+    "text": {
+      "type": "string",
+      "description": "answer: what to tell the task, in the person's words."
+    }
+  },
+  "required": ["action"]
+}`
 
 type fleetArgs struct {
 	Action  string `json:"action"`
@@ -82,37 +97,71 @@ type fleetArgs struct {
 	Text    string `json:"text"`
 }
 
-// invokeFleet runs one fleet call and returns what the model is told.
-// Like invoke, errors are text: a room that could not be opened is
-// something the model should explain, not a failed exchange.
-func (m *Mind) invokeFleet(ctx context.Context, conversation, device string, x *exchange, call toolCall, reply func(Frame) error) string {
-	var args fleetArgs
-	if json.Unmarshal([]byte(call.Function.Arguments), &args) != nil || args.Action == "" {
-		return "The request was not readable."
+// Paths is the repository a start is about, when it named one. The
+// policy matches a path against the profile's globs, so a rule can
+// say where work may be started without knowing that the fleet calls
+// it `project`.
+func (t *FleetTool) Paths(args json.RawMessage) []string {
+	var a fleetArgs
+	if json.Unmarshal(args, &a) != nil || a.Action != "start" {
+		return nil
 	}
-	started := time.Now()
-	ctx, rec := m.beginTool(ctx, conversation, call, args.Action)
-	x.link(args.Task, "", 0)
-	result, err := m.fleetAction(ctx, device, x, args, reply)
-	m.endTool(ctx, rec, delegated{Result: result}, time.Since(started), err)
-	slog.Info("fleet tool",
-		"gen_ai.conversation.id", conversation,
-		"action", args.Action,
-		"task", args.Task,
-		"brief", trim(args.Brief, 200),
-		"took_ms", time.Since(started).Milliseconds(),
-		"error", errText(err),
-	)
-	if err != nil {
-		return "That could not be done: " + err.Error()
+	if strings.TrimSpace(a.Project) == "" {
+		return nil
 	}
-	return result
+	return []string{a.Project}
 }
 
-func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args fleetArgs, reply func(Frame) error) (string, error) {
+// Command is the verb, so that a rule can key on it.
+//
+// A policy matches a tool by name, a path by glob and a command by
+// prefix, and the command is the only one of the three that can see
+// an argument at all. The fleet needs one — `list` reports and `stop`
+// abandons a person's work, and those are not the same question — so
+// it says its verb here and `tools = ["fleet"], commands = ["stop"]`
+// is a rule about a verb.
+//
+// The verb alone rather than "fleet stop": mote reads the first word
+// of a command as what an "always" covers, so this way a person who
+// says always to stopping one task has said it about stopping, and
+// the grant reads back as "fleet stop" rather than "fleet fleet".
+func (t *FleetTool) Command(args json.RawMessage) string {
+	var a fleetArgs
+	if json.Unmarshal(args, &a) != nil {
+		return ""
+	}
+	return a.Action
+}
+
+// Run does one fleet call and says what the model is told.
+//
+// An error is the call not happening: a room that could not be
+// opened, a verb with nothing to act on. Everything that did happen
+// comes back as text, including a picture of tasks that says several
+// of them are stuck.
+func (t *FleetTool) Run(ctx context.Context, args json.RawMessage, out io.Writer) (tool.Result, error) {
+	if t.Fleet == nil {
+		return tool.Result{}, errors.New("there is no fleet: no multiplexer to open a room in")
+	}
+	var a fleetArgs
+	if json.Unmarshal(args, &a) != nil || a.Action == "" {
+		return tool.Result{}, errors.New("the request was not readable")
+	}
+	r := roundOf(ctx)
+	// The task id before the work, so a round that fails still says
+	// which task it was about.
+	r.link(a.Task, "", 0)
+	text, err := t.act(ctx, r, a)
+	if err != nil {
+		return tool.Result{}, err
+	}
+	return tool.Result{Text: text}, nil
+}
+
+func (t *FleetTool) act(ctx context.Context, r *round, args fleetArgs) (string, error) {
 	switch args.Action {
 	case "list":
-		views, err := m.Fleet.Tasks(ctx)
+		views, err := t.Fleet.Tasks(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -120,7 +169,7 @@ func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args
 		// now seen, and a scout whose report was seen can close.
 		for _, v := range views {
 			if len(v.Unread) > 0 {
-				_ = m.Fleet.Seen(v.ID)
+				_ = t.Fleet.Seen(v.ID)
 			}
 		}
 		return describeFleet(views, time.Now()), nil
@@ -130,31 +179,30 @@ func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args
 			return "", fmt.Errorf("a task needs a brief: say what should be accomplished")
 		}
 		project := args.Project
-		if project == "" && m.Attention != nil {
-			project = m.Attention.TerminalPath(device)
+		if project == "" && t.Attention != nil {
+			project = t.Attention.TerminalPath(r.device)
 		}
 		if project == "" {
 			return "", fmt.Errorf("no repository was named and none is in front of them; ask which project")
 		}
-		x.sign(ctx)
-		_ = reply(Frame{Status: "Opening a room for that…"})
-		t, err := m.Fleet.Spawn(ctx, fleet.Request{Project: project, Kind: fleet.Kind(args.Kind), Brief: args.Brief})
+		r.say("Opening a room for that…")
+		task, err := t.Fleet.Spawn(ctx, fleet.Request{Project: project, Kind: fleet.Kind(args.Kind), Brief: args.Brief})
 		if err != nil {
 			return "", err
 		}
-		x.link(t.ID, "", 0)
-		where := "in " + shortPath(t.Project)
-		if t.Branch != "" {
-			where += " on branch " + t.Branch
+		r.link(task.ID, "", 0)
+		where := "in " + shortPath(task.Project)
+		if task.Branch != "" {
+			where += " on branch " + task.Branch
 		}
 		return fmt.Sprintf("Started task %s %s. It is working now and will keep going after this conversation; "+
-			"they can ask how it is going later. Tell them it has started, in a sentence.", t.ID, where), nil
+			"they can ask how it is going later. Tell them it has started, in a sentence.", task.ID, where), nil
 
 	case "answer":
 		if args.Task == "" || strings.TrimSpace(args.Text) == "" {
 			return "", fmt.Errorf("answer needs a task id and the text to send")
 		}
-		if err := m.Fleet.Answer(ctx, args.Task, args.Text); err != nil {
+		if err := t.Fleet.Answer(ctx, args.Task, args.Text); err != nil {
 			return "", err
 		}
 		return "Sent. The task has their answer and is working again.", nil
@@ -163,21 +211,19 @@ func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args
 		if args.Task == "" {
 			return "", fmt.Errorf("resume needs a task id")
 		}
-		x.sign(ctx)
-		_ = reply(Frame{Status: "Picking it back up…"})
-		t, err := m.Fleet.Resume(ctx, args.Task)
+		r.say("Picking it back up…")
+		task, err := t.Fleet.Resume(ctx, args.Task)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Resumed task %s in %s; it is working again where it left off.", t.ID, shortPath(t.Project)), nil
+		return fmt.Sprintf("Resumed task %s in %s; it is working again where it left off.", task.ID, shortPath(task.Project)), nil
 
 	case "land":
 		if args.Task == "" {
 			return "", fmt.Errorf("land needs a task id")
 		}
-		x.sign(ctx)
-		_ = reply(Frame{Status: "Landing it…"})
-		if err := m.Fleet.Land(ctx, args.Task); err != nil {
+		r.say("Landing it…")
+		if err := t.Fleet.Land(ctx, args.Task); err != nil {
 			return "", err
 		}
 		return "Landed: the task's work is merged and its room is closed.", nil
@@ -188,7 +234,7 @@ func (m *Mind) fleetAction(ctx context.Context, device string, x *exchange, args
 		}
 		// Never force from here. Unlanded work is discarded only by a
 		// person at the machine, and the refusal says why.
-		if err := m.Fleet.Teardown(ctx, args.Task, false); err != nil {
+		if err := t.Fleet.Teardown(ctx, args.Task, false); err != nil {
 			return "", err
 		}
 		return "Stopped and cleaned up.", nil

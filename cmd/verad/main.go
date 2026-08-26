@@ -19,6 +19,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
@@ -372,6 +373,25 @@ func main() {
 				rl.Poke()
 			}
 			go rl.run(ctx)
+		}
+	}
+
+	// The two tools that are Vera rather than mote's, into the same
+	// registry as the built-ins and in front of them. It happens here,
+	// after the fleet, because whether there IS a fleet is what the
+	// delegate's description turns on: beside one it has to read as the
+	// small tool or the model keeps reaching for it.
+	if mind != nil && mind.Hands != nil {
+		var own []tool.Tool
+		if mind.Delegate != nil {
+			own = append(own, &DelegateTool{Delegate: mind.Delegate, WithFleet: mind.Fleet != nil})
+		}
+		if mind.Fleet != nil {
+			own = append(own, &FleetTool{Fleet: mind.Fleet, Attention: mind.Attention})
+		}
+		if err := mind.Hands.Adopt(own...); err != nil {
+			fmt.Fprintln(os.Stderr, "vera: cannot register her own tools ("+err.Error()+")")
+			os.Exit(1)
 		}
 	}
 
