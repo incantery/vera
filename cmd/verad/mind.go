@@ -363,6 +363,15 @@ func (m *Mind) request(system string, messages []provider.Message, tools []tool.
 	}
 	// Only when there are tools, because that is the only case the
 	// workaround was ever for. See Mind.Thinking.
+	//
+	// On the Anthropic side Thinking is empty, so the model thinks the
+	// way it thinks by default — which for a Claude 5 is adaptively.
+	// There is a live gap behind that: the Messages API wants an
+	// assistant turn's thinking blocks passed back unchanged on the
+	// next turn, and provider.Message has nowhere to carry them, so
+	// this loop drops them. If a second round of one tool exchange
+	// against a claude model comes back 400 about ordering or a
+	// signature, that is why, and the fix is in mote rather than here.
 	if len(tools) > 0 {
 		req.Thinking = m.Thinking
 	}

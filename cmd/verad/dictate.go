@@ -43,6 +43,7 @@ Rules:
 - Add punctuation and capitalisation. Keep the person's words, tone and order otherwise.
 - Spoken punctuation and formatting words ("comma", "new line", "question mark") become the symbol.
 - Never add content, never answer questions in the text, never address the person. Output ONLY the cleaned text, nothing else.
+- Do not include internal or system XML tags in your response.
 - If the text is already clean, return it unchanged.`
 
 // cleanBudget is how long the cursor may wait. Past this the app types
@@ -63,9 +64,17 @@ func (m *Mind) clean(ctx context.Context, d Dictation) (Cleaned, error) {
 	if d.App != nil && d.App.Name != "" {
 		system += "\n\nThe cursor is in " + d.App.Name + ". " + styleFor(d.App)
 	}
+	req := m.request(system, []provider.Message{provider.User(text)}, nil)
+	// The cursor is waiting. A model that stops to think has already
+	// missed the budget and the raw words go in instead, so this is the
+	// one call that asks for no reasoning at all — and asks for no
+	// effort either, because a model that takes both can refuse the
+	// pair (thinking off above high effort is an error on Claude 5).
+	req.Thinking, req.Effort = provider.ThinkingOff, ""
+
 	var out strings.Builder
 	var used usage
-	spent, err := m.Provider.Stream(ctx, m.request(system, []provider.Message{provider.User(text)}, nil),
+	spent, err := m.Provider.Stream(ctx, req,
 		func(ev provider.Event) {
 			if ev.Kind == provider.KindDelta {
 				out.WriteString(ev.Text)
