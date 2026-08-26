@@ -241,6 +241,7 @@ func main() {
 		// Every exchange, on disk, whatever else is watching: what
 		// `vera dump` hands to whoever is asked why Vera did that.
 		mind.Journal = &journal.Writer{Dir: filepath.Join(stateDir(), "vera", "conversations")}
+		mind.Home = place
 	}
 	lan.how = how
 	// Speech to text lives on this machine; the phone sends audio and

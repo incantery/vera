@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 
 	"go.opentelemetry.io/otel"
@@ -181,5 +182,41 @@ func TestThePromptCarriesTheIndex(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, voice) {
 		t.Fatal("memory displaced the system prompt rather than following it")
+	}
+}
+
+// A project file per known repository in every prompt would be most of
+// the prompt and none of it read. Only the one they named.
+func TestOnlyTheProjectInPlayReachesThePrompt(t *testing.T) {
+	place, err := home.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := place.Project("rook", "/src/rook", "main", []string{"checks before landing: `zig build test`"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := place.Project("mote", "/src/mote", "main", nil); err != nil {
+		t.Fatal(err)
+	}
+	m := &Mind{Home: place}
+	repos := []fleet.Repo{{Name: "rook", Root: "/src/rook"}, {Name: "mote", Root: "/src/mote"}}
+
+	got := m.aboutProjects(repos, "how is the rook build looking")
+	if !strings.Contains(got, "zig build test") {
+		t.Fatalf("the named repo's file did not reach the prompt:\n%s", got)
+	}
+	if strings.Contains(got, "/src/mote") {
+		t.Errorf("a repo nobody mentioned came along:\n%s", got)
+	}
+	// The front matter is bookkeeping, not something to tell a model.
+	if strings.Contains(got, "root: /src/rook\nsince:") {
+		t.Errorf("front matter went into the prompt:\n%s", got)
+	}
+	if got := m.aboutProjects(repos, "what is the weather"); got != "" {
+		t.Errorf("nothing was named, so nothing should be said:\n%s", got)
+	}
+	// "rook" inside "rookie" is not the repository.
+	if got := m.aboutProjects(repos, "I was a rookie once"); got != "" {
+		t.Errorf("a substring pulled in a project note:\n%s", got)
 	}
 }

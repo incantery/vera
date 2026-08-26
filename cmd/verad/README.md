@@ -392,6 +392,11 @@ fleet already learned all of that on every task and then threw it away.
 Project files are created once and only appended to afterwards: a
 person editing "what this repo is" is exactly the point.
 
+A project file reaches the prompt only when the repository is in play:
+they named it, or the fleet has a task open in it. At most two, capped.
+Every known repository's file in every prompt would be most of the
+prompt and none of it read.
+
 Extraction writing files is a bridge. Vera curates her own memory with
 tools at mote milestone 5, and then remembering is something she does
 deliberately rather than something that happens to her.

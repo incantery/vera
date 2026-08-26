@@ -103,3 +103,34 @@ func (h *Home) projectFile(name, root string) (path string, existing bool) {
 	}
 	return path, true
 }
+
+// Note is what she knows about one repository, for the prompt. Missing
+// is not an error: a repo nobody has run a task in has no file yet.
+func (h *Home) Note(name, root string) (string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	path, existing := h.projectFile(name, root)
+	if !existing {
+		return "", false
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	text := strings.TrimSpace(stripFrontMatter(string(b)))
+	return text, text != ""
+}
+
+// stripFrontMatter drops the machine half. A prompt wants what she
+// knows about the place, not the bookkeeping that got it there.
+func stripFrontMatter(s string) string {
+	rest, ok := strings.CutPrefix(strings.TrimLeft(s, "\n"), "---\n")
+	if !ok {
+		return s
+	}
+	_, after, found := strings.Cut(rest, "\n---")
+	if !found {
+		return s
+	}
+	return after
+}
