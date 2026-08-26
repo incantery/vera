@@ -321,7 +321,7 @@ It lives in Vera's home, which is a directory of Markdown:
                          description, type, since, from) then the fact
   projects/<name>.md     what she knows about a repository
   notes/                 hers, to write in later
-  profiles/supervisor/   the profile mote will define
+  profiles/supervisor/   profile.md and policy.toml — see Hands
 ```
 
 `$VERA_HOME` moves it. verad is usually started by launchd, which
@@ -347,11 +347,16 @@ it.
 
 Four decisions worth arguing with:
 
-**Writing is asynchronous, reading is synchronous.** Extraction is a
-second model call. In front of the reply it would add its latency to
-every exchange, to serve a fact not needed until the *next* one. So the
-reply goes out and remembering happens behind it. `Mind.Settle` waits
-for it when a process is quitting.
+**She writes it herself.** There used to be a second model call behind
+every reply that read the exchange and decided what was worth keeping.
+It is gone. The preface tells her where the files are and what they
+look like, her home is auto for `write` and `edit`, and she keeps the
+index and the files saying the same thing. A diary written by somebody
+else is the wrong shape: she never chose any of it, could not correct
+it, and the one thing she could not do was throw a wrong fact away.
+Relative dates are still resolved to absolute ones, because a fact that
+expires quietly is worse than one never kept — the prompt asks for it
+now instead of the extractor.
 
 **The index goes in the prompt; nothing is retrieved.** One person
 accumulates tens to low hundreds of durable facts — small enough to
@@ -359,15 +364,14 @@ send whole. Embeddings are the right answer at thousands and a way of
 looking busy at fifty, and retrieval fails in the worst way: by
 silently not finding the thing that mattered. What goes in is
 `MEMORY.md`, capped at 6 kB, and a cap that trims says out loud that it
-did — the bodies are for a person reading them, and for the tools Vera
-gets at mote milestone 5.
+did — the bodies are for a person reading them, and for `read` and
+`search` when she wants one.
 
 **Facts are replaced, not accumulated.** Someone who moves from Denver
 to Austin has not become a person who lives in two places. The slug is
-what makes that mechanical: the extractor answers in slugs, not
-numbers, so writing over `lives-in-denver` is a file rewritten — and a
-second file would have been a contradiction the model then arbitrates
-on every turn.
+what makes that mechanical: `lives-in-austin` written over
+`lives-in-denver` is a file rewritten, and a second file would have
+been a contradiction the model then arbitrates on every turn.
 
 **The directory can change under us.** A person with an editor is the
 ordinary case here, not a race to defend against, so every read checks
@@ -375,18 +379,10 @@ the directory and re-reads if it moved, and every write derives the
 index from the files rather than from the copy in hand. One writer lock
 per process; each file goes down through a temporary and a rename.
 
-Relative dates are resolved at extraction — "starts in two weeks"
-becomes "starts on 2 September 2026" — because a fact that expires
-quietly is worse than one never kept.
-
 Memory is stated to the model as things known, with an explicit note
 not to raise them unprompted. Without that a model reads a list of
 facts about someone as a list of topics it has been asked to bring up,
 and every answer becomes a performance of how much it remembers.
-
-Extraction is metered under `gen_ai.operation.name="remember"`, so the
-cost of remembering can be told apart from the cost of answering rather
-than quietly inflating it.
 
 It is one person's memory. There is no user id anywhere.
 
@@ -402,9 +398,10 @@ they named it, or the fleet has a task open in it. At most two, capped.
 Every known repository's file in every prompt would be most of the
 prompt and none of it read.
 
-Extraction writing files is a bridge. Vera curates her own memory with
-tools at mote milestone 5, and then remembering is something she does
-deliberately rather than something that happens to her.
+The eval suite's memory cases now measure whether she *chooses* to
+write, which is a harder and more honest thing to measure than whether
+an extractor fired. A turn's `after_learning` is a no-op: memory is
+written inside the exchange that decided to write it.
 
 ## Peer-to-peer
 
@@ -477,6 +474,84 @@ A run still in flight is never evicted, since that would be the
 original bug wearing a hat. A run that stops without a terminal frame
 is closed with an error, because a watcher waiting on something that
 will never speak again is the one state worse than a failure.
+
+## Hands
+
+Vera is never a coding agent, and she was also never able to open a
+file. Those are different claims, and only the first one is worth
+keeping. She has mote's six now — `read`, `list`, `search`, `write`,
+`edit`, `run` — decided by a policy that lives in her home as a file a
+person can read:
+
+```
+~/vera/profiles/supervisor/
+  profile.md     what she is; appended to the voice in mind.go
+  policy.toml    allow / ask / deny, by tool, by path glob, by command
+                 prefix, in the order the rules are tried
+```
+
+verad writes mote's worked example there the first time and never
+again; after that the file is yours, and a typo in it is an error at
+startup rather than a surprise at midnight. `--no-tools` turns them off
+along with the delegate: both are a real grant of capability on this
+machine.
+
+**The boundary is the same one the delegate drew.** She may look at
+anything. She may write in her own home. She may **not** change a
+project — that goes to a task in its own copy of the repository — and
+what the model is told when it tries is the profile's own sentence,
+*"start a task for that"*, rather than a status code. A refusal that
+says what to do instead is a refusal the model can act on.
+
+Three things are decided in code rather than in the file, because the
+file cannot know them:
+
+- **Where her home actually is.** The file says `~/vera`; `$VERA_HOME`
+  can move it, and then the file's rule matches nothing.
+- **Which repositories are projects.** `${root}` is the fleet's known
+  projects, refreshed before every exchange, *added to* the list in the
+  file rather than replacing it — a repository the fleet has not
+  noticed yet is still not hers to edit.
+- **That she may not edit her own profile.** `~/vera/**` is hers, and
+  her profile lives under `~/vera`. Without this she could answer a
+  policy she disliked by rewriting it — an escalation that survives a
+  restart and reads, in the journal, like an ordinary allowed write. A
+  rule she can rewrite is not a rule.
+
+### The ask
+
+A call the policy neither allows nor denies stops and asks.
+
+```
+/say  → {"ask":{"id","name","args","text"}}   the question, mid-stream
+POST /ask/{id}  {"choice":"yes|no|always"}    the answer, on its own request
+```
+
+The exchange parks on the answer; nothing else arrives until it comes.
+The frame is `agent.KindAsk` on mote's side, so the terminal draws it
+as a card with `y` / `n` / `a` and posts the answer back — `vera`'s
+agent is an `agent.Answerer`, which the terminal finds by type
+assertion.
+
+Two minutes of silence answers **no**. Silence is not consent, and a
+call parked forever holds the exchange, and its model context, open
+behind it. `vera say` answers no to every ask and prints what was
+wanted to stderr: a script that answered yes on a person's behalf would
+be the worst possible client.
+
+An **always** is remembered for the rest of that conversation and no
+other — the tool plus a reach, which is the directory for a file and
+the program for a command. A grant that outlived the conversation would
+be a policy edit, and policy edits belong in the file.
+
+A tool's output streams as `tool_output` frames while it runs, capped
+at 32 kB on the wire; the result is capped separately at 8 kB.
+
+**Every decision is in the journal**, per round: `decision` is allow,
+ask or deny, `answer` is what the person said, `reason` is the
+sentence the model was told. `vera dump`'s transcript shows them —
+"denied (start a task for that)", "asked → yes" — because the decision
+is usually the answer to the question somebody came with.
 
 ## Delegation
 
@@ -638,8 +713,18 @@ wants push notifications, which want a paid Apple developer account.
 quitting the binary abandons whatever is in flight.
 
 **Memory is never revisited.** A fact is corrected only if the person
-happens to contradict it. Nothing ages, decays, or is re-examined, so a
-plan that silently fell through stays true forever.
+happens to contradict it and she chooses to act on it. Nothing ages,
+decays, or is re-examined, so a plan that silently fell through stays
+true forever.
+
+**Nothing deletes.** The six tools do not include one, so dropping a
+fact means `run rm`, which asks. Fine for something rare and wrong for
+something routine.
+
+**An ask reaches whoever is listening, not whoever asked.** The
+question goes out on the /say stream the exchange is streaming to. A
+phone that has gone into a pocket sees it on `resume`; a second client
+watching the same run sees it too, and either may answer.
 
 **A shared secret, not a trust ceremony.** Good against the other guests
 on the wifi; not against someone who has read your disk.
