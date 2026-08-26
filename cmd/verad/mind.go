@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -58,6 +59,10 @@ type Mind struct {
 	Vendor string
 	Model  string
 	Effort provider.Effort
+	// ThinkingDisplay is whether the reasoning comes back to be read
+	// or only to be kept — --thinking-display. Empty is the provider's
+	// own default.
+	ThinkingDisplay provider.Display
 	// Thinking is what to ask for when there are tools in the request.
 	// It exists for one model: the OpenAI-compatible endpoint verad
 	// was written against refuses function tools unless reasoning is
@@ -172,7 +177,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		return reply(Frame{Done: true})
 	}
 
-	prior := m.History.recall(msg.Conversation)
+	prior := m.History.recall(msg.Conversation, m.Model)
 	// The policy's ${root} is the fleet's projects, and they change
 	// while the process runs — a repository opened this morning is a
 	// project this afternoon.
@@ -190,7 +195,11 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	messages := make([]provider.Message, 0, len(prior)+2+2*maxRounds)
 	for _, t := range prior {
 		if t.Role == provider.RoleAssistant {
-			messages = append(messages, provider.Assistant(t.Content))
+			// With whatever the provider kept of how it reasoned. It is
+			// opaque and it is not read here; see turn.Raw.
+			was := provider.Assistant(t.Content)
+			was.Raw = t.Raw
+			messages = append(messages, was)
 			continue
 		}
 		messages = append(messages, provider.User(t.Content))
@@ -207,10 +216,16 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	var used usage
 	var err error
 	var delegations int
+	// kept is the provider's own record of the last assistant turn:
+	// the thinking it did, signed, which the Messages API wants back
+	// in front of the tool call it led to. It rides on the assistant
+	// message and it is never read here.
+	var kept json.RawMessage
 
 	for round := 0; round < maxRounds; round++ {
 		var calls []provider.Call
 		var gone error
+		var raw json.RawMessage
 		// Where this round's own words start, so the assistant message
 		// that carries the tool calls carries what was said before them
 		// too. An API that will not take an empty assistant turn cares,
@@ -235,6 +250,10 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 				x.thought()
 			case provider.KindToolCall:
 				calls = append(calls, ev.Call)
+			case provider.KindRaw:
+				// The provider's record of this turn, opaque, at most
+				// one per turn and always last.
+				raw = ev.Raw
 			case provider.KindError:
 				// The model declined, or said something that was not an
 				// answer. It happened and it was paid for, so it is not
@@ -252,12 +271,18 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		// Rounds accumulate: what the exchange cost is all of them, not
 		// the last one.
 		used.add(spent)
+		kept = raw
 
 		if err != nil || len(calls) == 0 {
 			break
 		}
 
-		messages = append(messages, provider.Assistant(answer.String()[said:], calls...))
+		asked := provider.Assistant(answer.String()[said:], calls...)
+		// THE line that stops the 400 on the next round: a turn that
+		// thought and then asked for a tool has to hand its reasoning
+		// back with the ask.
+		asked.Raw = raw
+		messages = append(messages, asked)
 		x.asked(calls)
 		for _, call := range calls {
 			started := time.Now()
@@ -322,7 +347,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 
 	// After the answer, not before: an exchange that failed did not
 	// happen, and half of one poisons every exchange after it.
-	m.History.remember(msg.Conversation, text, answer.String())
+	m.History.remember(msg.Conversation, text, answer.String(), kept, m.Model)
 
 	// Extraction used to run here, behind the reply: a second model
 	// call that read the exchange and decided what was worth keeping.
@@ -367,15 +392,18 @@ func (m *Mind) request(system string, messages []provider.Message, tools []tool.
 	//
 	// On the Anthropic side Thinking is empty, so the model thinks the
 	// way it thinks by default — which for a Claude 5 is adaptively.
-	// There is a live gap behind that: the Messages API wants an
-	// assistant turn's thinking blocks passed back unchanged on the
-	// next turn, and provider.Message has nowhere to carry them, so
-	// this loop drops them. If a second round of one tool exchange
-	// against a claude model comes back 400 about ordering or a
-	// signature, that is why, and the fix is in mote rather than here.
+	// What that used to cost is gone: the Messages API wants an
+	// assistant turn's thinking blocks handed back unchanged on the
+	// next one, and provider.Message carries them now, opaquely, as
+	// Raw. See turn.Raw and the loop in think.
 	if len(tools) > 0 {
 		req.Thinking = m.Thinking
 	}
+	// Whether the reasoning comes back to be read or only to be kept.
+	// It is a different question from whether the model thinks at all:
+	// a model that thinks and shows nothing still signs its work, and
+	// the signature is what the next turn needs.
+	req.ThinkingDisplay = m.ThinkingDisplay
 	return req
 }
 

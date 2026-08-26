@@ -12,10 +12,10 @@ import (
 
 func TestAConversationRemembersItsOwnTurns(t *testing.T) {
 	h := newHistory()
-	h.remember("c1", "my name is Seth", "Nice to meet you, Seth.")
-	h.remember("c1", "what is my name", "Seth.")
+	h.remember("c1", "my name is Seth", "Nice to meet you, Seth.", nil, "m")
+	h.remember("c1", "what is my name", "Seth.", nil, "m")
 
-	got := h.recall("c1")
+	got := h.recall("c1", "m")
 	if len(got) != 4 {
 		t.Fatalf("recalled %d turns, want 4", len(got))
 	}
@@ -23,18 +23,18 @@ func TestAConversationRemembersItsOwnTurns(t *testing.T) {
 		t.Fatalf("turns are out of order: %+v", got[:2])
 	}
 	// Conversations do not leak into each other.
-	if len(h.recall("c2")) != 0 {
+	if len(h.recall("c2", "m")) != 0 {
 		t.Fatal("a different conversation saw these turns")
 	}
 	// And no id at all means no conversation, which is what curl gets.
-	if len(h.recall("")) != 0 {
+	if len(h.recall("", "m")) != 0 {
 		t.Fatal("an empty id recalled something")
 	}
 }
 
 func TestAFailedExchangeIsNotRemembered(t *testing.T) {
 	h := newHistory()
-	h.remember("c1", "a question", "") // the model never answered
+	h.remember("c1", "a question", "", nil, "m") // the model never answered
 	if n := h.size("c1"); n != 0 {
 		t.Fatalf("stored %d turns for an exchange that failed", n)
 	}
@@ -46,10 +46,10 @@ func TestTheWindowDropsWholeExchanges(t *testing.T) {
 	h := newHistory()
 	h.maxTurns = 4
 	for i := range 5 {
-		h.remember("c1", fmt.Sprintf("question %d", i), fmt.Sprintf("answer %d", i))
+		h.remember("c1", fmt.Sprintf("question %d", i), fmt.Sprintf("answer %d", i), nil, "m")
 	}
 
-	got := h.recall("c1")
+	got := h.recall("c1", "m")
 	if len(got) != 4 {
 		t.Fatalf("kept %d turns, want 4", len(got))
 	}
@@ -67,7 +67,7 @@ func TestALongConversationStopsGrowing(t *testing.T) {
 	h.maxChars = 200
 	long := strings.Repeat("x", 150)
 	for range 10 {
-		h.remember("c1", long, long)
+		h.remember("c1", long, long, nil, "m")
 	}
 	if chars := h.threads["c1"].chars(); chars > h.maxChars+2*len(long) {
 		t.Fatalf("conversation grew to %d chars — every exchange resends all of it", chars)
@@ -77,9 +77,9 @@ func TestALongConversationStopsGrowing(t *testing.T) {
 func TestAbandonedConversationsAreDropped(t *testing.T) {
 	h := newHistory()
 	h.idleFor = time.Millisecond
-	h.remember("old", "hello", "hi")
+	h.remember("old", "hello", "hi", nil, "m")
 	time.Sleep(5 * time.Millisecond)
-	h.remember("new", "hello", "hi") // creating a thread sweeps
+	h.remember("new", "hello", "hi", nil, "m") // creating a thread sweeps
 
 	if h.size("old") != 0 {
 		t.Fatal("an abandoned conversation is still held")

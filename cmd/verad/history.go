@@ -18,6 +18,7 @@
 package main
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 )
@@ -25,6 +26,18 @@ import (
 type turn struct {
 	Role    string // "user" or "assistant"
 	Content string
+	// Raw is the provider's own record of an assistant turn, kept
+	// beside it and handed back unread on the next request in this
+	// conversation.
+	//
+	// It is here because of extended thinking. A model that thought
+	// and then called a tool signs its reasoning, and the Messages API
+	// wants those blocks back — signatures and all — in front of the
+	// turn they led to. Nothing in verad knows what is inside; mote's
+	// provider put it there and mote's provider reads it. Losing it is
+	// not fatal on its own, it is fatal on the next request in that
+	// conversation with thinking on.
+	Raw json.RawMessage
 }
 
 // History is every live conversation, bounded on all three axes that
@@ -46,6 +59,11 @@ type History struct {
 type thread struct {
 	turns   []turn
 	touched time.Time
+	// model is which model produced what is kept here. A Raw is that
+	// model's own record of its own turn, and handing one model's
+	// reasoning to another is a request nobody can predict the answer
+	// to — so when the model changes, the text stays and the Raw goes.
+	model string
 }
 
 func newHistory() *History {
@@ -61,7 +79,7 @@ func newHistory() *History {
 // recall returns the conversation so far. An empty id means no
 // conversation — a caller with curl gets the stateless behaviour, which
 // is a useful thing to be able to ask for.
-func (h *History) recall(id string) []turn {
+func (h *History) recall(id, model string) []turn {
 	if id == "" {
 		return nil
 	}
@@ -76,6 +94,14 @@ func (h *History) recall(id string) []turn {
 	// another exchange may be appending to it.
 	out := make([]turn, len(t.turns))
 	copy(out, t.turns)
+	if t.model != model {
+		// Somebody else's record of somebody else's turn. What was
+		// said is still true; how it was reasoned is not ours to hand
+		// over.
+		for i := range out {
+			out[i].Raw = nil
+		}
+	}
 	return out
 }
 
@@ -83,7 +109,7 @@ func (h *History) recall(id string) []turn {
 // a user turn stored without its answer would leave two user messages
 // in a row, and the model reads that as the person repeating
 // themselves.
-func (h *History) remember(id, said, answered string) {
+func (h *History) remember(id, said, answered string, kept json.RawMessage, model string) {
 	if id == "" || said == "" || answered == "" {
 		return
 	}
@@ -96,7 +122,17 @@ func (h *History) remember(id, said, answered string) {
 		t = &thread{}
 		h.threads[id] = t
 	}
-	t.turns = append(t.turns, turn{"user", said}, turn{"assistant", answered})
+	if t.model != model {
+		// The model changed under this conversation. Everything kept
+		// so far was the other one's, and none of it goes back.
+		for i := range t.turns {
+			t.turns[i].Raw = nil
+		}
+		t.model = model
+	}
+	t.turns = append(t.turns,
+		turn{Role: "user", Content: said},
+		turn{Role: "assistant", Content: answered, Raw: kept})
 	t.touched = time.Now()
 	t.trim(h.maxTurns, h.maxChars)
 }
