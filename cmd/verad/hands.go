@@ -44,6 +44,7 @@ import (
 
 	"github.com/incantery/mote/profile"
 	"github.com/incantery/mote/profiles"
+	"github.com/incantery/mote/provider"
 	"github.com/incantery/mote/tool"
 	"github.com/incantery/mote/tool/builtin"
 	"github.com/incantery/vera/fleet"
@@ -63,12 +64,16 @@ type Hands struct {
 	Root string
 	// Prompt is the profile's own words, appended to Vera's voice.
 	Prompt string
+	// Model is the profile's `model:` line — a hint about which model
+	// suits this agent, and what verad asks when nobody said --model.
+	// Empty is fine: then the flag's default is the answer.
+	Model string
 	// Wait bounds an ask. Zero means askTimeout.
 	Wait time.Duration
 
 	registry *tool.Registry
 	policy   *tool.Policy
-	defs     []map[string]any
+	defs     []tool.Definition
 	// profile is what the profile chose, in its order; own is what
 	// Vera brought — the delegate, the fleet — which goes in front of
 	// it. Kept apart so Adopt can rebuild the registry in that order.
@@ -131,9 +136,10 @@ func openHands(root string, projects *fleet.Projects) (*Hands, error) {
 	h := &Hands{
 		Root:      root,
 		Prompt:    strings.TrimSpace(prof.Prompt),
+		Model:     strings.TrimSpace(prof.Model),
 		registry:  reg,
 		policy:    policy,
-		defs:      definitionMaps(reg.Definitions()),
+		defs:      reg.Definitions(),
 		profile:   reg.List(),
 		fileRoots: append([]string(nil), policy.Roots...),
 		Projects:  projects,
@@ -245,30 +251,6 @@ func seedProfile(dir string) error {
 	return nil
 }
 
-// definitionMaps is the registry in the shape the request body and the
-// generation record already speak. Built once: the built-ins do not
-// change while the process runs.
-func definitionMaps(defs []tool.Definition) []map[string]any {
-	out := make([]map[string]any, 0, len(defs))
-	for _, d := range defs {
-		var params any
-		if len(d.Function.Parameters) > 0 {
-			if err := json.Unmarshal(d.Function.Parameters, &params); err != nil {
-				continue
-			}
-		}
-		out = append(out, map[string]any{
-			"type": d.Type,
-			"function": map[string]any{
-				"name":        d.Function.Name,
-				"description": d.Function.Description,
-				"parameters":  params,
-			},
-		})
-	}
-	return out
-}
-
 // Adopt registers tools of Vera's own, in front of the profile's.
 //
 // The built-ins come from mote and the profile picks among them by
@@ -291,12 +273,13 @@ func (h *Hands) Adopt(tools ...tool.Tool) error {
 		}
 	}
 	h.registry = reg
-	h.defs = definitionMaps(reg.Definitions())
+	h.defs = reg.Definitions()
 	return nil
 }
 
-// Definitions is what the model is told it can reach for.
-func (h *Hands) Definitions() []map[string]any {
+// Definitions is what the model is told it can reach for, in the shape
+// the registry hands out — which is the shape every provider takes.
+func (h *Hands) Definitions() []tool.Definition {
 	if h == nil {
 		return nil
 	}
@@ -568,8 +551,8 @@ func (r *round) filled() *round {
 // denial is not an error — it is the thing the model most needs to
 // know, in the profile's own words, so that it does the allowed thing
 // instead of trying the same call again.
-func (m *Mind) invokeTool(ctx context.Context, conversation, device string, x *exchange, t tool.Tool, call toolCall, reply func(Frame) error) string {
-	c := tool.NewCall(call.ID, t, jsonArgs(call.Function.Arguments))
+func (m *Mind) invokeTool(ctx context.Context, conversation, device string, x *exchange, t tool.Tool, call provider.Call, reply func(Frame) error) string {
+	c := tool.NewCall(call.ID, t, jsonArgs(call.Arguments))
 	verdict, g := m.Hands.Decide(conversation, c)
 
 	switch verdict.Decision {

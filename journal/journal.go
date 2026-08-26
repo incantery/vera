@@ -59,19 +59,33 @@ type Entry struct {
 	Conversation string    `json:"conversation"`
 	Device       string    `json:"device,omitempty"`
 	Model        string    `json:"model"`
-	TraceID      string    `json:"trace_id,omitempty"`
+	// Provider is which wire answered — "openai" or "anthropic". A
+	// model name does not always say: the same name can be reached
+	// through somebody's proxy.
+	Provider string `json:"provider,omitempty"`
+	TraceID  string `json:"trace_id,omitempty"`
 	// System is the whole system prompt, attention paragraph and all:
 	// the point of the record is to see what the model saw.
-	System       string  `json:"system"`
-	Said         string  `json:"said"`
-	Answered     string  `json:"answered"`
-	Error        string  `json:"error,omitempty"`
-	InputTokens  int     `json:"input_tokens"`
-	OutputTokens int     `json:"output_tokens"`
-	FirstSignMs  int64   `json:"first_sign_ms"`
-	FirstTokenMs int64   `json:"first_token_ms"`
-	TookMs       int64   `json:"took_ms"`
-	Rounds       []Round `json:"rounds,omitempty"`
+	System       string `json:"system"`
+	Said         string `json:"said"`
+	Answered     string `json:"answered"`
+	Error        string `json:"error,omitempty"`
+	InputTokens  int    `json:"input_tokens"`
+	OutputTokens int    `json:"output_tokens"`
+	// CacheReadTokens and CacheWriteTokens are part of InputTokens, not
+	// additions to it: how much of the prompt was read back from the
+	// provider's cache, and how much was written into it. Zero from a
+	// provider with no cache, or a prompt whose prefix keeps changing.
+	CacheReadTokens  int `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int `json:"cache_write_tokens,omitempty"`
+	// ThinkingParts is how many pieces of reasoning arrived before the
+	// answer. The reasoning itself is not kept — it is the model's
+	// working, not what it said — but that it thought is worth knowing.
+	ThinkingParts int     `json:"thinking_parts,omitempty"`
+	FirstSignMs   int64   `json:"first_sign_ms"`
+	FirstTokenMs  int64   `json:"first_token_ms"`
+	TookMs        int64   `json:"took_ms"`
+	Rounds        []Round `json:"rounds,omitempty"`
 }
 
 // Writer appends entries under Dir.

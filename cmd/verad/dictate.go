@@ -16,6 +16,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/incantery/mote/provider"
 )
 
 // Dictation is one utterance headed for the cursor, with what is known
@@ -41,6 +43,7 @@ Rules:
 - Add punctuation and capitalisation. Keep the person's words, tone and order otherwise.
 - Spoken punctuation and formatting words ("comma", "new line", "question mark") become the symbol.
 - Never add content, never answer questions in the text, never address the person. Output ONLY the cleaned text, nothing else.
+- Do not include internal or system XML tags in your response.
 - If the text is already clean, return it unchanged.`
 
 // cleanBudget is how long the cursor may wait. Past this the app types
@@ -61,17 +64,23 @@ func (m *Mind) clean(ctx context.Context, d Dictation) (Cleaned, error) {
 	if d.App != nil && d.App.Name != "" {
 		system += "\n\nThe cursor is in " + d.App.Name + ". " + styleFor(d.App)
 	}
-	messages := []chatMessage{
-		{Role: "system", Content: system},
-		{Role: "user", Content: text},
-	}
+	req := m.request(system, []provider.Message{provider.User(text)}, nil)
+	// The cursor is waiting. A model that stops to think has already
+	// missed the budget and the raw words go in instead, so this is the
+	// one call that asks for no reasoning at all — and asks for no
+	// effort either, because a model that takes both can refuse the
+	// pair (thinking off above high effort is an error on Claude 5).
+	req.Thinking, req.Effort = provider.ThinkingOff, ""
 
 	var out strings.Builder
 	var used usage
-	_, err := m.stream(ctx, messages, nil, func(delta string) error {
-		out.WriteString(delta)
-		return nil
-	}, &used)
+	spent, err := m.Provider.Stream(ctx, req,
+		func(ev provider.Event) {
+			if ev.Kind == provider.KindDelta {
+				out.WriteString(ev.Text)
+			}
+		})
+	used.add(spent)
 	spend(ctx, used.Prompt, used.Completion)
 	if err != nil {
 		return Cleaned{Text: text, Raw: true}, err

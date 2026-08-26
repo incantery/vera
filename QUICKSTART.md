@@ -8,10 +8,15 @@ front of you.
 - **Go 1.25+** to run Vera Core.
 - **Xcode** to build Vera.app (the Mac's senses) and the phone app.
 - A Mac and a phone **on the same network**.
-- For a real mind rather than an echo: an OpenAI-compatible key
-  (`$OPENAI_API_KEY`, or `~/.config/vera/openai_key`, or `--api-base` at
-  a local server). Without one, run with `--echo` and Vera answers by
-  repeating — enough to prove the channel.
+- For a real mind rather than an echo: a key for something to ask.
+  Either an OpenAI-compatible one (`$OPENAI_API_KEY`, or
+  `~/.config/vera/openai_key`, or `--api-base` at a local server), or
+  `$ANTHROPIC_API_KEY` with `--model claude-opus-5`. A `claude-*` name
+  and an Anthropic key go to the Messages API; anything else goes to
+  `/chat/completions`, and the banner says which. `~/.config/vera/*.env`
+  is read at startup, so a key can live in a file rather than a shell.
+  Without any of it, run with `--echo` and Vera answers by repeating —
+  enough to prove the channel.
 - For voice: nothing up front. The first time you dictate, Vera offers to
   install **Parakeet** on the Mac (~600 MB, once). Your voice is
   transcribed there and never leaves your machines.

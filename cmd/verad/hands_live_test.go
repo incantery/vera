@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/incantery/mote/provider"
 )
 
 // TestHandsLive puts the real model in front of the real tools, once,
@@ -166,18 +167,19 @@ func liveMind(t *testing.T) (*Mind, string) {
 	if os.Getenv("VERA_LIVE") != "1" {
 		t.Skip("set VERA_LIVE=1 to spend real tokens on this")
 	}
-	key := findKey("")
-	if key == "" {
-		t.Skip("no API key")
-	}
 	model := os.Getenv("VERA_LIVE_MODEL")
 	if model == "" {
 		model = "gpt-5.6-luna"
 	}
+	// The real thing, chosen the way verad chooses it: the model name
+	// and whatever keys this machine has decide the wire.
+	p, err := provider.New(provider.Config{Model: model, OpenAIKey: findKey("")})
+	if err != nil {
+		t.Skip(err.Error())
+	}
 	root := filepath.Join(t.TempDir(), "vera")
 	mind, _, _ := askingMindAt(t, root, nil)
-	mind.Client, mind.Key, mind.Model = &http.Client{}, key, model
-	mind.Base = os.Getenv("OPENAI_BASE_URL")
+	mind.Provider, mind.Model, mind.Vendor = p, model, vendorOf(p)
 	mind.Memory = mind.Home.Memory()
 	return mind, root
 }

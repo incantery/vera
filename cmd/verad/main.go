@@ -19,13 +19,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/incantery/mote/provider"
 	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 	"github.com/incantery/vera/mux"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -53,7 +53,8 @@ func main() {
 	addr := flag.String("addr", ":4780", "listen address")
 	noPeer := flag.Bool("no-peer", false, "do not advertise over peer-to-peer")
 	state := flag.String("state", "", "identity file (default ~/.local/state/vera/identity.json)")
-	model := flag.String("model", "gpt-5.6-luna", "model (any OpenAI-compatible server's name for it)")
+	model := flag.String("model", "gpt-5.6-luna", "model (a claude-* name goes to the Anthropic API; anything else to an OpenAI-compatible server); default: the profile's own model line, then this")
+	effort := flag.String("effort", "high", "how hard to think: low, medium, high, xhigh, max (where the model has the dial)")
 	apiBase := flag.String("api-base", "", "API base URL (default OpenAI; ollama etc. work)")
 	keyFile := flag.String("key-file", "", "API key file (default $OPENAI_API_KEY, then ~/.config/vera/openai_key)")
 	echoOnly := flag.Bool("echo", false, "answer by repeating, without a model")
@@ -75,6 +76,15 @@ func main() {
 	showMemory := flag.Bool("memories", false, "print what Vera remembers, and exit")
 	forget := flag.String("forget", "", "forget fact ids (\"3,7\"), or \"all\", and exit")
 	flag.Parse()
+	// Which flags were actually typed, as opposed to which have a
+	// default. The profile's model hint may only fill in for a --model
+	// nobody gave, and a default is not a request.
+	given := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	if !validEffort(*effort) {
+		fmt.Fprintln(os.Stderr, "vera: --effort must be low, medium, high, xhigh or max")
+		os.Exit(2)
+	}
 
 	// Structured from the start. It goes to a terminal today and to
 	// Grafana shortly; the difference should be a handler, not a
@@ -237,23 +247,43 @@ func main() {
 		}
 	}
 
-	answer, mind, how := chooseMind(*echoOnly, *model, *apiBase, *keyFile, generations, preface, memory, hands)
+	// Tools of her own, under the profile in her home. Same flag as the
+	// delegate: they are both a grant of capability on this machine,
+	// and --no-tools means none of it.
+	//
+	// Read BEFORE the mind, because the profile is also where the model
+	// hint lives, and which model it is decides which wire answers.
+	var own *Hands
+	if !*noTools {
+		own, err = openHands(place.Root, nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "vera: cannot read the supervisor profile ("+err.Error()+")")
+			os.Exit(1)
+		}
+	}
+
+	wanted, source := modelFor(*model, given["model"], own)
+	answer, mind, how := chooseMind(mindOptions{
+		Echo:      *echoOnly,
+		Model:     wanted,
+		Source:    source,
+		APIBase:   *apiBase,
+		KeyFile:   *keyFile,
+		Effort:    *effort,
+		EffortSet: given["effort"],
+		Gen:       generations,
+		Preface:   preface,
+		Memory:    memory,
+		Delegate:  hands,
+	})
 	if mind != nil {
 		// Every exchange, on disk, whatever else is watching: what
 		// `vera dump` hands to whoever is asked why Vera did that.
 		mind.Journal = &journal.Writer{Dir: filepath.Join(stateDir(), "vera", "conversations")}
 		mind.Home = place
-		// Tools of her own, under the profile in her home. Same flag
-		// as the delegate: they are both a grant of capability on this
-		// machine, and --no-tools means none of it.
-		if !*noTools {
-			hands, err := openHands(place.Root, nil)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "vera: cannot read the supervisor profile ("+err.Error()+")")
-				os.Exit(1)
-			}
-			mind.Hands = hands
-			lan.answer = hands.Answer
+		if own != nil {
+			mind.Hands = own
+			lan.answer = own.Answer
 		}
 	}
 	lan.how = how
@@ -271,7 +301,7 @@ func main() {
 	if *evalSuite != "" {
 		// The scorers grade the model, so the run should say which one
 		// it graded.
-		os.Setenv("VERA2_EVAL_MODEL", *model)
+		os.Setenv("VERA2_EVAL_MODEL", wanted)
 		publish := *evalPublish && generationExportConfigured()
 		err := runEvals(ctx, *evalSuite, answer, mind.Settle, publish)
 		// Extraction runs behind the reply, so a run that exits the
@@ -480,33 +510,119 @@ func echo(ctx context.Context, msg Message, reply func(Frame) error) error {
 	return reply(Frame{Done: true})
 }
 
-// chooseMind: a model if there is a key for one, and otherwise the
-// echo — said out loud rather than discovered. A binary that silently
-// degrades to repeating your words is a binary you will spend an hour
-// debugging the model behind.
-func chooseMind(echoOnly bool, model, apiBase, keyFile string, generations *agento11y.Client, preface string, memory *home.Memory, hands *Delegate) (Handler, *Mind, string) {
-	if echoOnly {
+// mindOptions is everything choosing a mind needs. A struct rather
+// than ten positional arguments, which is where a swapped pair of
+// strings stops being a compile error.
+type mindOptions struct {
+	Echo bool
+	// Model is which model to ask, already resolved; Source is where
+	// that came from, for the banner.
+	Model, Source string
+	// APIBase and KeyFile are the OpenAI-compatible path, unchanged:
+	// an endpoint of your own, and a key file to reach it with.
+	APIBase, KeyFile string
+	// Effort is the dial, and EffortSet says whether anybody actually
+	// turned it. See below: on the OpenAI path the difference matters.
+	Effort    string
+	EffortSet bool
+
+	Gen      *agento11y.Client
+	Preface  string
+	Memory   *home.Memory
+	Delegate *Delegate
+}
+
+// chooseMind: a model if there is a wire to reach one on, and
+// otherwise the echo — said out loud rather than discovered. A binary
+// that silently degrades to repeating your words is a binary you will
+// spend an hour debugging the model behind.
+//
+// The choice itself is mote's: a claude model with an ANTHROPIC_API_KEY
+// (which ~/.config/vera/*.env is where this process gets) goes to the
+// Messages API; everything else goes to an OpenAI-compatible
+// /chat/completions, with --api-base and the key file exactly as
+// before.
+func chooseMind(o mindOptions) (Handler, *Mind, string) {
+	if o.Echo {
 		return echo, nil, "echoing, no model (--echo)"
 	}
-	key := findKey(keyFile)
-	if key == "" && apiBase == "" {
-		return echo, nil, "echoing — no API key found, so there is no model to ask"
+	p, err := provider.New(provider.Config{
+		Model: o.Model,
+		// Where vera has always looked for a key, kept: $OPENAI_API_KEY,
+		// then ~/.config/vera/openai_key, then --key-file over both.
+		OpenAIKey:  findKey(o.KeyFile),
+		OpenAIBase: o.APIBase,
+	})
+	if err != nil {
+		return echo, nil, "echoing — " + err.Error()
 	}
+
 	mind := &Mind{
-		// No timeout on the client: the context carries the deadline,
-		// and a streamed answer that is still arriving is not late.
-		Client:      &http.Client{},
-		Base:        apiBase,
-		Key:         key,
-		Model:       model,
+		Provider:    p,
+		Vendor:      vendorOf(p),
+		Model:       o.Model,
 		History:     newHistory(),
-		Gen:         generations,
-		Preface:     preface,
-		Memory:      memory,
-		Delegate:    hands,
+		Gen:         o.Gen,
+		Preface:     o.Preface,
+		Memory:      o.Memory,
+		Delegate:    o.Delegate,
 		instruments: newInstruments(),
 	}
-	return mind.think, mind, model
+	if mind.Vendor == "anthropic" {
+		mind.Effort = provider.Effort(o.Effort)
+	} else {
+		// The endpoint verad was written against refuses function tools
+		// unless reasoning is off — found at the socket, not in a doc —
+		// so that is still what it is told, and only when there are
+		// tools. An --effort somebody actually typed overrides it,
+		// because an explicit dial is a stronger statement than a
+		// workaround for a different model.
+		mind.Thinking = provider.ThinkingOff
+		if o.EffortSet {
+			mind.Effort = provider.Effort(o.Effort)
+		}
+	}
+
+	how := o.Model + " via " + mind.Vendor
+	if mind.Effort != "" {
+		how += ", effort " + string(mind.Effort)
+	}
+	if o.Source != "" {
+		how += " (" + o.Source + ")"
+	}
+	return mind.think, mind, how
+}
+
+// vendorOf is which wire mote picked. The concrete type is the answer;
+// there is no interface method for it, and a name is what the banner
+// and the telemetry label both want.
+func vendorOf(p provider.Provider) string {
+	if _, ok := p.(*provider.Anthropic); ok {
+		return "anthropic"
+	}
+	return "openai"
+}
+
+// modelFor is which model to ask, and where that came from.
+//
+// An explicit --model wins outright. Otherwise the profile's `model:`
+// line — the profile is what says what this agent is, and which model
+// suits it is part of that. The flag's own default is the last word,
+// for a verad running --no-tools with no profile to read.
+func modelFor(flagValue string, given bool, own *Hands) (model, source string) {
+	if given || own == nil || own.Model == "" {
+		return flagValue, ""
+	}
+	return own.Model, "from " + home.ProfileDir + "/profile.md"
+}
+
+func validEffort(s string) bool {
+	switch provider.Effort(s) {
+	case provider.EffortLow, provider.EffortMedium, provider.EffortHigh,
+		provider.EffortXHigh, provider.EffortMax:
+		return true
+	}
+	return false
 }
 
 // announce prints where to pair, once the listener has a real port.

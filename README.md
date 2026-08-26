@@ -66,6 +66,11 @@ rides the same capability contract without rook. Run Core with
 
 ```
 --addr 127.0.0.1:4780   listen address (":4780" opens it to your LAN)
+--model claude-opus-5   which model to ask; a claude-* name with an
+                        ANTHROPIC_API_KEY goes to the Messages API, and
+                        anything else to an OpenAI-compatible server.
+                        Default: the profile's own model line.
+--effort high           how hard to think, where the model has the dial
 --echo                  answer by repeating — no model key needed
 --no-peer               LAN only; skip the phone-to-Mac peer sidecar
 --rook-tmux rook        rook's tmux server name ("" to disable)
