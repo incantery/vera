@@ -94,11 +94,15 @@ func (m *Memory) reload() error {
 			continue
 		}
 		fmt.Fprintf(&stamp, "%s:%d:%d\n", e.Name(), info.Size(), info.ModTime().UnixNano())
+		name := slug(strings.TrimSuffix(e.Name(), ".md"))
+		if name == "" {
+			continue
+		}
 		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
 		if err != nil {
 			continue
 		}
-		f := parseFact(strings.TrimSuffix(e.Name(), ".md"), string(b))
+		f := parseFact(name, string(b))
 		if f.Since.IsZero() {
 			f.Since = info.ModTime()
 		}
@@ -265,7 +269,7 @@ func parseFact(name, raw string) Fact {
 					f.From = val
 				}
 			}
-			body = strings.TrimPrefix(tail, "\n---")
+			body = tail
 		}
 	}
 	f.Body = strings.TrimSpace(body)
@@ -381,11 +385,10 @@ func (m *Memory) Apply(r Revision, from string) error {
 
 	// Oldest out at the ceiling. A fact still true will be learned
 	// again; one that is not should not have survived.
+	sortFacts(m.facts)
 	for len(m.facts) > m.limit {
 		m.drop(m.facts[0].Name)
 	}
-
-	sortFacts(m.facts)
 	if err := m.writeIndex(); err != nil {
 		return err
 	}
