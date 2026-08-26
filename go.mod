@@ -7,7 +7,7 @@ require (
 	connectrpc.com/connect v1.20.0
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/grafana/agento11y/go v0.17.0
-	github.com/incantery/mote v0.0.0-20260826135230-ade204e868df
+	github.com/incantery/mote v0.0.0-20260826142856-fcf34250c458
 	github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.opentelemetry.io/contrib/exporters/autoexport v0.70.0
@@ -23,10 +23,12 @@ require (
 	charm.land/bubbles/v2 v2.2.1 // indirect
 	charm.land/glamour/v2 v2.0.1 // indirect
 	charm.land/lipgloss/v2 v2.0.6 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/alecthomas/chroma/v2 v2.20.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
