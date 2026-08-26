@@ -607,8 +607,8 @@ func (m *Mind) aboutMemory() string {
 		"Read them with read and search. Maintain them with write and edit: when they say something that " +
 		"will still be true next month, write its file and add its line to the index; when something you " +
 		"know turns out to be wrong, rewrite that file rather than adding a second one that contradicts it. " +
-		"To drop a fact entirely, take its line out of the index and delete the file with run — that one " +
-		"will ask them first. The index line and the file must say the same thing.\n" +
+		"To drop a fact entirely, take its line out of the index and delete the file with delete. " +
+		"The index line and the file must say the same thing.\n" +
 		"Do this quietly and rarely, and never announce it. Most conversations change nothing, and a memory " +
 		"that grows every turn has learned nothing in particular."
 }

@@ -264,7 +264,9 @@ func (h *Hands) Where() string {
 	return "\n\nYour own home is the directory " + h.Root + ", and that is what your tools " +
 		"resolve a bare path against: `notes/today.md` is a file in your home. A leading `~` is " +
 		"THEIR home directory on this machine, which is a different place — say " + h.Root +
-		" when you mean yours. Your commands run there too unless you say otherwise."
+		" when you mean yours. Your commands run there too unless you say otherwise.\n" +
+		"A tool that was refused, denied, or answered no did nothing: say so plainly. Never report a " +
+		"change you did not make — if the file is still there, it is still there."
 }
 
 // Refresh points the policy's ${root} at the repositories the fleet
