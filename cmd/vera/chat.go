@@ -25,6 +25,7 @@ import (
 	"github.com/incantery/mote/tui"
 	"github.com/incantery/vera/dump"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 )
 
 // fleetEvery is how often the fleet is re-read. The rail is drawn
@@ -482,7 +483,7 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 		// the rest of the line is the note at the top of its README.
 		conv, note := s.conversation(), rest
 		return off(func(context.Context) tea.Cmd {
-			res, err := dump.Build(dump.Options{Conversations: []string{conv}, Note: note, Version: version, Tar: true})
+			res, err := dump.Build(dump.Options{Conversations: []string{conv}, Note: note, Version: version, Tar: true, HomeDir: home.Path(veraHomeSetting())})
 			if err != nil {
 				return tui.Fail("dump: %s", err)
 			}

@@ -107,6 +107,7 @@ func Build(o Options) (Result, error) {
 	if o.HomeDir == "" {
 		o.HomeDir = home.Path("")
 	}
+
 	if o.Out == "" {
 		o.Out = filepath.Join(o.StateDir, "dumps", "vera-dump-"+o.Now.Format("20060102-150405"))
 	}

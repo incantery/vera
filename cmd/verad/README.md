@@ -324,6 +324,11 @@ It lives in Vera's home, which is a directory of Markdown:
   profiles/supervisor/   the profile mote will define
 ```
 
+`$VERA_HOME` moves it. verad is usually started by launchd, which
+passes no shell environment, so put it in `~/.config/vera/*.env` beside
+everything else; `vera home` reads the same file, so the two never
+disagree about where memory is.
+
 ```
 vera home                    # where it all is
 vera --memories              # what she remembers, and which file each is

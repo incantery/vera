@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/incantery/vera/dump"
+	"github.com/incantery/vera/home"
 )
 
 // `vera dump`: everything about what just happened, in a folder.
@@ -54,7 +55,7 @@ func runDump(args []string) error {
 			args = args[1:]
 		}
 	}
-	o := dump.Options{Out: *out, All: *all, Note: *note, Version: version, Tar: !*noTar}
+	o := dump.Options{Out: *out, All: *all, Note: *note, Version: version, Tar: !*noTar, HomeDir: home.Path(veraHomeSetting())}
 	if *since != "" {
 		d, err := time.ParseDuration(*since)
 		if err != nil {
