@@ -367,3 +367,17 @@ func TestEveryToolGoesThroughThePolicy(t *testing.T) {
 		t.Errorf("an unknown tool said %q", got)
 	}
 }
+
+func TestSeedProfileDropsTheExampleModel(t *testing.T) {
+	dir := t.TempDir()
+	if err := seedProfile(dir); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "profile.md"))
+	if strings.Contains(string(b), "\nmodel:") {
+		t.Fatalf("the seeded profile must not carry the example's model:\n%s", b)
+	}
+	if !strings.Contains(string(b), "tools:") {
+		t.Fatal("the rest of the front matter must survive")
+	}
+}

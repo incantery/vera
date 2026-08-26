@@ -243,6 +243,14 @@ func seedProfile(dir string) error {
 		if err != nil {
 			return err
 		}
+		if name == "profile.md" {
+			// The example names a model as an example. Copied as is,
+			// that placeholder outranks the model verad was started
+			// with (the profile's hint wins over the flag's default),
+			// and every reply is a 400. Her copy starts without one:
+			// the person adds a line when they mean it.
+			b = withoutModelLine(b)
+		}
 		if err := os.WriteFile(path, b, 0o600); err != nil {
 			return err
 		}
@@ -649,4 +657,17 @@ func jsonArgs(s string) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return json.RawMessage(s)
+}
+
+// withoutModelLine drops a `model:` line from a profile's front matter.
+func withoutModelLine(b []byte) []byte {
+	lines := strings.Split(string(b), "\n")
+	out := lines[:0]
+	for i, l := range lines {
+		if i > 0 && i < 8 && strings.HasPrefix(l, "model:") {
+			continue
+		}
+		out = append(out, l)
+	}
+	return []byte(strings.Join(out, "\n"))
 }
