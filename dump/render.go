@@ -140,6 +140,11 @@ func renderReadme(o Options, c *collected, res Result) string {
 		}
 	}
 
+	if res.Memories > 0 {
+		fmt.Fprintf(&b, "\n## What she knew\n\n%d memory %s, and the index that went into every prompt → `home/MEMORY.md`, `home/memory/`. What she knows about each repository → `home/projects/`.\n",
+			res.Memories, plural(res.Memories, "file", "files"))
+	}
+
 	fmt.Fprintf(&b, "\n## Cost\n\n%d Claude Code session(s), %s — details in `costs.md`.\n", res.Sessions, dollars(res.CostUSD, res.Priced))
 
 	b.WriteString(`
@@ -148,6 +153,7 @@ func renderReadme(o Options, c *collected, res Result) string {
 - ` + "`conversations/<id>.md`" + ` — the transcript with every tool round; ` + "`.jsonl`" + ` is the journal verbatim (system prompt per exchange, tokens, timings, trace ids); ` + "`.system.md`" + ` the last system prompt
 - ` + "`fleet/<task>/`" + ` — task.json, brief.md, status.log (the agent's own status verbs), report.md, claude.json (harness settings), run (the launch), env.keys, and ` + "`sessions/*.jsonl`" + `: the agent's Claude Code sessions verbatim, summarized in sessions.md
 - ` + "`delegate/`" + ` — Claude Code sessions of quick delegations
+- ` + "`home/`" + ` — Vera's home as it stands now: ` + "`MEMORY.md`" + ` (the index, verbatim as the prompt carried it), ` + "`memory/<slug>.md`" + ` one fact per file, ` + "`projects/<name>.md`" + ` what she knows about each repository. Her ` + "`notes/`" + ` are not included
 - ` + "`verad/`" + ` — the runfile, known projects, and the log for this window (±10 min)
 - ` + "`claude/settings.json`" + ` — the person's global Claude Code settings
 - ` + "`config.keys`, `versions.txt`, `costs.md`" + `
@@ -196,4 +202,11 @@ func shortPath(p string) string {
 		return p[i+1:]
 	}
 	return p
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

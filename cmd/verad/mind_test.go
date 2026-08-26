@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -145,4 +148,75 @@ func attributeSets(m metricdata.Metrics) [][]attributeKV {
 		}
 	}
 	return out
+}
+
+// What the prompt carries is MEMORY.md, whole, under the heading it
+// has always had — the wording is what the evals were written
+// against, and memory becoming a directory should not have moved it.
+func TestThePromptCarriesTheIndex(t *testing.T) {
+	place, err := home.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := &Mind{Memory: place.Memory()}
+
+	// Nothing known: no section at all, rather than an empty heading
+	// the model has to interpret.
+	if got := m.preface(); strings.Contains(got, "What you know about them") {
+		t.Fatalf("an empty memory still added a section:\n%s", got)
+	}
+
+	place.Memory().Apply(home.Revision{Add: []home.Note{
+		{Name: "lives-in-vienna", Type: home.TypeUser, Fact: "Lives in Vienna."},
+	}}, "c1")
+
+	got := m.preface()
+	if !strings.Contains(got, "What you know about them, from earlier conversations:") {
+		t.Fatalf("the heading changed:\n%s", got)
+	}
+	if !strings.Contains(got, "Lives in Vienna.") {
+		t.Fatalf("the fact did not reach the prompt:\n%s", got)
+	}
+	if !strings.Contains(got, "Do not mention it, list it, or bring it up unprompted.") {
+		t.Fatalf("the instruction not to perform its memory went missing:\n%s", got)
+	}
+	if !strings.HasPrefix(got, voice) {
+		t.Fatal("memory displaced the system prompt rather than following it")
+	}
+}
+
+// A project file per known repository in every prompt would be most of
+// the prompt and none of it read. Only the one they named.
+func TestOnlyTheProjectInPlayReachesThePrompt(t *testing.T) {
+	place, err := home.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := place.Project("rook", "/src/rook", "main", []string{"checks before landing: `zig build test`"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := place.Project("mote", "/src/mote", "main", nil); err != nil {
+		t.Fatal(err)
+	}
+	m := &Mind{Home: place}
+	repos := []fleet.Repo{{Name: "rook", Root: "/src/rook"}, {Name: "mote", Root: "/src/mote"}}
+
+	got := m.aboutProjects(repos, "how is the rook build looking")
+	if !strings.Contains(got, "zig build test") {
+		t.Fatalf("the named repo's file did not reach the prompt:\n%s", got)
+	}
+	if strings.Contains(got, "/src/mote") {
+		t.Errorf("a repo nobody mentioned came along:\n%s", got)
+	}
+	// The front matter is bookkeeping, not something to tell a model.
+	if strings.Contains(got, "root: /src/rook\nsince:") {
+		t.Errorf("front matter went into the prompt:\n%s", got)
+	}
+	if got := m.aboutProjects(repos, "what is the weather"); got != "" {
+		t.Errorf("nothing was named, so nothing should be said:\n%s", got)
+	}
+	// "rook" inside "rookie" is not the repository.
+	if got := m.aboutProjects(repos, "I was a rookie once"); got != "" {
+		t.Errorf("a substring pulled in a project note:\n%s", got)
+	}
 }

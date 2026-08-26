@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 	"io"
 	"log/slog"
@@ -57,7 +58,7 @@ type Mind struct {
 	Effort   string
 	Preface  string
 	History  *History
-	Memory   *Memory
+	Memory   *home.Memory
 	Delegate *Delegate
 	// Fleet is where work that outlives the conversation goes. Nil
 	// when there is no multiplexer to put a pane in.
@@ -71,6 +72,10 @@ type Mind struct {
 	// Attention is what the devices have reported about where the
 	// person is looking. Nil is fine: a mind with no senses.
 	Attention *Attention
+	// Home is where what she knows lives. The memory above is part of
+	// it; this is the rest — the project files, read when a repository
+	// is what the exchange is about.
+	Home *home.Home
 
 	instruments
 
@@ -133,7 +138,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	}
 
 	prior := m.History.recall(msg.Conversation)
-	system := m.preface() + m.present(msg.Device)
+	system := m.preface() + m.present(msg.Device, text)
 	var tools []map[string]any
 	if m.Delegate != nil {
 		tools = append(tools, m.Delegate.tool(m.Fleet != nil))
@@ -508,6 +513,11 @@ func findKey(explicit string) string {
 // preface is the system prompt actually in force, with whatever Vera
 // remembers folded in.
 //
+// What goes in is MEMORY.md — the index of her home, one line per
+// memory, whole. Not the memory files themselves: the index is what is
+// small enough to send on every exchange, and the bodies are for a
+// person reading them and for the tools Vera gets shortly.
+//
 // Memory is stated as things known rather than as instructions, and
 // with an explicit note not to bring them up unprompted — otherwise a
 // model reads a list of facts about someone as a list of topics it has
@@ -537,7 +547,7 @@ func (m *Mind) preface() string {
 // The wording tells the model the limits of what is known. "Ghostty has
 // focus" is a fact; what is in that terminal is not, unless something
 // reported it, and the model is told not to pretend otherwise.
-func (m *Mind) present(device string) string {
+func (m *Mind) present(device, said string) string {
 	var b strings.Builder
 	if m.Attention != nil {
 		if now := m.Attention.Describe(time.Now(), device); now != "" {
@@ -557,6 +567,95 @@ func (m *Mind) present(device string) string {
 				b.WriteString("\n- " + r.Name + ": " + r.Root)
 			}
 		}
+		b.WriteString(m.aboutProjects(repos, said))
 	}
 	return b.String()
+}
+
+// aboutProjects is what she knows about the repository this exchange
+// is about — where it is, what it branches from, what she has landed
+// in it. Only the ones in play: a project file per known repository in
+// every prompt would be most of the prompt, and none of it read.
+//
+// "In play" is either of the two things that can put a repo in front of
+// her: they named it, or the fleet is working in it right now.
+func (m *Mind) aboutProjects(repos []fleet.Repo, said string) string {
+	if m.Home == nil || len(repos) == 0 {
+		return ""
+	}
+	wanted := map[string]bool{}
+	for _, r := range repos {
+		if mentions(said, r.Name) {
+			wanted[r.Root] = true
+		}
+	}
+	// The store rather than Fleet.Tasks: this runs before every model
+	// call, and what is open is on disk. Tasks() would ask the
+	// multiplexer, which is a subprocess, for liveness nobody here
+	// needs.
+	if m.Fleet != nil && m.Fleet.Store != nil {
+		if tasks, err := m.Fleet.Store.List(); err == nil {
+			for _, t := range tasks {
+				if !t.Closed {
+					wanted[t.Project] = true
+				}
+			}
+		}
+	}
+
+	var b strings.Builder
+	shown := 0
+	for _, r := range repos {
+		if !wanted[r.Root] || shown >= maxProjectNotes {
+			continue
+		}
+		note, ok := m.Home.Note(r.Name, r.Root)
+		if !ok {
+			continue
+		}
+		if shown == 0 {
+			b.WriteString("\n\nWhat you know about the repositories this is about, from working in them before:")
+		}
+		b.WriteString("\n\n" + trim(note, projectNoteCap))
+		shown++
+	}
+	if shown > 0 {
+		b.WriteString("\n\nUse it the way you use anything else you remember: to answer without asking again. Do not recite it.")
+	}
+	return b.String()
+}
+
+// Two, because a question is about one repository and occasionally
+// about two, and never about nine.
+const (
+	maxProjectNotes = 2
+	projectNoteCap  = 2000
+)
+
+// mentions is a word match rather than a substring one: "rook" in
+// "rookie" is not the repository, and a project note pulled in by an
+// accident of spelling is prompt nobody asked for.
+func mentions(said, name string) bool {
+	if name == "" {
+		return false
+	}
+	said, name = strings.ToLower(said), strings.ToLower(name)
+	for i := 0; ; {
+		j := strings.Index(said[i:], name)
+		if j < 0 {
+			return false
+		}
+		j += i
+		before := j == 0 || !isWordByte(said[j-1])
+		end := j + len(name)
+		after := end == len(said) || !isWordByte(said[end])
+		if before && after {
+			return true
+		}
+		i = j + 1
+	}
+}
+
+func isWordByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
 }

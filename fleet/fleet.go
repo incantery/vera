@@ -50,7 +50,13 @@ type Fleet struct {
 	// answer for the main checkout.
 	Trust func(project, worktree string) error
 	// Observe hears every change of belief. Nil is fine.
-	Observe    func(Event)
+	Observe func(Event)
+	// Notes is where what the fleet learns about a repository is
+	// written down — Vera's home, in practice. The fleet resolves a
+	// repo, reads its conventions and lands branches in it on every
+	// task; without this it forgets all of that between tasks. Nil
+	// keeps no notes.
+	Notes      Notes
 	Thresholds Thresholds
 	// Every is the supervision cadence. Default 15s; pokes cut it short.
 	Every time.Duration
@@ -79,6 +85,17 @@ type Fleet struct {
 type resumeTry struct {
 	n  int
 	at time.Time
+}
+
+// Notes is the fleet's side of Vera's memory: a project file per
+// repository, and a line when a task lands in one. Deliberately plain
+// strings — the fleet should not know what a home directory is.
+type Notes interface {
+	// Project records a repository the fleet is about to work in.
+	// Called on every spawn; expected to be idempotent.
+	Project(name, root, branch string, conventions []string) error
+	// Landed records a task that finished in one.
+	Landed(name, root, task, brief string) error
 }
 
 // Event is one change of what Vera believes about a task.
@@ -168,6 +185,10 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 	if f.Projects != nil {
 		f.Projects.Remember(repo)
 	}
+	// Before anything is opened: the first task in a repository is
+	// what teaches Vera the repository exists, and it should still
+	// have taught her that if the spawn then fails.
+	f.note(repo)
 	if req.Kind == "" {
 		req.Kind = Ship
 	}
@@ -470,9 +491,38 @@ func (f *Fleet) land(ctx context.Context, t *Task) error {
 	default:
 		_ = f.Store.Append(t.ID, Status{Verb: Done, Text: "closed", By: "vera"})
 	}
+	if f.Notes != nil {
+		if err := f.Notes.Landed(baseName(t.Project), t.Project, t.Name, t.Brief); err != nil {
+			slog.Warn("fleet: could not record the landing", "task", t.ID, "error", err.Error())
+		}
+	}
 	_ = f.Mux.Kill(ctx, t.Pane)
 	f.closeRoom(ctx, t)
 	return f.close(t)
+}
+
+// note records the repository in Vera's memory: where it is, what it
+// branches from, and what its conventions say. Failure is a warning,
+// never a refusal to start work — a task must not fail because a
+// notebook could not be written in.
+func (f *Fleet) note(repo Repo) {
+	if f.Notes == nil {
+		return
+	}
+	c := LoadConventions(repo.Root)
+	var found []string
+	if len(c.Copy) > 0 {
+		found = append(found, "copied into each worktree: "+strings.Join(c.Copy, ", "))
+	}
+	if len(c.Link) > 0 {
+		found = append(found, "linked into each worktree: "+strings.Join(c.Link, ", "))
+	}
+	if len(c.Check) > 0 {
+		found = append(found, "checks before landing: `"+strings.Join(c.Check, "`, `")+"`")
+	}
+	if err := f.Notes.Project(repo.Name, repo.Root, repo.DefaultBranch(), found); err != nil {
+		slog.Warn("fleet: could not write the project note", "project", repo.Name, "error", err.Error())
+	}
 }
 
 // check runs the repository's landing checks in the worktree. The

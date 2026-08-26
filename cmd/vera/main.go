@@ -20,6 +20,7 @@ const usage = `vera — talk to her, and keep her running
   vera status             is verad up, where, since when
   vera log [-f]           verad's log
   vera url                the pairing page
+  vera home               where her memory lives (MEMORY.md, memory/, projects/)
   vera say [-c id] <text> one exchange, reply on stdout — for scripts and other agents
   vera tasks              every task and what is believed about it
   vera task <verb> ...    start | answer | report | land | stop | resume | seen — the fleet, by hand
@@ -54,6 +55,8 @@ func main() {
 		err = showLog(len(args) > 1 && args[1] == "-f")
 	case "url":
 		err = showURL()
+	case "home":
+		err = showHome()
 	case "sessions":
 		err = runSessions(args[1:])
 	case "dump":

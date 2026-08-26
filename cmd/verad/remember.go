@@ -6,11 +6,21 @@
 // rather than a pile of new facts — which is what lets "I moved to
 // Austin" correct "lives in Denver" instead of contradicting it.
 //
+// Since memory became a directory the revision speaks in slugs rather
+// than numbers: `lives-in-austin` written over `lives-in-denver` is a
+// file rewritten, and the model naming the file it means is the same
+// act as a person renaming one. Numbers were an id scheme nobody could
+// read; a slug is the fact, short.
+//
 // Most exchanges should produce nothing. That is stated hard in the
 // prompt and it is the single thing most worth watching: a memory that
 // grows on every turn is a memory that has learned nothing in
 // particular, and it makes every later prompt longer, slower and more
 // expensive for no gain.
+//
+// This is a bridge. Vera writes her own memory with tools at mote
+// milestone 5, and then extraction is a thing she does deliberately
+// rather than a thing that happens to her.
 package main
 
 import (
@@ -19,16 +29,19 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/incantery/vera/home"
 )
 
 const remembering = `You maintain long-term memory about one person, from their conversations with an assistant.
 
-You are given what is already known, then one exchange. Decide what — if anything — should change.
+The memory is a directory of files, one fact per file, named by a short slug. You are given the index — the slug and the fact — then one exchange. Decide what, if anything, should change.
 
 Keep ONLY things likely to still be true weeks from now:
-  - stable facts about them (where they live, what they do, who is in their life)
-  - lasting preferences, constraints, and dislikes
-  - ongoing situations, plans and commitments with a horizon
+  - stable facts about them (where they live, what they do, who is in their life) — type "user"
+  - lasting preferences, constraints, dislikes, and how they want to be worked with — type "feedback"
+  - ongoing work, plans and commitments with a horizon — type "project"
+  - where something of theirs lives: a repository, a dashboard, a document — type "reference"
 
 Never keep:
   - what they asked, or anything about this exchange as an event
@@ -36,14 +49,18 @@ Never keep:
   - passing states ("tired today"), one-off facts they looked up, or general knowledge
   - anything already known, in any wording
 
-Correct rather than accumulate: if something contradicts or refines a known fact, REPLACE that fact by its number.
+Correct rather than accumulate: if something contradicts or refines a known fact, UPDATE that fact by its slug. Give the update the slug it should have afterwards only if the fact itself changed subject; otherwise keep the existing slug.
 
 Write each fact as a short, self-contained third-person statement that will still make sense with no other context. "Lives in Vienna", not "moved there last year".
 
 Resolve every relative date against today's date, given below, and write the absolute one. "Starts at Grafana on 2 September 2026", never "starts in two weeks" — a fact that expires quietly is worse than one you never kept.
 
+Slugs are lowercase words joined by hyphens, and say what the fact is about: "lives-in-vienna", "prefers-short-answers", "rebuilding-vera-on-mote".
+
 Answer with JSON and nothing else:
-{"add": ["..."], "replace": [{"id": 3, "with": "..."}], "remove": [7]}
+{"add": [{"name": "lives-in-vienna", "type": "user", "fact": "Lives in Vienna."}],
+ "update": [{"name": "lives-in-denver", "type": "user", "fact": "Lives in Austin."}],
+ "remove": ["owns-a-dog"]}
 
 Most exchanges change nothing. For those, answer exactly: {}`
 
@@ -91,8 +108,10 @@ func (m *Mind) remember(conversation, said, answered string) {
 	}
 
 	before := m.Memory.Count()
-	if !revision.empty() {
-		m.Memory.Apply(revision, conversation)
+	if !revision.Empty() {
+		if err := m.Memory.Apply(revision, conversation); err != nil {
+			slog.Warn("could not write what was remembered", "error", err.Error(), "conversation", conversation)
+		}
 	}
 
 	// Extraction is a real cost on every exchange, so it is metered
@@ -101,9 +120,10 @@ func (m *Mind) remember(conversation, said, answered string) {
 	// cost of chatting.
 	m.recordSecondary(ctx, "remember", used, time.Since(started))
 
+	added, updated, removed := revision.Counts()
 	slog.Info("remembered",
 		"gen_ai.conversation.id", conversation,
-		"added", len(revision.Add), "replaced", len(revision.Replace), "removed", len(revision.Remove),
+		"added", added, "updated", updated, "removed", removed,
 		"facts_before", before, "facts_after", m.Memory.Count(),
 		"gen_ai.usage.input_tokens", used.Prompt,
 		"gen_ai.usage.output_tokens", used.Completion,
@@ -114,8 +134,9 @@ func (m *Mind) remember(conversation, said, answered string) {
 
 // parseRevision is forgiving about the wrapping and strict about the
 // shape. Models fence JSON in markdown often enough that refusing it
-// would throw away good answers.
-func parseRevision(raw string) (Revision, bool) {
+// would throw away good answers — and they write "replace" for
+// "update" often enough that refusing that would too.
+func parseRevision(raw string) (home.Revision, bool) {
 	s := strings.TrimSpace(raw)
 	if fence := strings.Index(s, "```"); fence >= 0 {
 		s = s[fence+3:]
@@ -128,12 +149,17 @@ func parseRevision(raw string) (Revision, bool) {
 	}
 	start, end := strings.Index(s, "{"), strings.LastIndex(s, "}")
 	if start < 0 || end < start {
-		return Revision{}, false
+		return home.Revision{}, false
 	}
-	var r Revision
-	if json.Unmarshal([]byte(s[start:end+1]), &r) != nil {
-		return Revision{}, false
+	var wire struct {
+		home.Revision
+		Replace []home.Note `json:"replace"`
 	}
+	if json.Unmarshal([]byte(s[start:end+1]), &wire) != nil {
+		return home.Revision{}, false
+	}
+	r := wire.Revision
+	r.Update = append(r.Update, wire.Replace...)
 	return r, true
 }
 

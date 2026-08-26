@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 )
 
@@ -34,6 +35,7 @@ type Options struct {
 	StateDir  string // ~/.local/state/vera
 	ClaudeDir string // ~/.claude
 	ConfigDir string // ~/.config/vera
+	HomeDir   string // ~/vera — MEMORY.md and the memory files
 	// Out is the folder to write; "" puts it under StateDir/dumps.
 	Out string
 	// Conversations to include, by id (a prefix will do). Tasks to
@@ -64,6 +66,8 @@ type Result struct {
 	CostUSD float64
 	Priced  bool
 	Files   int
+	// Memories is how many memory files were copied.
+	Memories int
 }
 
 type collected struct {
@@ -90,16 +94,20 @@ func Build(o Options) (Result, error) {
 	if o.Now.IsZero() {
 		o.Now = time.Now()
 	}
-	home, _ := os.UserHomeDir()
+	userHome, _ := os.UserHomeDir()
 	if o.StateDir == "" {
-		o.StateDir = filepath.Join(home, ".local", "state", "vera")
+		o.StateDir = filepath.Join(userHome, ".local", "state", "vera")
 	}
 	if o.ClaudeDir == "" {
-		o.ClaudeDir = filepath.Join(home, ".claude")
+		o.ClaudeDir = filepath.Join(userHome, ".claude")
 	}
 	if o.ConfigDir == "" {
-		o.ConfigDir = filepath.Join(home, ".config", "vera")
+		o.ConfigDir = filepath.Join(userHome, ".config", "vera")
 	}
+	if o.HomeDir == "" {
+		o.HomeDir = home.Path("")
+	}
+
 	if o.Out == "" {
 		o.Out = filepath.Join(o.StateDir, "dumps", "vera-dump-"+o.Now.Format("20060102-150405"))
 	}
@@ -154,6 +162,12 @@ func Build(o Options) (Result, error) {
 		res.CostUSD += usd
 		res.Priced = res.Priced && priced
 	}
+
+	// Her home: what she believed. A dump exists to answer "why did
+	// Vera say that", and half of that answer is usually a fact she
+	// was carrying in the prompt — so the index and the memory files
+	// go in, redacted like everything else.
+	res.Memories = w.home(o.HomeDir)
 
 	w.copy("verad/verad.json", filepath.Join(o.StateDir, "verad.json"))
 	w.copy("verad/projects.json", filepath.Join(o.StateDir, "projects.json"))
@@ -391,6 +405,33 @@ func (w *writer) copy(rel, src string) {
 		return
 	}
 	w.text(rel, string(b))
+}
+
+// home copies Vera's home: the index, every memory file, and every
+// project file. Not notes/ or profiles/ — those are hers, and a dump
+// is something a person hands to somebody else.
+func (w *writer) home(root string) int {
+	if root == "" {
+		return 0
+	}
+	w.copy("home/"+home.Index, filepath.Join(root, home.Index))
+	n := 0
+	for _, dir := range []string{home.MemoryDir, home.ProjectsDir} {
+		entries, err := os.ReadDir(filepath.Join(root, dir))
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			w.copy("home/"+dir+"/"+e.Name(), filepath.Join(root, dir, e.Name()))
+			if dir == home.MemoryDir {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 func (w *writer) jsonl(rel string, entries []journal.Entry) {

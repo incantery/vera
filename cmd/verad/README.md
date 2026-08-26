@@ -27,7 +27,6 @@ rook.go        the terminal adapter: what is inside the terminal, over mux.Mux
 fleet.go       the fleet over the wire
 usage.go       what is left of the Claude Code subscription
 usage_meter.go reporting that on a timer
-memory.go      what survives a restart
 remember.go    deciding what was worth keeping
 eval.go        the suite runner and its scorers
 evals/         the cases themselves
@@ -35,6 +34,7 @@ main.go        wiring
 
 ../mux/        the multiplexer as Vera sees it; tmux backend
 ../fleet/      rooms Vera opens for coding agents, and the watch over them
+../home/       her home on disk: memory as files, one fact per file
 ```
 
 `Transport` is message-shaped rather than HTTP-shaped, because the next
@@ -311,13 +311,41 @@ the previous run.
 Everything here follows from that: a fact worth keeping is one still
 true in a conversation that has not happened yet.
 
+It lives in Vera's home, which is a directory of Markdown:
+
 ```
-vera --memories              # what it remembers
-vera --forget 3,7            # or --forget all
+~/vera/                  $VERA_HOME overrides; `vera home` prints it
+  MEMORY.md              the index — one line per memory, and the part
+                         that goes into every prompt
+  memory/<slug>.md       one fact per file: front matter (name,
+                         description, type, since, from) then the fact
+  projects/<name>.md     what she knows about a repository
+  notes/                 hers, to write in later
+  profiles/supervisor/   the profile mote will define
+```
+
+`$VERA_HOME` moves it. verad is usually started by launchd, which
+passes no shell environment, so put it in `~/.config/vera/*.env` beside
+everything else; `vera home` reads the same file, so the two never
+disagree about where memory is.
+
+```
+vera home                    # where it all is
+vera --memories              # what she remembers, and which file each is
+vera --forget lives-in-vienna   # by slug; or --forget all
 vera --no-memory             # answer without it, and learn nothing
 ```
 
-Three decisions worth arguing with:
+It used to be one JSON array under `~/.local/state`. verad migrates
+that file once on start, keeps it as `memory.json.migrated`, and says
+so in the log. **The files are the truth and `MEMORY.md` is derived
+from them**, so a file edited by hand wins, deleting a file is
+forgetting it, and an index mangled by hand heals on the next write.
+That is the whole point: a memory you cannot see is a memory you
+cannot correct, and one wrong fact quietly colours every answer after
+it.
+
+Four decisions worth arguing with:
 
 **Writing is asynchronous, reading is synchronous.** Extraction is a
 second model call. In front of the reply it would add its latency to
@@ -325,16 +353,27 @@ every exchange, to serve a fact not needed until the *next* one. So the
 reply goes out and remembering happens behind it. `Mind.Settle` waits
 for it when a process is quitting.
 
-**Everything goes in the prompt; nothing is retrieved.** One person
+**The index goes in the prompt; nothing is retrieved.** One person
 accumulates tens to low hundreds of durable facts — small enough to
 send whole. Embeddings are the right answer at thousands and a way of
 looking busy at fifty, and retrieval fails in the worst way: by
-silently not finding the thing that mattered.
+silently not finding the thing that mattered. What goes in is
+`MEMORY.md`, capped at 6 kB, and a cap that trims says out loud that it
+did — the bodies are for a person reading them, and for the tools Vera
+gets at mote milestone 5.
 
 **Facts are replaced, not accumulated.** Someone who moves from Denver
-to Austin has not become a person who lives in two places. Corrections
-keep the fact's id, so it stays the same fact rather than a second one
-sitting beside the first.
+to Austin has not become a person who lives in two places. The slug is
+what makes that mechanical: the extractor answers in slugs, not
+numbers, so writing over `lives-in-denver` is a file rewritten — and a
+second file would have been a contradiction the model then arbitrates
+on every turn.
+
+**The directory can change under us.** A person with an editor is the
+ordinary case here, not a race to defend against, so every read checks
+the directory and re-reads if it moved, and every write derives the
+index from the files rather than from the copy in hand. One writer lock
+per process; each file goes down through a temporary and a rename.
 
 Relative dates are resolved at extraction — "starts in two weeks"
 becomes "starts on 2 September 2026" — because a fact that expires
@@ -350,6 +389,22 @@ cost of remembering can be told apart from the cost of answering rather
 than quietly inflating it.
 
 It is one person's memory. There is no user id anywhere.
+
+**The fleet remembers repositories too.** The first task in a repo
+writes `projects/<name>.md` — where it is, what it branches from, what
+its `rook.toml` says — and a task that lands appends a line to it. The
+fleet already learned all of that on every task and then threw it away.
+Project files are created once and only appended to afterwards: a
+person editing "what this repo is" is exactly the point.
+
+A project file reaches the prompt only when the repository is in play:
+they named it, or the fleet has a task open in it. At most two, capped.
+Every known repository's file in every prompt would be most of the
+prompt and none of it read.
+
+Extraction writing files is a bridge. Vera curates her own memory with
+tools at mote milestone 5, and then remembering is something she does
+deliberately rather than something that happens to her.
 
 ## Peer-to-peer
 
