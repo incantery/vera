@@ -10,6 +10,10 @@
 // It is one of mote's tools, in the same registry as read and write
 // and decided by the same policy, so that there is one path from a
 // call to a result and one place a person can say what is allowed.
+//
+// What it needs beyond the model's arguments — which device asked,
+// which repository is in front of them, somewhere to put a line while
+// a room opens — arrives on the Handle the harness lends it.
 package main
 
 import (
@@ -17,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -25,16 +28,13 @@ import (
 	"github.com/incantery/vera/fleet"
 )
 
-// FleetTool is the one tool with five verbs. One tool rather than five
+// FleetTool is the one tool with six verbs. One tool rather than six
 // keeps the model's choice binary — answer, or reach for the fleet —
 // and the verb is a detail it fills in after.
 type FleetTool struct {
 	// Fleet is the rooms themselves. Nil is not registered: a Vera
 	// with no multiplexer has no fleet to offer.
 	Fleet *fleet.Fleet
-	// Attention is where the person is looking, which is how a start
-	// with no project named means the repository in front of them.
-	Attention *Attention
 }
 
 func (t *FleetTool) Name() string { return "fleet" }
@@ -112,20 +112,19 @@ func (t *FleetTool) Paths(args json.RawMessage) []string {
 	return []string{a.Project}
 }
 
-// Command is the verb, so that a rule can key on it.
+// Scope is how far an "always" about one of these calls reaches: the
+// verb, and only the verb.
 //
-// A policy matches a tool by name, a path by glob and a command by
-// prefix, and the command is the only one of the three that can see
-// an argument at all. The fleet needs one — `list` reports and `stop`
-// abandons a person's work, and those are not the same question — so
-// it says its verb here and `tools = ["fleet"], commands = ["stop"]`
-// is a rule about a verb.
+// The fleet is one tool with six of them, and they are not one
+// question. A person who says always to a `list` has said the fleet
+// may report on itself; they have not said it may abandon a task.
+// Saying so here rather than letting the Gate guess is what keeps
+// those apart, and the grant reads back as "fleet stop".
 //
-// The verb alone rather than "fleet stop": mote reads the first word
-// of a command as what an "always" covers, so this way a person who
-// says always to stopping one task has said it about stopping, and
-// the grant reads back as "fleet stop" rather than "fleet fleet".
-func (t *FleetTool) Command(args json.RawMessage) string {
+// A rule that decides BEFORE anybody is asked keys on the same
+// argument a different way — `when = { action = "stop" }` — and that
+// is the policy's half of this. See policyRules.
+func (t *FleetTool) Scope(args json.RawMessage) string {
 	var a fleetArgs
 	if json.Unmarshal(args, &a) != nil {
 		return ""
@@ -139,7 +138,7 @@ func (t *FleetTool) Command(args json.RawMessage) string {
 // opened, a verb with nothing to act on. Everything that did happen
 // comes back as text, including a picture of tasks that says several
 // of them are stuck.
-func (t *FleetTool) Run(ctx context.Context, args json.RawMessage, out io.Writer) (tool.Result, error) {
+func (t *FleetTool) Run(ctx context.Context, args json.RawMessage, h tool.Handle) (tool.Result, error) {
 	if t.Fleet == nil {
 		return tool.Result{}, errors.New("there is no fleet: no multiplexer to open a room in")
 	}
@@ -147,18 +146,22 @@ func (t *FleetTool) Run(ctx context.Context, args json.RawMessage, out io.Writer
 	if json.Unmarshal(args, &a) != nil || a.Action == "" {
 		return tool.Result{}, errors.New("the request was not readable")
 	}
-	r := roundOf(ctx)
-	// The task id before the work, so a round that fails still says
-	// which task it was about.
-	r.link(a.Task, "", 0)
-	text, err := t.act(ctx, r, a)
-	if err != nil {
-		return tool.Result{}, err
+	// The task this call is about, for the harness's record. It is set
+	// before the work so that a round which fails still says which
+	// task it failed on, and a start overwrites it with the id of the
+	// task it opened.
+	meta := map[string]any{}
+	if a.Task != "" {
+		meta[tool.MetaTask] = a.Task
 	}
-	return tool.Result{Text: text}, nil
+	text, err := t.act(ctx, h, meta, a)
+	if err != nil {
+		return tool.Result{Meta: meta}, err
+	}
+	return tool.Result{Text: text, Meta: meta}, nil
 }
 
-func (t *FleetTool) act(ctx context.Context, r *round, args fleetArgs) (string, error) {
+func (t *FleetTool) act(ctx context.Context, h tool.Handle, meta map[string]any, args fleetArgs) (string, error) {
 	switch args.Action {
 	case "list":
 		views, err := t.Fleet.Tasks(ctx)
@@ -179,18 +182,20 @@ func (t *FleetTool) act(ctx context.Context, r *round, args fleetArgs) (string, 
 			return "", fmt.Errorf("a task needs a brief: say what should be accomplished")
 		}
 		project := args.Project
-		if project == "" && t.Attention != nil {
-			project = t.Attention.TerminalPath(r.device)
+		if project == "" {
+			// The repository in front of them, which the harness knows
+			// and the model did not say.
+			project = h.Value(tool.Cwd)
 		}
 		if project == "" {
 			return "", fmt.Errorf("no repository was named and none is in front of them; ask which project")
 		}
-		r.say("Opening a room for that…")
+		h.Say("Opening a room for that…")
 		task, err := t.Fleet.Spawn(ctx, fleet.Request{Project: project, Kind: fleet.Kind(args.Kind), Brief: args.Brief})
 		if err != nil {
 			return "", err
 		}
-		r.link(task.ID, "", 0)
+		meta[tool.MetaTask] = task.ID
 		where := "in " + shortPath(task.Project)
 		if task.Branch != "" {
 			where += " on branch " + task.Branch
@@ -211,7 +216,7 @@ func (t *FleetTool) act(ctx context.Context, r *round, args fleetArgs) (string, 
 		if args.Task == "" {
 			return "", fmt.Errorf("resume needs a task id")
 		}
-		r.say("Picking it back up…")
+		h.Say("Picking it back up…")
 		task, err := t.Fleet.Resume(ctx, args.Task)
 		if err != nil {
 			return "", err
@@ -222,7 +227,7 @@ func (t *FleetTool) act(ctx context.Context, r *round, args fleetArgs) (string, 
 		if args.Task == "" {
 			return "", fmt.Errorf("land needs a task id")
 		}
-		r.say("Landing it…")
+		h.Say("Landing it…")
 		if err := t.Fleet.Land(ctx, args.Task); err != nil {
 			return "", err
 		}

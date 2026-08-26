@@ -417,7 +417,7 @@ func main() {
 			own = append(own, &DelegateTool{Delegate: mind.Delegate, WithFleet: mind.Fleet != nil})
 		}
 		if mind.Fleet != nil {
-			own = append(own, &FleetTool{Fleet: mind.Fleet, Attention: mind.Attention})
+			own = append(own, &FleetTool{Fleet: mind.Fleet})
 		}
 		if err := mind.Hands.Adopt(own...); err != nil {
 			fmt.Fprintln(os.Stderr, "vera: cannot register her own tools ("+err.Error()+")")

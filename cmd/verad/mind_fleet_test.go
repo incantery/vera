@@ -131,11 +131,11 @@ func TestOnlyAStartNamesAPath(t *testing.T) {
 	if got := f.Paths([]byte(`{"action":"stop","task":"a1"}`)); got != nil {
 		t.Errorf("stop named a path: %v", got)
 	}
-	if got := f.Command([]byte(`{"action":"stop","task":"a1"}`)); got != "stop" {
-		t.Errorf("the verb a rule keys on is %q", got)
+	if got := f.Scope([]byte(`{"action":"stop","task":"a1"}`)); got != "stop" {
+		t.Errorf("the verb an \"always\" is about is %q", got)
 	}
-	if got := f.Command([]byte(`not json`)); got != "" {
-		t.Errorf("unreadable arguments produced a command: %q", got)
+	if got := f.Scope([]byte(`not json`)); got != "" {
+		t.Errorf("unreadable arguments produced a scope: %q", got)
 	}
 }
 

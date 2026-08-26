@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -115,7 +114,7 @@ const delegateSchema = `{
 // not start, a run that outlived its timeout. A task that ran and
 // came back unhappy is a Result saying so: the model can work with
 // that, and it is not a failure of the tool.
-func (t *DelegateTool) Run(ctx context.Context, args json.RawMessage, out io.Writer) (tool.Result, error) {
+func (t *DelegateTool) Run(ctx context.Context, args json.RawMessage, h tool.Handle) (tool.Result, error) {
 	if t.Delegate == nil {
 		return tool.Result{}, errors.New("there is nobody to hand this to")
 	}
@@ -126,30 +125,34 @@ func (t *DelegateTool) Run(ctx context.Context, args json.RawMessage, out io.Wri
 		return tool.Result{}, errors.New("the task was not readable — say what you want done in plain prose")
 	}
 
-	r := roundOf(ctx)
 	// A delegated task takes seconds to minutes, and a silent screen
 	// for that long reads as broken — so the status says what is being
-	// done, in Vera's voice, not "running tool".
-	r.say(delegating(a.Task))
+	// done, in the harness's voice, not "running tool".
+	h.Say(delegating(a.Task))
 
 	started := time.Now()
 	res, err := t.Delegate.run(ctx, a.Task)
 	elapsed := time.Since(started)
-	logDelegation(r.conversation, a.Task, res, elapsed, err)
-	// What it cost is money rather than tokens, and the journal keeps
-	// it beside the round: Claude Code bills its own way, and hiding
-	// that inside the exchange would make delegation look free.
-	r.link("", res.Session, res.Cost)
+	logDelegation(h.Value(keyConversation), a.Task, res, elapsed, err)
+
+	// What it reached, for the harness and not for the model: the
+	// Claude Code session it opened, and what that session cost. The
+	// cost is money rather than tokens — Claude Code bills its own
+	// way, and hiding it inside the exchange would make delegation
+	// look free.
+	meta := map[string]any{tool.MetaSession: res.Session, tool.MetaCost: res.Cost}
 
 	switch {
 	case err != nil:
-		return tool.Result{}, err
+		// The Meta goes back even on a failure: a run that was killed
+		// by its timeout still spent what it spent.
+		return tool.Result{Meta: meta}, err
 	case res.Failed:
-		return tool.Result{Text: "The task did not succeed. What came back: " + trim(res.Result, 4000)}, nil
+		return tool.Result{Text: "The task did not succeed. What came back: " + trim(res.Result, 4000), Meta: meta}, nil
 	case strings.TrimSpace(res.Result) == "":
-		return tool.Result{Text: "The task finished but reported nothing."}, nil
+		return tool.Result{Text: "The task finished but reported nothing.", Meta: meta}, nil
 	}
-	return tool.Result{Text: res.Result}, nil
+	return tool.Result{Text: res.Result, Meta: meta}, nil
 }
 
 type delegated struct {

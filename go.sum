@@ -79,6 +79,8 @@ github.com/incantery/mote v0.0.0-20260826142856-fcf34250c458 h1:4ID/Id25Go9LYVmQ
 github.com/incantery/mote v0.0.0-20260826142856-fcf34250c458/go.mod h1:YNLOPWytaPdLwTDLCcwGwVFUoxu7HdfyYl00ItU1M2I=
 github.com/incantery/mote v0.0.0-20260826155916-d4fb761d03ca h1:uK/WltxFbKKLh6/WoGlYOjDyPbGjSvKSpinRKuNo3FU=
 github.com/incantery/mote v0.0.0-20260826155916-d4fb761d03ca/go.mod h1:WiE/JbXQwxRRMF97T0D1g76W81dDRLfd6Nu7PKUhbVo=
+github.com/incantery/mote v0.0.0-20260826163410-f67f3a51b1d5 h1:szHhKQbeK7Y3aQqmhrxuHZjdyTvxjOIahI2SzrblTDo=
+github.com/incantery/mote v0.0.0-20260826163410-f67f3a51b1d5/go.mod h1:hpr19pnL0sckMXz9CZuz2ONl8hLJOKVDAL7yqZo0/Is=
 github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc h1:z1d3g/fou7eW978AOY8riurgqK0oZQdHIkRxcjnWa8I=
 github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc/go.mod h1:Gv38TyMudM/6yaFxBn1EscKbGfSx/deU5NMIBB3X62I=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=

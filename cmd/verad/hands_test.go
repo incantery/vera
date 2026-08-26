@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -255,10 +254,11 @@ func TestLongArgumentsAreCapped(t *testing.T) {
 
 // --- the one path ------------------------------------------------------
 
-// sayingTool does the two things only Vera's own tools do: it says
-// something while it works, and it reaches something — a task, a
-// session, a cost — that the journal keeps beside the result. mote's
-// Run carries neither, so both come through the round.
+// sayingTool does the three things only Vera's own tools do: it says
+// something in the harness's voice while it works, it reads what the
+// harness knows about the call, and it reaches something — a task, a
+// session, a cost — that the journal keeps beside the result. All
+// three arrive on, or leave by, the Handle.
 type sayingTool struct{ err error }
 
 func (sayingTool) Name() string        { return "saying" }
@@ -267,15 +267,22 @@ func (sayingTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{}}`)
 }
 
-func (t sayingTool) Run(ctx context.Context, args json.RawMessage, out io.Writer) (tool.Result, error) {
-	r := roundOf(ctx)
-	r.say("Opening a room for that…")
-	r.link("task-9", "session-9", 0.25)
-	_, _ = out.Write([]byte("half way"))
-	if t.err != nil {
-		return tool.Result{}, t.err
+func (t sayingTool) Run(ctx context.Context, args json.RawMessage, h tool.Handle) (tool.Result, error) {
+	h.Say("Opening a room for that…")
+	_, _ = h.Write([]byte("half way"))
+	meta := map[string]any{
+		tool.MetaTask:    "task-9",
+		tool.MetaSession: "session-9",
+		tool.MetaCost:    0.25,
 	}
-	return tool.Result{Text: "done, for " + r.device}, nil
+	if t.err != nil {
+		return tool.Result{Meta: meta}, t.err
+	}
+	return tool.Result{
+		Text: "done, for " + h.Value(tool.Device) + ", in " + h.Value(tool.Cwd) +
+			", on " + h.Value(keyConversation),
+		Meta: meta,
+	}, nil
 }
 
 // oneCall builds the exchange the way think does and runs a single
@@ -286,7 +293,9 @@ func oneCall(t *testing.T, h *Hands, tl tool.Tool) (string, []Frame, *exchange) 
 		t.Fatal(err)
 	}
 	h.policy.Tools[tl.Name()] = tool.Allow
-	m := &Mind{Hands: h, Model: "m", instruments: newInstruments()}
+	m := &Mind{Hands: h, Model: "m", Attention: newAttention(), instruments: newInstruments()}
+	m.Attention.Observe(Observation{Device: "phone", Type: "terminal.focus",
+		Terminal: &TerminalFocus{Session: "s", Window: "w", Path: "/src/rook"}})
 	ctx, x := m.begin(context.Background(), Message{Conversation: "c", Device: "phone"}, "hi", 0, "system", nil)
 	var frames []Frame
 	call := provider.Call{ID: "call_1", Name: tl.Name(), Arguments: `{}`}
@@ -297,12 +306,12 @@ func oneCall(t *testing.T, h *Hands, tl tool.Tool) (string, []Frame, *exchange) 
 	return said, frames, x
 }
 
-func TestARoundCarriesWhatRunCannot(t *testing.T) {
+func TestAHandleCarriesWhatRunCannot(t *testing.T) {
 	h, _, _ := newHands(t)
 	said, frames, x := oneCall(t, h, sayingTool{})
 
-	if said != "done, for phone" {
-		t.Errorf("the tool never saw which device asked: %q", said)
+	if said != "done, for phone, in /src/rook, on c" {
+		t.Errorf("the tool did not get what the harness knows: %q", said)
 	}
 	var status, output string
 	for _, f := range frames {
@@ -324,7 +333,8 @@ func TestARoundCarriesWhatRunCannot(t *testing.T) {
 	if x.signMillis() < 0 || x.seen == 0 {
 		t.Error("a status line did not count as something appearing")
 	}
-	// And the journal's round knows what the call reached.
+	// And the journal's round knows what the call reached, out of the
+	// Result's Meta.
 	if x.pending.Task != "task-9" || x.pending.Session != "session-9" || x.pending.CostUSD != 0.25 {
 		t.Errorf("the round did not record what it reached: %+v", x.pending)
 	}
