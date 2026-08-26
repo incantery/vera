@@ -56,16 +56,11 @@ func TestWorkspaceDefaultsSomewhereOfItsOwn(t *testing.T) {
 // The description is the entire basis on which the model decides
 // between answering and delegating.
 func TestTheToolDescribesWhenToUseIt(t *testing.T) {
-	d := &Delegate{}
-	tool := d.tool(false)
-	fn, ok := tool["function"].(map[string]any)
-	if !ok {
-		t.Fatal("the tool has no function")
+	d := &DelegateTool{Delegate: &Delegate{}}
+	if d.Name() != "delegate" {
+		t.Fatalf("tool is named %q", d.Name())
 	}
-	if fn["name"] != "delegate" {
-		t.Fatalf("tool is named %v", fn["name"])
-	}
-	desc, _ := fn["description"].(string)
+	desc := d.Description()
 	for _, needed := range []string{"Do not use it", "files", "commands"} {
 		if !strings.Contains(desc, needed) {
 			t.Errorf("the description never mentions %q, so the model has to guess", needed)

@@ -14,15 +14,19 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/incantery/vera/fleet"
-	"go.opentelemetry.io/otel/propagation"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/incantery/mote/tool"
+	"github.com/incantery/vera/fleet"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // The workspace is Vera's own directory, not yours. Claude Code starts
@@ -49,45 +53,103 @@ type Delegate struct {
 	Telemetry bool
 }
 
-// tool is what the model is told it can reach for. The description is
-// load-bearing — it is the entire basis on which the model decides
-// between answering and delegating, so it says what the delegate is
-// GOOD at rather than what it is.
-func (d *Delegate) tool(withFleet bool) map[string]any {
-	description := "Hand a task to Claude Code, a capable coding agent running on this Mac. " +
-		"It can read and write files, run shell commands, use git, search the web, and work " +
-		"through a multi-step task on its own. Use it when answering requires DOING something " +
-		"on the machine, or looking something up that you cannot know. Do not use it for " +
-		"conversation, opinions, or anything you can simply answer."
+// DelegateTool is what the model is told it can reach for. The
+// description is load-bearing — it is the entire basis on which the
+// model decides between answering and delegating, so it says what the
+// delegate is GOOD at rather than what it is.
+//
+// It is one of mote's tools, in the same registry as read and write,
+// so a delegation is decided, run and journalled by the same path as
+// everything else she does.
+type DelegateTool struct {
+	// Delegate is the Claude Code this hands work to.
+	Delegate *Delegate
+	// WithFleet changes what the model is told, not what happens.
+	// Beside the fleet this is the SMALL tool and has to read as one.
+	WithFleet bool
+}
+
+func (t *DelegateTool) Name() string { return "delegate" }
+
+func (t *DelegateTool) Description() string { return delegateDescription(t.WithFleet) }
+
+func delegateDescription(withFleet bool) string {
 	if withFleet {
 		// Beside the fleet, this is the SMALL tool, and it must read as
 		// the small tool or the model will keep reaching for it: a
 		// task it saw first, that returns a result it can quote.
-		description = "Hand a QUICK job to Claude Code — a lookup, a one-off command, a small fact " +
+		return "Hand a QUICK job to Claude Code — a lookup, a one-off command, a small fact " +
 			"about this machine — that finishes within a minute or two while the person waits. " +
 			"It runs in a scratch directory, NOT in any repository, and the person waits for the " +
 			"result. Never use it for work on code, work in a repository, or anything that will " +
 			"take more than a couple of minutes: that is the fleet tool's job. Do not use it for " +
 			"conversation, opinions, or anything you can simply answer."
 	}
-	return map[string]any{
-		"type": "function",
-		"function": map[string]any{
-			"name":        "delegate",
-			"description": description,
-			"parameters": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"task": map[string]any{
-						"type": "string",
-						"description": "What to accomplish, in plain prose, with everything needed to " +
-							"act on it alone. Say the goal, not the steps.",
-					},
-				},
-				"required": []string{"task"},
-			},
-		},
+	return "Hand a task to Claude Code, a capable coding agent running on this Mac. " +
+		"It can read and write files, run shell commands, use git, search the web, and work " +
+		"through a multi-step task on its own. Use it when answering requires DOING something " +
+		"on the machine, or looking something up that you cannot know. Do not use it for " +
+		"conversation, opinions, or anything you can simply answer."
+}
+
+func (t *DelegateTool) Schema() json.RawMessage { return json.RawMessage(delegateSchema) }
+
+const delegateSchema = `{
+  "type": "object",
+  "properties": {
+    "task": {
+      "type": "string",
+      "description": "What to accomplish, in plain prose, with everything needed to act on it alone. Say the goal, not the steps."
+    }
+  },
+  "required": ["task"]
+}`
+
+// No Paths and no Command: a delegated task is prose, and the paths
+// it will touch are not knowable until Claude Code has read it. What
+// a policy can decide about this call is the tool itself.
+
+// Run hands the task over and waits.
+//
+// An error is the delegation not happening — a subprocess that would
+// not start, a run that outlived its timeout. A task that ran and
+// came back unhappy is a Result saying so: the model can work with
+// that, and it is not a failure of the tool.
+func (t *DelegateTool) Run(ctx context.Context, args json.RawMessage, out io.Writer) (tool.Result, error) {
+	if t.Delegate == nil {
+		return tool.Result{}, errors.New("there is nobody to hand this to")
 	}
+	var a struct {
+		Task string `json:"task"`
+	}
+	if json.Unmarshal(args, &a) != nil || strings.TrimSpace(a.Task) == "" {
+		return tool.Result{}, errors.New("the task was not readable — say what you want done in plain prose")
+	}
+
+	r := roundOf(ctx)
+	// A delegated task takes seconds to minutes, and a silent screen
+	// for that long reads as broken — so the status says what is being
+	// done, in Vera's voice, not "running tool".
+	r.say(delegating(a.Task))
+
+	started := time.Now()
+	res, err := t.Delegate.run(ctx, a.Task)
+	elapsed := time.Since(started)
+	logDelegation(r.conversation, a.Task, res, elapsed, err)
+	// What it cost is money rather than tokens, and the journal keeps
+	// it beside the round: Claude Code bills its own way, and hiding
+	// that inside the exchange would make delegation look free.
+	r.link("", res.Session, res.Cost)
+
+	switch {
+	case err != nil:
+		return tool.Result{}, err
+	case res.Failed:
+		return tool.Result{Text: "The task did not succeed. What came back: " + trim(res.Result, 4000)}, nil
+	case strings.TrimSpace(res.Result) == "":
+		return tool.Result{Text: "The task finished but reported nothing."}, nil
+	}
+	return tool.Result{Text: res.Result}, nil
 }
 
 type delegated struct {

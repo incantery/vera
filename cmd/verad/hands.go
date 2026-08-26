@@ -21,7 +21,12 @@
 //   - which repositories are projects (the fleet knows; the file has a
 //     list that was true when it was written),
 //   - that she may not edit the profile that governs her. A rule she
-//     can rewrite is not a rule. See policyRules below.
+//     can rewrite is not a rule. See policyRules below,
+//   - what to say about the two tools that are not mote's. The
+//     delegate and the fleet are Vera rather than the profile's to
+//     choose, and a file that never heard of them would send every
+//     one of those calls to the phone to be asked about. See
+//     policyTools and Adopt.
 package main
 
 import (
@@ -64,6 +69,11 @@ type Hands struct {
 	registry *tool.Registry
 	policy   *tool.Policy
 	defs     []map[string]any
+	// profile is what the profile chose, in its order; own is what
+	// Vera brought — the delegate, the fleet — which goes in front of
+	// it. Kept apart so Adopt can rebuild the registry in that order.
+	profile []tool.Tool
+	own     []tool.Tool
 	// fileRoots are the roots policy.toml itself listed. The fleet's
 	// are added to them rather than replacing them: a repository the
 	// fleet has not noticed yet is still not hers to edit.
@@ -116,6 +126,7 @@ func openHands(root string, projects *fleet.Projects) (*Hands, error) {
 	// tool disagree about what "notes.md" means.
 	policy.Dir = root
 	policy.Rules = policyRules(policy.Rules, root)
+	policy.Tools = policyTools(policy.Tools)
 
 	h := &Hands{
 		Root:      root,
@@ -123,6 +134,7 @@ func openHands(root string, projects *fleet.Projects) (*Hands, error) {
 		registry:  reg,
 		policy:    policy,
 		defs:      definitionMaps(reg.Definitions()),
+		profile:   reg.List(),
 		fileRoots: append([]string(nil), policy.Roots...),
 		Projects:  projects,
 		gates:     map[string]*gate{},
@@ -162,7 +174,21 @@ func policyRules(rules []tool.Rule, root string) []tool.Rule {
 		Then:   tool.Allow,
 		Reason: "her own home",
 	}
-	out := make([]tool.Rule, 0, len(rules)+2)
+	// Stopping a task abandons the work in it. Every other verb the
+	// fleet has adds something or reports something; this is the one
+	// that subtracts, so it is the one she asks about.
+	//
+	// It is expressed the only way a rule can key on an argument: the
+	// fleet says its verb as its Command, and a rule matches a command
+	// by prefix. It goes LAST, after the file's own rules, so a person
+	// who writes a rule about `fleet` in policy.toml overrides it.
+	stop := tool.Rule{
+		Tools:    []string{"fleet"},
+		Commands: []string{"fleet stop"},
+		Then:     tool.Ask,
+		Reason:   "stopping a task abandons the work in it — check they meant to",
+	}
+	out := make([]tool.Rule, 0, len(rules)+3)
 	out = append(out, mine)
 	at := 0
 	for at < len(rules) && rules[at].Then == tool.Deny {
@@ -170,7 +196,28 @@ func policyRules(rules []tool.Rule, root string) []tool.Rule {
 		at++
 	}
 	out = append(out, ours)
-	return append(out, rules[at:]...)
+	out = append(out, rules[at:]...)
+	return append(out, stop)
+}
+
+// policyTools is the default for the two tools the profile did not
+// choose and cannot have listed.
+//
+// Handing work away is the thing Vera is FOR. The supervisor's own
+// sentence is "you do not do the work; you decide what work there is,
+// hand it to somebody who will" — so a delegation and a task run
+// without asking, the way reading does. A file that DOES name them
+// wins: this fills a gap, it does not overrule anybody.
+func policyTools(tools map[string]tool.Decision) map[string]tool.Decision {
+	if tools == nil {
+		tools = map[string]tool.Decision{}
+	}
+	for _, name := range []string{"delegate", "fleet"} {
+		if _, said := tools[name]; !said {
+			tools[name] = tool.Allow
+		}
+	}
+	return tools
 }
 
 // seedProfile writes mote's worked example into her home the first
@@ -220,6 +267,32 @@ func definitionMaps(defs []tool.Definition) []map[string]any {
 		})
 	}
 	return out
+}
+
+// Adopt registers tools of Vera's own, in front of the profile's.
+//
+// The built-ins come from mote and the profile picks among them by
+// name; these do not go through that gate. The delegate and the fleet
+// are Vera — a profile that forgot to list them would be a Vera who
+// cannot hand work to anybody — and they go first because handing
+// work away is what she should reach for before doing it herself.
+//
+// Called at startup, before anything is served: the registry and the
+// definitions are read without a lock on every exchange.
+func (h *Hands) Adopt(tools ...tool.Tool) error {
+	if h == nil || len(tools) == 0 {
+		return nil
+	}
+	h.own = append(h.own, tools...)
+	reg := &tool.Registry{}
+	for _, t := range append(append([]tool.Tool{}, h.own...), h.profile...) {
+		if err := reg.Add(t); err != nil {
+			return err
+		}
+	}
+	h.registry = reg
+	h.defs = definitionMaps(reg.Definitions())
+	return nil
 }
 
 // Definitions is what the model is told it can reach for.
@@ -406,8 +479,6 @@ func (h *Hands) waitFor(ctx context.Context, g *tool.Gate, c tool.Call) (ok, ali
 	return ok, true
 }
 
-// --- one call, decided and run -----------------------------------------
-
 // maxToolStream bounds what a running tool is allowed to push onto the
 // wire. The result is capped separately; this is about a command that
 // prints a megabyte and a phone that has to read it.
@@ -434,14 +505,69 @@ func (w *toolStream) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// invokeTool runs one built-in: decided by the policy, asked about if
-// the policy says so, and streamed while it runs.
+// --- the round, as a tool sees it ------------------------------------
+
+// round is the one call in progress, carried in its context.
+//
+// mote's Run takes arguments and a writer and gives back text. Three
+// things Vera's own tools need are not in that shape: which device
+// asked (a fleet start with no project means the repository in front
+// of them), a line to put on the phone before there is any result,
+// and what the call reached — a task id, a Claude Code session, what
+// it cost — which the journal keeps beside the round. They ride in
+// the context, the one thing already per-call. See GAPS.
+type round struct {
+	// conversation is which conversation this call belongs to, for a
+	// tool that logs about itself.
+	conversation string
+	// device is which of the person's devices asked.
+	device string
+	// say puts a line on the phone, in Vera's voice, while the work
+	// happens.
+	say func(string)
+	// link ties this round to what it reached.
+	link func(task, session string, cost float64)
+}
+
+type roundKey struct{}
+
+func withRound(ctx context.Context, r *round) context.Context {
+	return context.WithValue(ctx, roundKey{}, r)
+}
+
+// roundOf is the call in progress, or a round that goes nowhere — so
+// a tool run from a test, or from anywhere that is not an exchange,
+// needs no ceremony.
+func roundOf(ctx context.Context) *round {
+	if r, ok := ctx.Value(roundKey{}).(*round); ok && r != nil {
+		return r.filled()
+	}
+	return (&round{}).filled()
+}
+
+func (r *round) filled() *round {
+	if r.say == nil {
+		r.say = func(string) {}
+	}
+	if r.link == nil {
+		r.link = func(string, string, float64) {}
+	}
+	return r
+}
+
+// --- one call, decided and run -----------------------------------------
+
+// invokeTool runs one tool: decided by the policy, asked about if the
+// policy says so, and streamed while it runs. It is the only path —
+// the fleet and the delegate come through here too, so that what is
+// allowed, what is shown and what is written down is decided in one
+// place for everything she can do.
 //
 // Everything it returns is for the model, including the refusals. A
 // denial is not an error — it is the thing the model most needs to
 // know, in the profile's own words, so that it does the allowed thing
 // instead of trying the same call again.
-func (m *Mind) invokeTool(ctx context.Context, conversation string, x *exchange, t tool.Tool, call toolCall, reply func(Frame) error) string {
+func (m *Mind) invokeTool(ctx context.Context, conversation, device string, x *exchange, t tool.Tool, call toolCall, reply func(Frame) error) string {
 	c := tool.NewCall(call.ID, t, jsonArgs(call.Function.Arguments))
 	verdict, g := m.Hands.Decide(conversation, c)
 
@@ -488,7 +614,42 @@ func (m *Mind) invokeTool(ctx context.Context, conversation string, x *exchange,
 		x.decided(verdict.Decision, "", verdict.Reason)
 	}
 
-	res, err := t.Run(ctx, c.Args, &toolStream{id: call.ID, reply: reply})
+	started := time.Now()
+	// The tool execution is its own thing on the record, and its span
+	// is what a delegate's own telemetry hangs off — so the context
+	// the tool runs in is this one.
+	ctx, rec := m.beginTool(ctx, conversation, call)
+	res, err := t.Run(withRound(ctx, &round{
+		conversation: conversation,
+		device:       device,
+		say: func(text string) {
+			// A status IS something appearing, so it stops the "first
+			// sign" clock even though no token has been produced.
+			x.sign(ctx)
+			_ = reply(Frame{Status: text})
+		},
+		link: x.link,
+	}), c.Args, &toolStream{id: call.ID, reply: reply})
+	elapsed := time.Since(started)
+	m.endTool(ctx, rec, c.Tool, x.pending.CostUSD, elapsed, err)
+
+	// One line per call, whatever the tool was. Both what was asked
+	// and what came back are in here on purpose: the question being
+	// debugged next week is "why did it do that".
+	slog.Info("tool",
+		"gen_ai.conversation.id", conversation,
+		"gen_ai.tool.name", c.Tool,
+		"args", trim(string(c.Args), 300),
+		"result", trim(res.Text, 300),
+		"decision", string(verdict.Decision),
+		"rule", verdict.Rule,
+		"task", x.pending.Task,
+		"session", x.pending.Session,
+		"cost_usd", x.pending.CostUSD,
+		"took_ms", elapsed.Milliseconds(),
+		"error", errText(err),
+	)
+
 	if err != nil {
 		// mote's convention, and the one the terminal already marks a
 		// card failed on.

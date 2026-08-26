@@ -217,10 +217,10 @@ func shutdownGenerations(c *agento11y.Client) {
 	}
 }
 
-// beginTool / endTool put a delegated task on the record as a tool
+// beginTool / endTool put a tool call on the record as a tool
 // execution — which agent observability models as a first-class thing
 // rather than as a gap in the middle of a generation.
-func (m *Mind) beginTool(ctx context.Context, conversation string, call toolCall, task string) (context.Context, *agento11y.ToolExecutionRecorder) {
+func (m *Mind) beginTool(ctx context.Context, conversation string, call toolCall) (context.Context, *agento11y.ToolExecutionRecorder) {
 	if m.Gen == nil {
 		return ctx, nil
 	}
@@ -235,17 +235,21 @@ func (m *Mind) beginTool(ctx context.Context, conversation string, call toolCall
 	})
 }
 
-func (m *Mind) endTool(ctx context.Context, rec *agento11y.ToolExecutionRecorder, out delegated, elapsed time.Duration, err error) {
+func (m *Mind) endTool(ctx context.Context, rec *agento11y.ToolExecutionRecorder, name string, cost float64, elapsed time.Duration, err error) {
+	// The tool's name is the label rather than "delegate", now that
+	// every tool comes through here — it is one series per tool she
+	// has, which is a handful and does not grow while she runs.
+	//
 	// What a delegated task COST is money, not tokens — Claude Code
 	// bills its own way, and hiding that inside the exchange's token
 	// count would make delegation look free.
 	labels := []attribute.KeyValue{
 		attribute.String("gen_ai.operation.name", "execute_tool"),
-		attribute.String("gen_ai.tool.name", "delegate"),
+		attribute.String("gen_ai.tool.name", name),
 	}
 	m.duration.Record(ctx, elapsed.Seconds(), metric.WithAttributes(labels...))
-	if m.toolCost != nil && out.Cost > 0 {
-		m.toolCost.Record(ctx, out.Cost, metric.WithAttributes(labels...))
+	if m.toolCost != nil && cost > 0 {
+		m.toolCost.Record(ctx, cost, metric.WithAttributes(labels...))
 	}
 
 	if rec == nil {
