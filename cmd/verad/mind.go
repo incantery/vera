@@ -589,14 +589,15 @@ func (m *Mind) aboutProjects(repos []fleet.Repo, said string) string {
 			wanted[r.Root] = true
 		}
 	}
-	if m.Fleet != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		views, err := m.Fleet.Tasks(ctx)
-		cancel()
-		if err == nil {
-			for _, v := range views {
-				if !v.Closed {
-					wanted[v.Project] = true
+	// The store rather than Fleet.Tasks: this runs before every model
+	// call, and what is open is on disk. Tasks() would ask the
+	// multiplexer, which is a subprocess, for liveness nobody here
+	// needs.
+	if m.Fleet != nil && m.Fleet.Store != nil {
+		if tasks, err := m.Fleet.Store.List(); err == nil {
+			for _, t := range tasks {
+				if !t.Closed {
+					wanted[t.Project] = true
 				}
 			}
 		}
