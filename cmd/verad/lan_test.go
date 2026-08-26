@@ -18,10 +18,19 @@ import (
 var lanUnderTest *lanTransport
 
 func serveLAN(t *testing.T, h Handler) (string, Identity) {
+	return serveLANWith(t, h, nil)
+}
+
+// serveLANWith is serveLAN for a test that has to set something on the
+// transport before it is serving — an answerer, say.
+func serveLANWith(t *testing.T, h Handler, prepare func(*lanTransport)) (string, Identity) {
 	t.Helper()
 	id := Identity{Peer: "peer-under-test", Secret: "s3cret", Name: "test-mac"}
 	lan := newLAN("127.0.0.1:0", id)
 	lanUnderTest = lan
+	if prepare != nil {
+		prepare(lan)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
