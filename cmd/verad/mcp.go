@@ -122,10 +122,6 @@ func (h *Hands) openServers(ctx context.Context) error {
 		h.mu.Unlock()
 		slog.Info("mcp", "server", s.Name, "says", c.Says(), "tools", len(c.Tools()))
 	}
-	// The model's list changed, and it may change again on its own: a
-	// server that says its tools changed writes to the same registry
-	// from a goroutine of its own.
-	h.refreshDefs()
 	return nil
 }
 

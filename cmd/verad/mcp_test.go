@@ -177,3 +177,21 @@ func TestABrokenFileStopsStartup(t *testing.T) {
 		t.Errorf("the error does not say which file: %v", err)
 	}
 }
+
+// A server that says its tool list changed changes the registry from
+// a goroutine of its own — so what the model is told has to be asked
+// for rather than remembered.
+func TestWhatTheModelIsToldFollowsTheRegistry(t *testing.T) {
+	h, _, _ := newHands(t)
+	before := len(h.Definitions())
+	if err := h.registry.Own(sayingTool{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(h.Definitions()); got != before+1 {
+		t.Errorf("a tool added behind Adopt's back never reached the model: %d → %d", before, got)
+	}
+	h.registry.Remove("saying")
+	if got := len(h.Definitions()); got != before {
+		t.Errorf("a tool that went away is still being offered: %d", got)
+	}
+}

@@ -77,10 +77,6 @@ type Hands struct {
 
 	registry *tool.Registry
 	policy   *tool.Policy
-	// defs is what the model is told, recomputed whenever the registry
-	// changes. Read under mu, because an MCP server may re-list its
-	// tools mid-exchange.
-	defs []tool.Definition
 	// fileRoots are the roots policy.toml itself listed. The fleet's
 	// are added to them rather than replacing them: a repository the
 	// fleet has not noticed yet is still not hers to edit.
@@ -148,7 +144,6 @@ func openHands(root string, projects *fleet.Projects) (*Hands, error) {
 		Model:     strings.TrimSpace(prof.Model),
 		registry:  reg,
 		policy:    policy,
-		defs:      reg.Definitions(),
 		fileRoots: append([]string(nil), policy.Roots...),
 		Projects:  projects,
 		gates:     map[string]*gate{},
@@ -313,32 +308,24 @@ func (h *Hands) Adopt(tools ...tool.Tool) error {
 		return err
 	}
 	h.registry = reg
-	h.refreshDefs()
 	return nil
-}
-
-// refreshDefs re-reads what the model is told from the registry, for
-// after anything that changed it. The slice is replaced rather than
-// appended to: an exchange in flight is reading the old one.
-func (h *Hands) refreshDefs() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.defs = h.registry.Definitions()
 }
 
 // Definitions is what the model is told it can reach for, in the shape
 // the registry hands out — which is the shape every provider takes.
 //
-// Under the lock, because the set can change while she is running: an
-// MCP server that re-lists its tools is a registry that changed under
-// an exchange already on the wire.
+// Asked of the registry every time rather than kept, because the set
+// changes while she is running: an MCP server that says its tool list
+// changed writes to the registry from a goroutine of its own, and a
+// cached copy would go on describing tools that are gone. It is once
+// per exchange over a handful of tools, and the caller keeps the
+// answer for the whole of a tool loop — so the model is told one
+// stable list per exchange, which is what it should be told.
 func (h *Hands) Definitions() []tool.Definition {
 	if h == nil {
 		return nil
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.defs
+	return h.registry.Definitions()
 }
 
 // Names is the tools she has, for the startup banner.
