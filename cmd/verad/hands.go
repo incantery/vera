@@ -250,6 +250,23 @@ func (h *Hands) Tool(name string) (tool.Tool, bool) {
 	return h.registry.Get(name)
 }
 
+// Where is the sentence the profile cannot write, and the one a live
+// model needed: where her home actually is.
+//
+// Told only "you keep your own notes under ~/vera", a model reads `~`
+// as the machine's home directory and looks in the wrong place — and
+// then reports, honestly and uselessly, that the file is not there.
+// Her home may be anywhere ($VERA_HOME), and a bare path lands in it.
+func (h *Hands) Where() string {
+	if h == nil {
+		return ""
+	}
+	return "\n\nYour own home is the directory " + h.Root + ", and that is what your tools " +
+		"resolve a bare path against: `notes/today.md` is a file in your home. A leading `~` is " +
+		"THEIR home directory on this machine, which is a different place — say " + h.Root +
+		" when you mean yours. Your commands run there too unless you say otherwise."
+}
+
 // Refresh points the policy's ${root} at the repositories the fleet
 // knows about, on top of the ones the file listed. Called before every
 // exchange; it logs only when the set actually changed.

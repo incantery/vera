@@ -567,7 +567,7 @@ func (m *Mind) preface() string {
 		if p := strings.TrimSpace(m.Hands.Prompt); p != "" {
 			base += "\n\n" + p
 		}
-		base += m.aboutMemory()
+		base += m.Hands.Where() + m.aboutMemory()
 	}
 	if m.Memory == nil {
 		return base
@@ -598,7 +598,9 @@ func (m *Mind) aboutMemory() string {
 		home.Index + " is the index — one line per fact, `- [slug](" + home.MemoryDir + "/slug.md) — the fact in one line`. " +
 		home.MemoryDir + "/<slug>.md is the fact itself: front matter with name, description, type " +
 		"(user, feedback, project or reference) and since (a date), then a sentence or two of prose. " +
-		"A slug says what the fact is about — `lives-in-vienna`, `prefers-short-answers`.\n" +
+		"A slug says what the fact is about, in lowercase words joined by hyphens — `lives-in-vienna`, " +
+		"`prefers-short-answers` — and the name in the front matter is that same slug, spelled the same " +
+		"way as the file.\n" +
 		"Read them with read and search. Maintain them with write and edit: when they say something that " +
 		"will still be true next month, write its file and add its line to the index; when something you " +
 		"know turns out to be wrong, rewrite that file rather than adding a second one that contradicts it. " +

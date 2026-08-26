@@ -85,7 +85,8 @@ func askingMind(t *testing.T, rounds ...string) (*Mind, string, string) {
 // home was before it could write the script.
 func askingMindAt(t *testing.T, root string, projects *fleet.Projects, rounds ...string) (*Mind, string, string) {
 	t.Helper()
-	if _, err := home.Open(root); err != nil {
+	place, err := home.Open(root)
+	if err != nil {
 		t.Fatal(err)
 	}
 	hands, err := openHands(root, projects)
@@ -101,6 +102,7 @@ func askingMindAt(t *testing.T, root string, projects *fleet.Projects, rounds ..
 		Base:        srv.URL,
 		Model:       "m",
 		History:     newHistory(),
+		Home:        place,
 		Hands:       hands,
 		Journal:     &journal.Writer{Dir: journalDir},
 		instruments: newInstruments(),
