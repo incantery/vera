@@ -194,6 +194,20 @@ final class ToolRoundTests: XCTestCase {
         XCTAssertTrue(run?.stopped ?? false)
     }
 
+    // A phone that came back to a run still going gets the result for
+    // a call it had already written off.
+    func testAResultAfterTheStopUnstopsTheRow() {
+        var exchange = Exchange(said: "what's in there")
+        exchange.apply(call())
+        exchange.close()
+        var done = Frame()
+        done.toolResult = Frame.ToolResult(id: "call_1", result: "one", durationMs: 9)
+        exchange.apply(done)
+
+        XCTAssertFalse(run(in: exchange)?.stopped ?? true)
+        XCTAssertEqual(run(in: exchange)?.body, "one")
+    }
+
     // Output for a call the phone never saw belongs to nothing, and
     // inventing a row for it would put a nameless card on the screen.
     func testStrayOutputIsIgnored() {

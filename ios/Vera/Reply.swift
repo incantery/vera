@@ -204,6 +204,9 @@ extension Exchange {
         run.result = result.result
         run.durationMs = result.durationMs
         run.cost = result.costUSD
+        // A result means it was not stopped after all: a rejoined run
+        // finishes calls the phone had already given up on.
+        run.stopped = false
         steps[index].body = .tool(run)
     }
 

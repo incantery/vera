@@ -56,11 +56,16 @@ enum TranscriptStore {
         // now, one way or another. Partial words are kept — they are
         // what was actually seen — and a reply that never started says
         // so rather than pretending to still be coming.
+        //
+        // Closing it is also what settles a question nobody answered:
+        // the Mac gives an ask two minutes and then answers itself no,
+        // and an app that has been away is long past that. A card that
+        // is still tappable after that is a card that sends a word
+        // nothing is waiting for.
         transcript.exchanges = transcript.exchanges.map { exchange in
             guard !exchange.done else { return exchange }
             var e = exchange
-            e.done = true
-            e.status = nil
+            e.close()
             if e.reply.isEmpty && e.failed == nil {
                 e.failed = "Interrupted."
             }
