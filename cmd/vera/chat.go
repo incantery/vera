@@ -312,22 +312,20 @@ func (w *fleetWatch) resolution() *Resolution {
 	return w.model
 }
 
-// line is the right of the status line: the model actually in use, how
-// hard it is thinking, and which machine is asking. The provenance is
-// deliberately not here — it is a sentence, it changes nothing, and
-// `/model` prints it on request.
+// line is the right of the status line: the model actually in use and
+// how hard it is thinking.
+//
+// Only those two, and they are on the right rather than the left for
+// one reason — mote reads Options.Model once, at New, and this can
+// change under the conversation at any moment. The device and the
+// conversation are already on the left, where mote puts them, so
+// repeating either here would be noise. Where the model came from is
+// deliberately absent: it is a sentence, it changes nothing, and
+// `/model` prints it when asked.
 func (w *fleetWatch) line() string {
 	w.mu.Lock()
-	model, st := w.model, w.status
-	w.mu.Unlock()
-	var parts []string
-	if l := model.Line(); l != "" {
-		parts = append(parts, l)
-	}
-	if st != nil && st.Name != "" {
-		parts = append(parts, st.Name)
-	}
-	return strings.Join(parts, " · ")
+	defer w.mu.Unlock()
+	return w.model.Line()
 }
 
 // where is the right of the status line: where Vera believes the

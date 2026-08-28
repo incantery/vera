@@ -734,7 +734,7 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	// The status line: the model actually in use and the machine
 	// asking, on the right, with no "(from profiles/…)" anywhere.
 	view := screen(m)
-	for _, want := range []string{"vera", "gpt-5.6-luna \u00b7 none", "test-mac", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
+	for _, want := range []string{"vera", "gpt-5.6-luna \u00b7 none", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the screen is missing %q:\n%s", want, view)
 		}

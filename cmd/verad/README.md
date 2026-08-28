@@ -178,12 +178,12 @@ line you read while you wait, and `tool_call`/`tool_result` into a card
 per call with its arguments, its result, how long it took and what it
 cost. The status line adds up what the exchange spent: while a turn is
 in flight it shows that turn, and once it ends the whole conversation —
-`vera · chat-1 · $0.0595 · 12.8k tok`, with `claude-opus-5 · high ·
-seths-mbp` on the right. The model is on the right rather than the left
-because it can change under the conversation at any moment and mote
-reads `Options.Model` once, at New; the right-hand line is re-read on a
-timer. Where the model came from is deliberately not on the line —
-`/model` prints it. The turn's own
+`seths-mbp · chat-1 · $0.0595 · 12.8k tok`, with `claude-opus-5 · high`
+on the right. The device and the conversation are mote's, on the left;
+the model is on the right because it can change under the conversation
+at any moment and mote reads `Options.Model` once, at New, while the
+right-hand line is re-read on a timer. Where the model came from is
+deliberately not on the line — `/model` prints it. The turn's own
 model spend rides on the terminal `/say` frame (`usage`: the tokens the
 provider counted, and what they would cost); the tool cards' dollars are
 added to it, so one figure covers the model and everything it handed
