@@ -25,6 +25,7 @@ import (
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 	"github.com/incantery/vera/mux"
+	"github.com/incantery/vera/price"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -211,6 +212,14 @@ func main() {
 		slog.Info("migrated memory.json into home", "facts", n, "home", place.Root)
 	}
 	slog.Info("home", "path", place.Root)
+	// A typo in a price is a wrong number on somebody's status line
+	// for as long as the daemon runs, so say so once, out loud, at the
+	// start. The entries that did parse are still used.
+	if spec := os.Getenv(price.Env); spec != "" {
+		if _, bad := price.Parse(spec); len(bad) > 0 {
+			slog.Warn("could not read "+price.Env, "entries", strings.Join(bad, ", "))
+		}
+	}
 	memory := place.Memory()
 	if *showUsage {
 		u, err := scrapeUsage(ctx)

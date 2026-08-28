@@ -36,7 +36,14 @@ func (a veraAgent) Send(ctx context.Context, conversation, text string) (<-chan 
 			case <-ctx.Done():
 			}
 		}
+		// What the exchange spent, kept until the end: mote wants it on
+		// the one event that closes the turn, and only the terminal
+		// frame knows it.
+		var spent *UsageFrame
 		err := streamFrames(body, func(f Frame) {
+			if f.Usage != nil {
+				spent = f.Usage
+			}
 			for _, ev := range translate(f) {
 				send(ev)
 			}
@@ -44,9 +51,28 @@ func (a veraAgent) Send(ctx context.Context, conversation, text string) (<-chan 
 		if err != nil && ctx.Err() == nil {
 			send(agent.Err(err))
 		}
-		send(agent.Done())
+		send(finish(spent))
 	}()
 	return out, nil
+}
+
+// finish is the event that ends an exchange. With usage on the wire it
+// says what the turn cost, which is what puts a running total on the
+// status line; without it — an older verad, or an exchange that never
+// reached the model — it is a plain done, and the screen stays quiet
+// rather than claiming the turn was free.
+//
+// The dollars are only passed on when somebody knew a price. Tokens
+// are passed on either way: they are counted, not estimated.
+func finish(u *UsageFrame) agent.Event {
+	if u == nil {
+		return agent.Done()
+	}
+	cost := 0.0
+	if u.Priced {
+		cost = u.CostUSD
+	}
+	return agent.Spent(cost, u.InputTokens, u.OutputTokens)
 }
 
 // Answer is agent.Answerer: the terminal's y / n / a, back to the

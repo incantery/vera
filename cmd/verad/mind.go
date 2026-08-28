@@ -24,6 +24,7 @@ import (
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
+	"github.com/incantery/vera/price"
 
 	"github.com/grafana/agento11y/go/agento11y"
 	"github.com/incantery/mote/provider"
@@ -339,6 +340,13 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	)
 
 	if err != nil {
+		// An exchange that failed still spent what it spent, and the
+		// error frame is somebody else's to send — so the usage goes
+		// out on its own, first. It draws nothing; it is the number
+		// the screen adds to its total.
+		if u := m.spentFrame(used); u != nil {
+			_ = reply(Frame{Usage: u})
+		}
 		if errors.Is(err, context.Canceled) {
 			return nil // the phone hung up; not an error to report
 		}
@@ -355,7 +363,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// edit, inside the exchange — a thing she does deliberately rather
 	// than a thing that happens to her. See aboutMemory.
 
-	return reply(Frame{Done: true})
+	return reply(Frame{Done: true, Usage: m.spentFrame(used)})
 }
 
 // invoke runs one tool call and returns what the model should be told.
@@ -431,6 +439,48 @@ func (u *usage) add(spent provider.Usage) {
 	u.Completion += spent.Output
 	u.CacheRead += spent.CacheRead
 	u.CacheWrite += spent.CacheWrite
+}
+
+// tokens is the usage in the terms a price is quoted in: three input
+// counts that do not overlap. Prompt is the whole prompt, cache
+// included, so the uncached part is what is left after taking the two
+// cache counts out of it.
+func (u usage) tokens() price.Tokens {
+	return price.Tokens{
+		Input:      int64(max(u.Prompt-u.CacheRead-u.CacheWrite, 0)),
+		CacheWrite: int64(u.CacheWrite),
+		CacheRead:  int64(u.CacheRead),
+		Output:     int64(u.Completion),
+	}
+}
+
+// spent is the exchange's usage on the terminal frame, so a client with
+// a screen can show what the turn cost while the person is still
+// looking at it.
+//
+// The model named is the one that ANSWERED where the provider said so —
+// an alias resolves to a version, and "claude-opus-5" and whatever it
+// resolved to may not be priced the same. The dollars are notional: API
+// list prices, which a subscription does not pay. Priced says whether
+// anybody knew a price, so a client can show tokens and stay quiet
+// about money rather than print a confident $0.00.
+func (m *Mind) spentFrame(u usage) *UsageFrame {
+	if u.Prompt == 0 && u.Completion == 0 {
+		return nil
+	}
+	model := u.Model
+	if model == "" {
+		model = m.Model
+	}
+	f := &UsageFrame{
+		Model:            model,
+		InputTokens:      u.Prompt,
+		OutputTokens:     u.Completion,
+		CacheReadTokens:  u.CacheRead,
+		CacheWriteTokens: u.CacheWrite,
+	}
+	f.CostUSD, f.Priced = price.Of(model, u.tokens())
+	return f
 }
 
 // trim caps what the model is told. Every tool result goes through it:

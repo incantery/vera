@@ -19,6 +19,7 @@ import (
 	"github.com/incantery/mote/session"
 	"github.com/incantery/mote/tui"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/price"
 )
 
 // fakeVerad is enough of the wire to test the client and the terminal's
@@ -57,7 +58,7 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		for _, word := range strings.Fields("You said: " + m.Text) {
 			_ = enc.Encode(Frame{Delta: word + " "})
 		}
-		_ = enc.Encode(Frame{Done: true})
+		_ = enc.Encode(Frame{Done: true, Usage: &sayUsageFrame})
 	})
 	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(w, r) {
@@ -85,6 +86,15 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 	t.Cleanup(srv.Close)
 	f.url = srv.URL
 	return f
+}
+
+// sayUsageFrame is what the fake claims the exchange spent. The
+// dollars are the price table's answer for those tokens on that model,
+// worked out by hand so a change to the table shows up here as a
+// failing test rather than as a silently different status line.
+var sayUsageFrame = UsageFrame{
+	Model: "claude-opus-5", InputTokens: 12000, OutputTokens: 800,
+	CacheReadTokens: 9000, CostUSD: 0.0395, Priced: true,
 }
 
 func (f *fakeVerad) client() *chatClient {
@@ -159,6 +169,13 @@ func TestFramesBecomeEvents(t *testing.T) {
 			Frame{ToolResult: &ToolResultFrame{ID: "t1", Result: "two tasks", DurationMs: 2500, CostUSD: 0.03}},
 			[]agent.Event{agent.Result("t1", "two tasks", 2500*time.Millisecond, 0.03)},
 		},
+		{
+			// It rides on the terminal frame, and the terminal frame is
+			// Send's — finish is where it becomes an event.
+			"usage is the stream's business too",
+			Frame{Done: true, Usage: &sayUsageFrame},
+			nil,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := translate(tc.f)
@@ -174,6 +191,42 @@ func TestFramesBecomeEvents(t *testing.T) {
 	}
 }
 
+// What the turn spent becomes the one event that ends it, because that
+// is where mote adds it to the status line's running total.
+func TestTheDoneEventCarriesWhatTheTurnSpent(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		u    *UsageFrame
+		want agent.Event
+	}{
+		{
+			// An older verad says nothing about usage. A turn that cost
+			// an unknown amount must not read as a turn that was free.
+			"no usage on the wire",
+			nil,
+			agent.Done(),
+		},
+		{
+			"priced",
+			&UsageFrame{Model: "claude-opus-5", InputTokens: 12000, OutputTokens: 800, CostUSD: 0.0395, Priced: true},
+			agent.Spent(0.0395, 12000, 800),
+		},
+		{
+			// Tokens are counted; dollars are not. A model with no price
+			// gets its tokens on the screen and no dollar figure at all.
+			"tokens known, price not",
+			&UsageFrame{Model: "some-local-model", InputTokens: 900, OutputTokens: 100},
+			agent.Spent(0, 900, 100),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := finish(tc.u); got != tc.want {
+				t.Errorf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAgentStreamsAnExchange(t *testing.T) {
 	f := newFakeVerad(t)
 	a := veraAgent{f.client()}
@@ -184,7 +237,7 @@ func TestAgentStreamsAnExchange(t *testing.T) {
 	}
 	var kinds []agent.Kind
 	var reply strings.Builder
-	var call, result agent.Event
+	var call, result, last agent.Event
 	for ev := range ch {
 		kinds = append(kinds, ev.Kind)
 		switch ev.Kind {
@@ -194,6 +247,8 @@ func TestAgentStreamsAnExchange(t *testing.T) {
 			call = ev
 		case agent.KindToolResult:
 			result = ev
+		case agent.KindDone:
+			last = ev
 		}
 	}
 	if kinds[0] != agent.KindStatus {
@@ -210,6 +265,9 @@ func TestAgentStreamsAnExchange(t *testing.T) {
 	}
 	if call.Name != "fleet" || result.ID != "t1" || result.Duration != 1500*time.Millisecond || result.Cost != 0.02 {
 		t.Errorf("tool round: %+v %+v", call, result)
+	}
+	if last.Cost != sayUsageFrame.CostUSD || last.InputTokens != sayUsageFrame.InputTokens || last.OutputTokens != sayUsageFrame.OutputTokens {
+		t.Errorf("done should carry the turn's spend: %+v", last)
 	}
 
 	// A call that cannot start is an error, not a channel that carries one.
@@ -726,6 +784,53 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 	}
 	if got := sessionLines(list, "chat-1", time.Now()); !strings.Contains(got, "← this one") || !strings.Contains(got, "1 turn") {
 		t.Errorf("/sessions: %q", got)
+	}
+}
+
+// What the exchange cost reaches the screen: the turn's model spend
+// plus what its tools reported, on the status line, and still there
+// when the conversation is reopened in another process — the whole
+// point of putting it on disk with the turn.
+func TestTheStatusLineSaysWhatItCost(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := chatSessionDir()
+	f := newFakeVerad(t)
+	c := f.client()
+	st := &Status{Name: "vera", Mind: "claude-opus-5"}
+
+	sess := openChat(t, dir, "chat-1")
+	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
+	m := tui.New(veraAgent{c}, headless(chatOptions(st, s, sess, "hello")))
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+
+	// Nothing spent, nothing claimed: a fresh screen shows no money.
+	if v := screen(m); strings.Contains(v, "$") {
+		t.Fatalf("a screen with no exchange on it should say nothing about cost:\n%s", v)
+	}
+
+	drive(t, m, func() bool { return len(sess.Turns()) == 1 }, m.Init(), say(m, "what is on the rail?"))
+
+	// The model's own spend and the tool round's, added up: $0.0395 for
+	// the turn plus the $0.02 the fleet call reported.
+	want := price.USD(sayUsageFrame.CostUSD + 0.02)
+	view := screen(m)
+	if !strings.Contains(view, want) {
+		t.Errorf("the status line should show %s:\n%s", want, view)
+	}
+	if !strings.Contains(view, "12.8k tok") {
+		t.Errorf("the status line should show the turn's tokens:\n%s", view)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reopened, the total comes back with the turn.
+	again := openChat(t, dir, "chat-1")
+	s2 := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{}}
+	m2 := tui.New(veraAgent{c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
+	m2.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
+	if v := screen(m2); !strings.Contains(v, want) {
+		t.Errorf("a reopened conversation should still know what it cost:\n%s", v)
 	}
 }
 

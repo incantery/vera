@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/incantery/vera/price"
 )
 
 // Claude Code keeps each session as jsonl under
@@ -53,37 +55,12 @@ func (u *Usage) add(o Usage) {
 	u.Output += o.Output
 }
 
-// Price is USD per million tokens.
-type Price struct{ Input, CacheWrite, CacheRead, Output float64 }
-
-// prices is by model family. These are API list prices and a
-// subscription does not pay them — the figure a dump shows is what the
-// tokens WOULD cost, which is still the number that says which task was
-// expensive. A model not in the table gets tokens and no dollars.
-var prices = map[string]Price{
-	"opus":   {5, 6.25, 0.5, 25},
-	"sonnet": {3, 3.75, 0.3, 15},
-	"haiku":  {1, 1.25, 0.1, 5},
-}
-
-func priceFor(model string) (Price, bool) {
-	m := strings.ToLower(model)
-	for family, p := range prices {
-		if strings.Contains(m, family) {
-			return p, true
-		}
-	}
-	return Price{}, false
-}
-
-// Cost is the notional USD, and whether every model was priced.
+// Cost is the notional USD, and whether the model was priced at all.
+// The table is the price package's, shared with the chat's status
+// line: a dump and a status line that disagreed about what a turn cost
+// would be worse than either of them alone.
 func (u Usage) Cost(model string) (float64, bool) {
-	p, ok := priceFor(model)
-	if !ok {
-		return 0, false
-	}
-	return (float64(u.Input)*p.Input + float64(u.CacheWrite)*p.CacheWrite +
-		float64(u.CacheRead)*p.CacheRead + float64(u.Output)*p.Output) / 1e6, true
+	return price.Of(model, price.Tokens(u))
 }
 
 // CostAll sums the session; priced is false if any model was unknown.

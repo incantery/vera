@@ -50,7 +50,11 @@ func runSay(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	wrote := false
+	var spent *UsageFrame
 	err = c.say(ctx, text, *conv, func(f Frame) {
+		if f.Usage != nil {
+			spent = f.Usage
+		}
 		switch {
 		case f.Ask != nil:
 			// Nobody is watching this. A script that answered yes on a
@@ -74,6 +78,11 @@ func runSay(args []string) error {
 	})
 	if wrote {
 		fmt.Println()
+	}
+	// On stderr with the status lines, not stdout: a script piping the
+	// reply somewhere should get the reply and nothing else.
+	if line := spent.line(); line != "" {
+		fmt.Fprintln(os.Stderr, "· "+line)
 	}
 	return err
 }

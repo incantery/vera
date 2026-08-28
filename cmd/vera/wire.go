@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/price"
 )
 
 // The phone's wire, as the chat reads it. These mirror verad's types
@@ -41,6 +43,11 @@ type Frame struct {
 	ToolResult *ToolResultFrame `json:"tool_result,omitempty"`
 	// ToolOutput is what a tool is printing while it runs, in pieces.
 	ToolOutput *ToolOutputFrame `json:"tool_output,omitempty"`
+	// Usage rides on the terminal frame: what the whole exchange
+	// spent. A verad too old to send it leaves it nil and the screen
+	// simply shows no numbers.
+	Usage *UsageFrame `json:"usage,omitempty"`
+
 	// Ask is a tool verad will not run without a word from the person.
 	// The exchange is parked on it: nothing else arrives until the
 	// answer goes back through POST /ask/{id}.
@@ -63,6 +70,46 @@ type ToolCallFrame struct {
 type ToolOutputFrame struct {
 	ID   string `json:"id"`
 	Text string `json:"text"`
+}
+
+// UsageFrame is what an exchange spent, as verad reports it. Priced
+// says whether a price was known for the model at all: zero dollars on
+// an unpriced model means "nobody knows", not "free", and the screen
+// shows tokens alone rather than a confident $0.00.
+type UsageFrame struct {
+	Model            string  `json:"model,omitempty"`
+	InputTokens      int     `json:"input_tokens,omitempty"`
+	OutputTokens     int     `json:"output_tokens,omitempty"`
+	CacheReadTokens  int     `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
+	CostUSD          float64 `json:"cost_usd,omitempty"`
+	Priced           bool    `json:"priced,omitempty"`
+}
+
+// line is the usage in one phrase, for a surface with no status bar of
+// its own — `vera say` prints it when the exchange ends. Empty when
+// there is nothing to say.
+func (u *UsageFrame) line() string {
+	if u == nil {
+		return ""
+	}
+	var parts []string
+	if u.InputTokens > 0 || u.OutputTokens > 0 {
+		in := fmt.Sprintf("%d in", u.InputTokens)
+		if u.CacheReadTokens > 0 {
+			in += fmt.Sprintf(" (%d cached)", u.CacheReadTokens)
+		}
+		parts = append(parts, in, fmt.Sprintf("%d out", u.OutputTokens))
+	}
+	if u.Priced {
+		parts = append(parts, price.USD(u.CostUSD)+" at list prices")
+	} else if u.Model != "" {
+		parts = append(parts, "no price known for "+u.Model)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " · ")
 }
 
 type ToolResultFrame struct {

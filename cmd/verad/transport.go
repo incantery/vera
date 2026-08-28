@@ -69,6 +69,11 @@ type Frame struct {
 	// minute of silence.
 	ToolOutput *ToolOutputFrame `json:"tool_output,omitempty"`
 
+	// Usage rides on the terminal frame: what the exchange spent, so
+	// a client with a screen can say so. It is the whole exchange —
+	// every round of it, tools included — not the last round.
+	Usage *UsageFrame `json:"usage,omitempty"`
+
 	// Ask is a tool the policy will not run without a word from the
 	// person. It does not end the exchange: the exchange is parked on
 	// the answer, which comes back through POST /ask/{id}, and nothing
@@ -96,6 +101,21 @@ type AskFrame struct {
 	Name string `json:"name"`
 	Args string `json:"args"`
 	Text string `json:"text"`
+}
+
+// UsageFrame is what an exchange spent. Tokens are what the provider
+// counted; CostUSD is what those tokens would cost at API list prices,
+// and Priced says whether anybody knew a price at all — zero dollars on
+// an unknown model means "not known", not "free", and a client must be
+// able to tell the two apart.
+type UsageFrame struct {
+	Model            string  `json:"model,omitempty"`
+	InputTokens      int     `json:"input_tokens,omitempty"`
+	OutputTokens     int     `json:"output_tokens,omitempty"`
+	CacheReadTokens  int     `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int     `json:"cache_write_tokens,omitempty"`
+	CostUSD          float64 `json:"cost_usd,omitempty"`
+	Priced           bool    `json:"priced,omitempty"`
 }
 
 type ToolResultFrame struct {
