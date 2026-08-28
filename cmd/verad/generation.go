@@ -76,7 +76,11 @@ type exchange struct {
 	// it thought at all is worth a number.
 	thoughts int
 
-	mind    *Mind
+	mind *Mind
+	// choice is which model this exchange actually went to, and how
+	// hard it was asked to think. It is per exchange rather than per
+	// process now, so every record reads it from here.
+	choice  Choice
 	labels  []attribute.KeyValue
 	started time.Time
 	first   time.Duration
@@ -84,15 +88,15 @@ type exchange struct {
 	trace   string
 }
 
-func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int, system string, tools []tool.Definition) (context.Context, *exchange) {
-	x := &exchange{mind: m, started: time.Now()}
+func (m *Mind) begin(ctx context.Context, msg Message, choice Choice, text string, prior int, system string, tools []tool.Definition) (context.Context, *exchange) {
+	x := &exchange{mind: m, choice: choice, started: time.Now()}
 	x.labels = []attribute.KeyValue{
 		attribute.String("gen_ai.operation.name", "chat"),
 		// Which wire actually answered. It said "openai" unconditionally
 		// until there was a second one, which was true then and is a lie
 		// the moment a claude model is asked.
-		attribute.String("gen_ai.provider.name", m.vendor()),
-		attribute.String("gen_ai.request.model", m.Model),
+		attribute.String("gen_ai.provider.name", choice.Vendor),
+		attribute.String("gen_ai.request.model", choice.Model),
 	}
 
 	if m.Gen != nil {
@@ -100,7 +104,7 @@ func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int, s
 			ConversationID: msg.Conversation,
 			AgentName:      serviceName,
 			AgentVersion:   version,
-			Model:          agento11y.ModelRef{Provider: m.vendor(), Name: m.Model},
+			Model:          agento11y.ModelRef{Provider: choice.Vendor, Name: choice.Model},
 			// The whole prompt, attention paragraph included: the point
 			// of the record is to see what the model saw.
 			SystemPrompt: system,
@@ -113,7 +117,7 @@ func (m *Mind) begin(ctx context.Context, msg Message, text string, prior int, s
 	}
 
 	// No generation export, so this is the only record there is.
-	ctx, x.span = m.tracer.Start(ctx, "chat "+m.Model, trace.WithSpanKind(trace.SpanKindClient))
+	ctx, x.span = m.tracer.Start(ctx, "chat "+choice.Model, trace.WithSpanKind(trace.SpanKindClient))
 	x.span.SetAttributes(x.labels...)
 	x.span.SetAttributes(attribute.Int("vera.history.turns", prior))
 	if msg.Conversation != "" {
@@ -384,14 +388,18 @@ func capArgs(args string) json.RawMessage {
 }
 
 // entry is the exchange as the journal keeps it.
-func (x *exchange) entry(msg Message, system, said, answered string, used usage, err error) journal.Entry {
+func (x *exchange) entry(msg Message, choice Choice, system, said, answered string, used usage, err error) journal.Entry {
 	return journal.Entry{
 		At:           x.started,
 		Version:      version,
 		Conversation: msg.Conversation,
 		Device:       msg.Device,
-		Model:        x.mind.Model,
-		Provider:     x.mind.vendor(),
+		Model:        choice.Model,
+		// How hard it was asked to think. Without it the record cannot
+		// tell a cheap turn from an expensive one on the same model,
+		// which is most of what `vera costs` is asked to compare.
+		Effort:       string(choice.Effort),
+		Provider:     choice.Vendor,
 		TraceID:      x.traceID(),
 		System:       system,
 		Said:         said,

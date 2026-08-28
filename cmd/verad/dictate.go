@@ -64,7 +64,7 @@ func (m *Mind) clean(ctx context.Context, d Dictation) (Cleaned, error) {
 	if d.App != nil && d.App.Name != "" {
 		system += "\n\nThe cursor is in " + d.App.Name + ". " + styleFor(d.App)
 	}
-	req := m.request(system, []provider.Message{provider.User(text)}, nil)
+	req := m.request(m.base(), system, []provider.Message{provider.User(text)}, nil)
 	// The cursor is waiting. A model that stops to think has already
 	// missed the budget and the raw words go in instead, so this is the
 	// one call that asks for no reasoning at all — and asks for no

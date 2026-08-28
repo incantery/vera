@@ -74,6 +74,10 @@ type lanTransport struct {
 	// person asking what she can reach. Nil when she has no tools at
 	// all — which is not the same as having no servers.
 	servers func() Servers
+	// picker is where a conversation's model is read and set. verad is
+	// the single writer of it; a terminal asks rather than keeping an
+	// idea of its own. Nil in echo mode, where there is no model.
+	picker Picker
 
 	mu   sync.Mutex
 	port string
@@ -143,6 +147,8 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("POST /transcribe", l.transcribe)
 	mux.HandleFunc("GET /stt", l.sttStatus)
 	mux.HandleFunc("GET /mcp", l.mcpServers)
+	mux.HandleFunc("GET /conversations/{id}/model", l.conversationModel)
+	mux.HandleFunc("POST /conversations/{id}/model", l.setConversationModel)
 	mux.HandleFunc("POST /stt/install", l.sttInstall)
 	mux.HandleFunc("POST /poke/{who}", loopbackOnly(l.pokeHandler))
 	if l.fleet != nil {
@@ -251,6 +257,65 @@ func (l *lanTransport) answerAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"answered": r.PathValue("id")})
+}
+
+// Picker is verad's answer to "which model is this conversation on",
+// and the one way to change it. The Mind implements it.
+type Picker interface {
+	Pick(conversation string) (Resolution, error)
+	Choose(conversation, model, effort string) (Resolution, error)
+}
+
+// conversationModel says what is in force for a conversation, and
+// where each half of it came from. A terminal draws its status line
+// from this rather than remembering what it last set: verad is the
+// authority, and a `vera say -m` from another window changes nothing
+// here but a phone that assumed otherwise would be lying on screen.
+func (l *lanTransport) conversationModel(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.picker == nil {
+		http.Error(w, "no model: this verad is echoing", http.StatusNotFound)
+		return
+	}
+	res, err := l.picker.Pick(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, res)
+}
+
+// setConversationModel is `/model opus high`. An empty model and an
+// empty effort puts the conversation back on the daemon's own.
+func (l *lanTransport) setConversationModel(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.picker == nil {
+		http.Error(w, "no model: this verad is echoing", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		Model  string `json:"model"`
+		Effort string `json:"effort"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	res, err := l.picker.Choose(r.PathValue("id"), body.Model, body.Effort)
+	if err != nil {
+		// A model nobody can reach is the caller's mistake and worth
+		// saying out loud: the alternative is a conversation quietly
+		// answering on a different model than the one asked for.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, res)
 }
 
 // resume shows an existing run, starting after the frames the caller

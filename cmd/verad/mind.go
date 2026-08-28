@@ -60,6 +60,21 @@ type Mind struct {
 	Vendor string
 	Model  string
 	Effort provider.Effort
+	// ModelFrom and EffortFrom name where the two above came from —
+	// the flag, the profile, or nothing but the built-in default —
+	// so `/model` can say who decided, and BaseEffort/EffortExplicit
+	// are the raw answer the vendor's rules are applied to per
+	// exchange. See pick.go.
+	ModelFrom      string
+	EffortFrom     string
+	BaseEffort     string
+	EffortExplicit bool
+	// Wires builds a provider for a model that is not the base one, so
+	// an exchange can be sent somewhere else without a restart.
+	Wires *Wires
+	// Picks is which model each conversation is on, kept on disk. Nil
+	// keeps none, and every exchange runs on the daemon's own model.
+	Picks *Picks
 	// ThinkingDisplay is whether the reasoning comes back to be read
 	// or only to be kept — --thinking-display. Empty is the provider's
 	// own default.
@@ -178,7 +193,16 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		return reply(Frame{Done: true})
 	}
 
-	prior := m.History.recall(msg.Conversation, m.Model)
+	// Which model this exchange goes to, and where that was decided.
+	// It is asked before anything is spent: a name nobody can reach is
+	// an answer now rather than a broken exchange in a minute.
+	choice, cerr := m.choose(msg.Conversation, Pick{Model: msg.Model, Effort: msg.Effort})
+	if cerr != nil {
+		_ = reply(Frame{Error: cerr.Error()})
+		return reply(Frame{Done: true})
+	}
+
+	prior := m.History.recall(msg.Conversation, choice.Model)
 	// The policy's ${root} is the fleet's projects, and they change
 	// while the process runs — a repository opened this morning is a
 	// project this afternoon.
@@ -188,7 +212,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// and the fleet first — handing work away is what she should reach
 	// for before doing it herself — and mote's built-ins after them.
 	tools := m.Hands.Definitions()
-	ctx, x := m.begin(ctx, msg, text, len(prior), system, tools)
+	ctx, x := m.begin(ctx, msg, choice, text, len(prior), system, tools)
 
 	// The system prompt is a field of the request now rather than the
 	// first message: half the APIs do not have a system role, and the
@@ -234,7 +258,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		// reads as if it was never said.
 		said := answer.Len()
 
-		spent, serr := m.Provider.Stream(ctx, m.request(system, messages, tools), func(ev provider.Event) {
+		spent, serr := choice.Provider.Stream(ctx, m.request(choice, system, messages, tools), func(ev provider.Event) {
 			switch ev.Kind {
 			case provider.KindDelta:
 				x.sign(ctx)
@@ -307,7 +331,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// On disk before anything else: the log line and the remote record
 	// are copies; this is the one `vera dump` reads.
 	if m.Journal != nil {
-		if jerr := m.Journal.Write(x.entry(msg, system, text, answer.String(), used, err)); jerr != nil {
+		if jerr := m.Journal.Write(x.entry(msg, choice, system, text, answer.String(), used, err)); jerr != nil {
 			slog.Error("journal", "error", jerr.Error())
 		}
 	}
@@ -318,8 +342,9 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// aggregate answers that after the fact.
 	slog.Info("exchange",
 		"gen_ai.conversation.id", msg.Conversation,
-		"gen_ai.provider.name", m.vendor(),
-		"gen_ai.request.model", m.Model,
+		"gen_ai.provider.name", choice.Vendor,
+		"gen_ai.request.model", choice.Model,
+		"gen_ai.request.effort", string(choice.Effort),
 		"gen_ai.prompt", text,
 		"gen_ai.completion", answer.String(),
 		"turns_recalled", len(prior),
@@ -344,7 +369,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		// error frame is somebody else's to send — so the usage goes
 		// out on its own, first. It draws nothing; it is the number
 		// the screen adds to its total.
-		if u := m.spentFrame(used); u != nil {
+		if u := m.spentFrame(choice, used); u != nil {
 			_ = reply(Frame{Usage: u})
 		}
 		if errors.Is(err, context.Canceled) {
@@ -355,7 +380,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 
 	// After the answer, not before: an exchange that failed did not
 	// happen, and half of one poisons every exchange after it.
-	m.History.remember(msg.Conversation, text, answer.String(), kept, m.Model)
+	m.History.remember(msg.Conversation, text, answer.String(), kept, choice.Model)
 
 	// Extraction used to run here, behind the reply: a second model
 	// call that read the exchange and decided what was worth keeping.
@@ -363,7 +388,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// edit, inside the exchange — a thing she does deliberately rather
 	// than a thing that happens to her. See aboutMemory.
 
-	return reply(Frame{Done: true, Usage: m.spentFrame(used)})
+	return reply(Frame{Done: true, Usage: m.spentFrame(choice, used)})
 }
 
 // invoke runs one tool call and returns what the model should be told.
@@ -382,13 +407,13 @@ func (m *Mind) invoke(ctx context.Context, conversation, device string, x *excha
 // request is one turn as the provider is asked for it. It is here
 // rather than inline because dictation asks for the same thing with
 // no tools and no history, and the two should not drift.
-func (m *Mind) request(system string, messages []provider.Message, tools []tool.Definition) provider.Request {
+func (m *Mind) request(c Choice, system string, messages []provider.Message, tools []tool.Definition) provider.Request {
 	req := provider.Request{
-		Model:    m.Model,
+		Model:    c.Model,
 		System:   system,
 		Messages: messages,
 		Tools:    tools,
-		Effort:   m.Effort,
+		Effort:   c.Effort,
 		// The stable prefix — the tools, then the part of the prompt
 		// that does not change — written once and read back on every
 		// turn after. A provider with no cache to be told about
@@ -405,7 +430,7 @@ func (m *Mind) request(system string, messages []provider.Message, tools []tool.
 	// next one, and provider.Message carries them now, opaquely, as
 	// Raw. See turn.Raw and the loop in think.
 	if len(tools) > 0 {
-		req.Thinking = m.Thinking
+		req.Thinking = c.Thinking
 	}
 	// Whether the reasoning comes back to be read or only to be kept.
 	// It is a different question from whether the model thinks at all:
@@ -464,13 +489,13 @@ func (u usage) tokens() price.Tokens {
 // list prices, which a subscription does not pay. Priced says whether
 // anybody knew a price, so a client can show tokens and stay quiet
 // about money rather than print a confident $0.00.
-func (m *Mind) spentFrame(u usage) *UsageFrame {
+func (m *Mind) spentFrame(c Choice, u usage) *UsageFrame {
 	if u.Prompt == 0 && u.Completion == 0 {
 		return nil
 	}
 	model := u.Model
 	if model == "" {
-		model = m.Model
+		model = c.Model
 	}
 	f := &UsageFrame{
 		Model:            model,

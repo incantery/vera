@@ -322,7 +322,7 @@ func oneCall(t *testing.T, h *Hands, tl tool.Tool) (string, []Frame, *exchange) 
 	m := &Mind{Hands: h, Model: "m", Attention: newAttention(), instruments: newInstruments()}
 	m.Attention.Observe(Observation{Device: "phone", Type: "terminal.focus",
 		Terminal: &TerminalFocus{Session: "s", Window: "w", Path: "/src/rook"}})
-	ctx, x := m.begin(context.Background(), Message{Conversation: "c", Device: "phone"}, "hi", 0, "system", nil)
+	ctx, x := m.begin(context.Background(), Message{Conversation: "c", Device: "phone"}, m.base(), "hi", 0, "system", nil)
 	var frames []Frame
 	call := provider.Call{ID: "call_1", Name: tl.Name(), Arguments: `{}`}
 	said := m.invoke(ctx, "c", "phone", x, call, func(f Frame) error {
@@ -388,7 +388,7 @@ func TestEveryToolGoesThroughThePolicy(t *testing.T) {
 	}
 	h.policy.Tools["saying"] = tool.Deny
 	m := &Mind{Hands: h, Model: "m", instruments: newInstruments()}
-	ctx, x := m.begin(context.Background(), Message{Conversation: "c"}, "hi", 0, "system", nil)
+	ctx, x := m.begin(context.Background(), Message{Conversation: "c"}, m.base(), "hi", 0, "system", nil)
 	call := provider.Call{ID: "call_1", Name: "saying", Arguments: `{}`}
 	said := m.invoke(ctx, "c", "", x, call, func(Frame) error { return nil })
 	if !strings.HasPrefix(said, "Not allowed:") {

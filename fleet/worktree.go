@@ -50,6 +50,32 @@ type Conventions struct {
 	// Check are the commands a no-mistakes task must pass in its
 	// worktree before it lands ("go test ./..."), from [land] check.
 	Check []string
+	// Install says whether landing rebuilds the repository's commands
+	// into the directory the running daemon came from, from
+	// [land] install. Nil is "nobody said" — see Installs.
+	Install *bool
+}
+
+// installByDefault is the one repository where landing means the
+// binaries too.
+//
+// It is a name rather than a general rule because it is a specific
+// fact about a specific repo: vera lands changes to the daemon a person
+// is at that moment talking to, and until the binaries are rebuilt the
+// landing is a claim rather than a change. `go install` is not the
+// answer — it writes to $GOPATH/bin, which is not where verad runs
+// from, which is exactly the bug this fixes. Every other repository has
+// no such relationship with the process doing the landing, so it is off
+// unless rook.toml says otherwise.
+const installByDefault = "vera"
+
+// Installs says whether a landing in this repository should rebuild its
+// commands. What rook.toml says wins either way.
+func (c Conventions) Installs(repoName string) bool {
+	if c.Install != nil {
+		return *c.Install
+	}
+	return repoName == installByDefault
 }
 
 // FindRepo resolves the repo containing dir. A worktree answers with
@@ -346,6 +372,17 @@ func LoadConventions(root string) Conventions {
 			c.Link = list
 		case "[land] check":
 			c.Check = list
+		case "[land] install":
+			// A bool, not a list: whether landing rebuilds the
+			// repository's commands where the daemon runs from.
+			switch strings.TrimSpace(val) {
+			case "true":
+				yes := true
+				c.Install = &yes
+			case "false":
+				no := false
+				c.Install = &no
+			}
 		}
 	}
 	return c

@@ -22,7 +22,7 @@ type veraAgent struct{ c *chatClient }
 // error rather than a channel that carries one. Cancelling ctx breaks
 // the read and closes the channel.
 func (a veraAgent) Send(ctx context.Context, conversation, text string) (<-chan agent.Event, error) {
-	body, err := a.c.openSay(ctx, text, conversation)
+	body, err := a.c.openSay(ctx, Message{Text: text, Conversation: conversation})
 	if err != nil {
 		return nil, err
 	}

@@ -708,3 +708,143 @@ func (brokenNotes) Project(string, string, string, []string) error {
 func (brokenNotes) Landed(string, string, string, string) error {
 	return errors.New("read-only file system")
 }
+
+// Landing means running. In the repository the daemon is built from,
+// a merge is followed by a build into the directory the daemon came
+// from, and the notice says what to do about it.
+func TestLandingRebuildsTheBinaries(t *testing.T) {
+	r := newRepo(t)
+	// The repository has commands, and says so the way Go does.
+	for _, name := range []string{"vera", "verad"} {
+		if err := os.MkdirAll(filepath.Join(r.Root, "cmd", name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		os.WriteFile(filepath.Join(r.Root, "cmd", name, "main.go"), []byte("package main\n"), 0o644)
+	}
+	os.WriteFile(filepath.Join(r.Root, "rook.toml"), []byte("[land]\ninstall = true\n"), 0o644)
+	gitRun(t, r.Root, "add", "cmd", "rook.toml")
+	gitRun(t, r.Root, "commit", "-q", "-m", "commands")
+
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	f.InstallDir = t.TempDir()
+	var built []string
+	f.Run = func(_ context.Context, dir, command string) (string, error) {
+		if dir != r.Root {
+			t.Errorf("the build should run in the main checkout, not %s", dir)
+		}
+		built = append(built, command)
+		return "", nil
+	}
+
+	ctx := context.Background()
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "change the daemon", Kind: Ship})
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(task.Worktree, "thing.txt"), []byte("x\n"), 0o644)
+	gitRun(t, task.Worktree, "add", "thing.txt")
+	gitRun(t, task.Worktree, "commit", "-q", "-m", "the thing")
+	f.Report(task.ID, Status{Verb: Done, Text: "shipped", By: "agent"})
+	f.sweep(ctx)
+
+	if len(built) != 2 {
+		t.Fatalf("both commands should have been built: %v", built)
+	}
+	for i, name := range []string{"vera", "verad"} {
+		// Built beside the target and renamed over it: one of these is
+		// the process doing the building.
+		final := filepath.Join(f.InstallDir, name)
+		want := "go build -o '" + final + ".new' ./cmd/" + name +
+			" && mv -f '" + final + ".new' '" + final + "'"
+		if built[i] != want {
+			t.Errorf("build %d:\n got %s\nwant %s", i, built[i], want)
+		}
+	}
+	statuses, _ := f.Store.Statuses(task.ID)
+	last := statuses[len(statuses)-1]
+	want := "landed " + task.ID + " — vera and verad rebuilt; run vera restart to pick it up"
+	if last.Text != want {
+		t.Errorf("notice:\n got %q\nwant %q", last.Text, want)
+	}
+}
+
+// A build that fails is a landing that failed: the task is blocked
+// with the error, and the room stays open so it can be told.
+func TestABrokenBuildBlocksTheLanding(t *testing.T) {
+	r := newRepo(t)
+	os.MkdirAll(filepath.Join(r.Root, "cmd", "vera"), 0o755)
+	os.WriteFile(filepath.Join(r.Root, "cmd", "vera", "main.go"), []byte("package main\n"), 0o644)
+	os.WriteFile(filepath.Join(r.Root, "rook.toml"), []byte("[land]\ninstall = true\n"), 0o644)
+	gitRun(t, r.Root, "add", "cmd", "rook.toml")
+	gitRun(t, r.Root, "commit", "-q", "-m", "commands")
+
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	f.InstallDir = t.TempDir()
+	f.Run = func(context.Context, string, string) (string, error) {
+		return "cmd/vera/main.go:3:2: undefined: nope\n", errors.New("exit 1")
+	}
+
+	ctx := context.Background()
+	task, _ := f.Spawn(ctx, Request{Project: r.Root, Brief: "break it", Kind: Ship})
+	os.WriteFile(filepath.Join(task.Worktree, "thing.txt"), []byte("x\n"), 0o644)
+	gitRun(t, task.Worktree, "add", "thing.txt")
+	gitRun(t, task.Worktree, "commit", "-q", "-m", "the thing")
+	f.Report(task.ID, Status{Verb: Done, Text: "shipped", By: "agent"})
+	f.sweep(ctx)
+
+	last, _ := f.Store.Last(task.ID)
+	if last.Verb != Blocked || !strings.Contains(last.Text, "undefined: nope") {
+		t.Fatalf("a failed build should block the task with its error: %+v", last)
+	}
+	if _, ok := m.panes[task.Pane]; !ok {
+		t.Error("the agent's pane must survive a failed build, so it can be told")
+	}
+}
+
+// Everywhere else, landing is a merge and nothing more.
+func TestLandingDoesNotBuildInOtherRepositories(t *testing.T) {
+	r := newRepo(t)
+	os.MkdirAll(filepath.Join(r.Root, "cmd", "thing"), 0o755)
+	gitRun(t, r.Root, "add", "-A")
+	gitRun(t, r.Root, "commit", "-q", "--allow-empty", "-m", "commands")
+
+	f := New(newFakeMux(), NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.InstallDir = t.TempDir()
+	ran := 0
+	f.Run = func(context.Context, string, string) (string, error) { ran++; return "", nil }
+	built, err := f.install(context.Background(), r)
+	if err != nil || built != "" || ran != 0 {
+		t.Fatalf("a repository that did not ask should not be built: %q %v (%d commands run)", built, err, ran)
+	}
+
+	// Unless it says so.
+	os.WriteFile(filepath.Join(r.Root, "rook.toml"), []byte("[land]\ninstall = true\n"), 0o644)
+	if built, err := f.install(context.Background(), r); err != nil || built != "thing rebuilt" {
+		t.Fatalf("with [land] install = true: %q %v", built, err)
+	}
+}
+
+// The default is a fact about one repository, and rook.toml overrides
+// it either way.
+func TestInstallsByDefaultOnlyForVera(t *testing.T) {
+	if !(Conventions{}).Installs("vera") {
+		t.Error("vera should install by default")
+	}
+	if (Conventions{}).Installs("rook") {
+		t.Error("nothing else should")
+	}
+	no := false
+	if (Conventions{Install: &no}).Installs("vera") {
+		t.Error("[land] install = false should win for vera too")
+	}
+	yes := true
+	if !(Conventions{Install: &yes}).Installs("rook") {
+		t.Error("[land] install = true should win anywhere")
+	}
+}

@@ -131,6 +131,39 @@ Every hook is a doorbell, not a fact: the supervisor re-reads the pane
 and the worktree after it rings, and a hook that stops firing degrades
 to polling.
 
+### Landing means running
+
+A ship task that says done is landed by the supervisor: merged into the
+default branch in the main checkout, its room closed. In **this**
+repository that is not enough. A change to `verad` that is merged and
+not built is a change nobody is using, and the person finds out by
+watching old behaviour and disbelieving the notice — so after the merge
+the landing rebuilds every `./cmd/*` into the directory the running
+daemon's own binary came from (`os.Executable()`), and says so:
+
+```
+landed 05a40191 — vera and verad rebuilt; run vera restart to pick it up
+```
+
+Not `go install`: that writes to `$GOPATH/bin`, which is not where
+`verad` runs from, which is exactly the bug this fixes. Each binary is
+built beside its target and **renamed** over it rather than written in
+place — one of them is the process doing the building, and writing new
+code into the file a running binary is paged from is how you crash it;
+a rename leaves the running inode alone. verad does not restart itself
+either — a process cannot replace itself mid-exchange — so the notice
+asks.
+
+A build that fails is a landing that failed and goes down the same
+path: the task goes `blocked` with the build error, its room stays
+open, and a newer `done` is a reason to try again.
+
+It is a convention, `[land] install = true` in `rook.toml` beside
+`[land] check`, and it is **on by default for `vera` and off
+everywhere else** — because vera is the one repository whose landing
+changes the process doing the landing. `install = false` turns it off
+here; `install = true` turns it on anywhere.
+
 ## Chat
 
 `vera` (cmd/vera) is the front door and the workbench: bare `vera` makes
@@ -149,7 +182,12 @@ line you read while you wait, and `tool_call`/`tool_result` into a card
 per call with its arguments, its result, how long it took and what it
 cost. The status line adds up what the exchange spent: while a turn is
 in flight it shows that turn, and once it ends the whole conversation —
-`vera · claude-opus-5 · chat-1 · $0.0595 · 12.8k tok`. The turn's own
+`seths-mbp · chat-1 · $0.0595 · 12.8k tok`, with `claude-opus-5 · high`
+on the right. The device and the conversation are mote's, on the left;
+the model is on the right because it can change under the conversation
+at any moment and mote reads `Options.Model` once, at New, while the
+right-hand line is re-read on a timer. Where the model came from is
+deliberately not on the line — `/model` prints it. The turn's own
 model spend rides on the terminal `/say` frame (`usage`: the tokens the
 provider counted, and what they would cost); the tool cards' dollars are
 added to it, so one figure covers the model and everything it handed
@@ -167,11 +205,74 @@ what it wrote and marks it seen), `/answer <id> <text>`, `/land`,
 `/stop [force]`, `/seen`, `/new` for a fresh conversation, `/dump [note]`
 for a folder of everything, `/debug` for what Vera currently believes
 about where you are — devices, focus, terminal, integrations — from the
-same facts the model's preface is built from, and `/quit`. `/help` is
+same facts the model's preface is built from, and `/quit`. Two more are
+about the model itself: `/model` (below) and `/costs`. `/help` is
 mote's: it lists these and the keys. `esc` stops a reply in flight,
-`ctrl+c` leaves, `ctrl+t` hides the rail, `tab`/`ctrl+o` walk and open
-tool cards. It exists so iterating on the mind is typing, not picking up
-a phone.
+`ctrl+c` leaves, `ctrl+t` or `F2` (or `/rail`) hides the rail,
+`tab`/`ctrl+o` walk and open tool cards. It exists so iterating on the
+mind is typing, not picking up a phone.
+
+**Inside rook the rail starts hidden.** rook has an agents pane showing
+the same fleet, and two of them is one too many; the greeting says so
+and the toggle still works. `$ROOK_MUX_SOCK` (or the older `$ROOK_SOCK`)
+is how the chat knows.
+
+A scout on the rail is the one row that is done and still wants you:
+its report is the deliverable, and until somebody has read it the row
+carries mote's `Needs` flag — `◆ needs you · done · report waiting` —
+rather than a tick that would say there is nothing to do here.
+
+## Switching the model
+
+The model is a property of the **exchange**, not of the process. Five
+things can say what it should be, and the most specific wins:
+
+| | |
+| --- | --- |
+| this conversation | `/model claude-opus-5 high` — remembered, and it sticks |
+| this message | `vera say -m claude-opus-5 -e high` — one exchange |
+| `--model` / `--effort` | what this daemon was started with |
+| the profile | `profiles/supervisor/profile.md` front matter `model:` |
+| the built-in default | |
+
+The profile used to outrank the flag. It does not any more: a profile is
+a default about what this agent *is*, and a flag is somebody typing.
+
+`verad` is the single writer. The terminal keeps no idea of its own —
+it asks, on the same timer as the rail, and draws the answer, so a
+`/model` in one window and a `vera say -m` in another cannot disagree:
+
+```
+GET  /conversations/{id}/model                        what is in force, and who said so
+POST /conversations/{id}/model  {"model":"…","effort":"…"}   set it; both empty clears it
+```
+
+Both answer the same shape:
+
+```json
+{"model":"claude-opus-5","effort":"high","provider":"anthropic",
+ "model_from":"this conversation","effort_from":"the --effort flag"}
+```
+
+`POST /say` also takes optional `model` and `effort` for one exchange.
+
+Which wire a model reaches is mote's decision, from the name and the
+keys on this machine, and it is made per exchange through one cached
+provider per model. Setting a model builds that wire first, so a
+machine that cannot reach it at all says so on the way in — but whether
+the far end has heard of the *name* is only knowable by asking, and a
+name it has not heard of comes back as a 404 on the first thing said,
+with the name in it.
+
+The effort dial still belongs to the vendor: on the Anthropic side it is
+passed through, and on the OpenAI-compatible one reasoning is turned off
+and effort left at `none` unless somebody explicitly asked for one —
+that endpoint refuses function tools otherwise. One function decides it
+for startup and for every exchange after (`tune`).
+
+Every journal line records the effort beside the model. The same model
+at two efforts is two different bills and two different waits, and a
+record that named only the model could not tell them apart.
 
 ## Pairing
 
@@ -795,6 +896,43 @@ Each entry is `family=input/output` or
 Entries that cannot be read are logged by name at startup and the rest
 are still used — a typo should be visible in the log, not in the
 figure.
+
+## Comparing what they cost
+
+```
+vera costs [--since 7d|24h|all] [--by model|conversation|day]
+```
+
+and `/costs 24h by day` in the chat, which prints the same table.
+
+It reads the journal and asks nobody: `verad` does not have to be
+running, and a machine that has been off for a week can still say what
+last week cost. A row is exchanges, uncached / cached / output tokens,
+dollars at list, the **median and p90 first sign** — the moment anything
+at all reached the screen, which for a delegating exchange is a status
+line long before the first word — tool rounds per exchange, and what the
+agents those exchanges started spent.
+
+```
+the last 7d · 128 exchanges · by model, oldest 2026-08-21 09:14
+
+model                 exch  input  cached  out   $        sign p50/p90  tools/exch  fleet $
+claude-opus-5 · high  42    1.2M   980.0k  45.0k  $3.4100  1.2s / 4.8s  2.3         $12.4000
+gpt-5.6-luna · none   86    340.0k 0       12.0k  $0.0800  600ms / 1.1s 0.4         —
+total                 128   1.5M   980.0k  57.0k  $3.4900  900ms / 3.9s 1.6         $12.4000
+```
+
+Three things it deliberately does not do. It does not invent a price for
+a model the table does not know — those rows show a dash and the report
+names the models underneath. It does not average latency: the average of
+a first-sign time is a number nobody has ever waited. And it does not
+fold what a delegated agent spent into the exchange's own token count —
+Claude Code bills its own way, and merging the two would make delegation
+look free. The fleet column reads the same session files `vera dump`
+does, through the same code, so the two cannot disagree.
+
+Grouping by model includes the effort, because that is most of what is
+being compared.
 
 ## Subscription limits
 

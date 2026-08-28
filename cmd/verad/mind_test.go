@@ -387,7 +387,7 @@ func TestNoWireAtAllIsTheEcho(t *testing.T) {
 // model suits this agent.
 func TestTheProfileNamesTheModelWhenNobodyElseDoes(t *testing.T) {
 	own := &Hands{Model: "claude-opus-5"}
-	if got, source := modelFor("gpt-5.6-luna", true, own); got != "gpt-5.6-luna" || source != "" {
+	if got, source := modelFor("gpt-5.6-luna", true, own); got != "gpt-5.6-luna" || source != fromFlag {
 		t.Errorf("--model did not win: %q (%s)", got, source)
 	}
 	got, source := modelFor("gpt-5.6-luna", false, own)
