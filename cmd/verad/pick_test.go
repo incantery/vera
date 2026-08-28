@@ -96,14 +96,14 @@ func TestMoreSpecificWins(t *testing.T) {
 // what this agent is, and a flag is somebody typing.
 func TestFlagOutranksProfile(t *testing.T) {
 	own := &Hands{Model: "claude-opus-5"}
-	if got, source := modelFor("gpt-5-mini", true, own); got != "gpt-5-mini" || source != fromFlag {
+	if got, source := modelFor("gpt-5-mini", true, Pick{}, own); got != "gpt-5-mini" || source != fromFlag {
 		t.Fatalf("--model did not win: %q (%s)", got, source)
 	}
-	got, source := modelFor("gpt-5.6-luna", false, own)
+	got, source := modelFor("gpt-5.6-luna", false, Pick{}, own)
 	if got != "claude-opus-5" || source != "profiles/supervisor/profile.md" {
 		t.Fatalf("the profile should fill in: %q (%s)", got, source)
 	}
-	if got, source := modelFor("gpt-5.6-luna", false, nil); got != "gpt-5.6-luna" || source != fromBuiltin {
+	if got, source := modelFor("gpt-5.6-luna", false, Pick{}, nil); got != "gpt-5.6-luna" || source != fromBuiltin {
 		t.Fatalf("with nothing else, the built-in default: %q (%s)", got, source)
 	}
 }

@@ -387,18 +387,18 @@ func TestNoWireAtAllIsTheEcho(t *testing.T) {
 // model suits this agent.
 func TestTheProfileNamesTheModelWhenNobodyElseDoes(t *testing.T) {
 	own := &Hands{Model: "claude-opus-5"}
-	if got, source := modelFor("gpt-5.6-luna", true, own); got != "gpt-5.6-luna" || source != fromFlag {
+	if got, source := modelFor("gpt-5.6-luna", true, Pick{}, own); got != "gpt-5.6-luna" || source != fromFlag {
 		t.Errorf("--model did not win: %q (%s)", got, source)
 	}
-	got, source := modelFor("gpt-5.6-luna", false, own)
+	got, source := modelFor("gpt-5.6-luna", false, Pick{}, own)
 	if got != "claude-opus-5" || !strings.Contains(source, "profile.md") {
 		t.Errorf("the profile's hint was not used: %q (%s)", got, source)
 	}
 	// No profile, or a profile that says nothing: the flag's default.
-	if got, _ := modelFor("gpt-5.6-luna", false, nil); got != "gpt-5.6-luna" {
+	if got, _ := modelFor("gpt-5.6-luna", false, Pick{}, nil); got != "gpt-5.6-luna" {
 		t.Errorf("with no profile the flag stands: %q", got)
 	}
-	if got, _ := modelFor("gpt-5.6-luna", false, &Hands{}); got != "gpt-5.6-luna" {
+	if got, _ := modelFor("gpt-5.6-luna", false, Pick{}, &Hands{}); got != "gpt-5.6-luna" {
 		t.Errorf("a profile with no model hint should not blank it: %q", got)
 	}
 }

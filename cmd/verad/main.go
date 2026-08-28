@@ -220,6 +220,13 @@ func main() {
 			slog.Warn("could not read "+price.Env, "entries", strings.Join(bad, ", "))
 		}
 	}
+	// And a row of $VERA_MODELS that will not parse is a model missing
+	// from the picker, which reads as "this machine cannot reach it".
+	if spec := os.Getenv(EnvModels); spec != "" {
+		if _, bad := parseModels(spec); len(bad) > 0 {
+			slog.Warn("could not read "+EnvModels, "entries", strings.Join(bad, ", "))
+		}
+	}
 	memory := place.Memory()
 	if *showUsage {
 		u, err := scrapeUsage(ctx)
@@ -278,10 +285,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	wanted, source := modelFor(*model, given["model"], own)
+	// The model somebody chose in the picker and kept. It is read here
+	// so that the banner names the model that will actually answer and
+	// the base provider is built for it; choose() reads the same store
+	// per exchange, so a PUT /model lands on the next one. See saved.go.
+	saved := &Default{Path: filepath.Join(stateDir(), "vera", "model.json")}
+	kept, _ := saved.Get()
+	wanted, source := modelFor(*model, given["model"], kept, own)
+	baseEffort, effortSet := *effort, given["effort"]
 	effortSource := fromBuiltin
-	if given["effort"] {
+	switch {
+	case given["effort"]:
 		effortSource = fromEffortFlag
+	case kept.Effort != "":
+		baseEffort, effortSet, effortSource = kept.Effort, true, fromSaved
 	}
 	answer, mind, how := chooseMind(mindOptions{
 		Echo:         *echoOnly,
@@ -290,8 +307,8 @@ func main() {
 		EffortSource: effortSource,
 		APIBase:      *apiBase,
 		KeyFile:      *keyFile,
-		Effort:       *effort,
-		EffortSet:    given["effort"],
+		Effort:       baseEffort,
+		EffortSet:    effortSet,
 		Display:      display,
 		Gen:          generations,
 		Preface:      preface,
@@ -306,6 +323,9 @@ func main() {
 		// is: verad is the single writer of both, and a `/model` typed
 		// this morning outlives this process.
 		mind.Picks = &Picks{Path: filepath.Join(stateDir(), "vera", "models.json")}
+		// And which model the daemon itself is on, when somebody has
+		// said so in the picker rather than on the command line.
+		mind.Default = saved
 		lan.picker = mind
 		mind.Home = place
 		if own != nil {
@@ -661,14 +681,18 @@ func displayFor(word string) (provider.Display, error) {
 
 // modelFor is which model to ask, and where that came from.
 //
-// An explicit --model wins outright. Otherwise the profile's `model:`
-// line — the profile is what says what this agent is, and which model
-// suits it is part of that. The flag's own default is the last word,
-// for a verad running --no-tools with no profile to read.
-func modelFor(flagValue string, given bool, own *Hands) (model, source string) {
+// An explicit --model wins outright. Then a model somebody chose in
+// the picker and kept, which is a person overruling the profile.
+// Then the profile's `model:` line — the profile is what says what
+// this agent is, and which model suits it is part of that. The flag's
+// own default is the last word, for a verad running --no-tools with no
+// profile to read.
+func modelFor(flagValue string, given bool, saved Pick, own *Hands) (model, source string) {
 	switch {
 	case given:
 		return flagValue, fromFlag
+	case saved.Model != "":
+		return saved.Model, fromSaved
 	case own != nil && own.Model != "":
 		return own.Model, home.ProfileDir + "/profile.md"
 	}

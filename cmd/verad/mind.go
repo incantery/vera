@@ -75,6 +75,10 @@ type Mind struct {
 	// Picks is which model each conversation is on, kept on disk. Nil
 	// keeps none, and every exchange runs on the daemon's own model.
 	Picks *Picks
+	// Default is the daemon's own model when somebody has chosen one
+	// at runtime — the `/model` picker's Enter. Nil keeps none, and
+	// the flag or the profile has the last word. See saved.go.
+	Default *Default
 	// ThinkingDisplay is whether the reasoning comes back to be read
 	// or only to be kept — --thinking-display. Empty is the provider's
 	// own default.
