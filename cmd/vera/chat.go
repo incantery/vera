@@ -96,16 +96,15 @@ func runChat(args []string) {
 		greeting += "\n\n" + beliefMarkdown(st, s.conversation())
 	}
 
-	// Not tui.Run: inside rook the fleet rail is redundant with rook's
-	// own agents pane, and mote decides whether the rail starts open at
-	// New. The one honest way to start it closed without a mote of our
-	// own is to toggle it the way a person would, once, as the program
-	// starts. Send blocks until Run is reading, so this lands as one of
-	// the first messages and nothing has to be timed.
+	// Not tui.Run: the watch needs a way to put a message on the
+	// screen from off the UI goroutine. The model is the one thing on
+	// the status line that another window can change — a `vera say -m`,
+	// a `/model` on the phone — so when the poll notices it moved, it
+	// says so with tui.SetModel rather than waiting for somebody to
+	// type here. (The rail no longer needs anything: Options.SideClosed
+	// is how mote is told to start it hidden.)
 	p := tea.NewProgram(tui.New(veraAgent{c}, chatOptions(st, s, sess, greeting)))
-	if insideRook() {
-		go p.Send(railToggle())
-	}
+	w.sendWith(p.Send)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "vera: "+err.Error())
 		os.Exit(1)
@@ -131,21 +130,28 @@ func newConversation() string { return "chat-" + time.Now().Format("20060102-150
 func chatOptions(st *Status, s *chatSession, sess *session.Session, greeting string) tui.Options {
 	return tui.Options{
 		Name: st.Name,
-		// Not Options.Model: mote reads that once, at New, and the
-		// model can change under this conversation at any moment —
-		// `/model opus`, or a `vera say -m` in another window. So the
-		// model in use goes on the right, where it is re-read on a
-		// timer, and it is the model rather than the sentence about
-		// where it came from. `/model` prints that.
+		// The model in use, beside her name. mote reads Options.Model
+		// every frame and tui.SetModel is how it moves, so this is a
+		// starting position rather than a fixed fact: the picker moves
+		// it, and so does the watch when another window does.
+		//
+		// What is deliberately not here is the sentence about where it
+		// came from. That is `/model`'s to print, and it changes
+		// nothing about what is happening.
+		Model:        s.w.resolution().Line(),
 		Conversation: s.conversation(),
 		Session:      sess,
 		Greeting:     greeting,
 		Side:         s.w.side,
 		SideTitle:    "fleet",
-		StatusRight:  s.w.line,
-		Notices:      s.w.notices,
-		Commands:     chatCommands,
-		Handle:       s.handle,
+		// Inside rook the rail is redundant with rook's own agents
+		// pane, so it starts hidden. Closed, not gone: ctrl+t, F2 and
+		// /rail all still bring it back.
+		SideClosed:  insideRook(),
+		StatusRight: s.w.where,
+		Notices:     s.w.notices,
+		Commands:    chatCommands,
+		Handle:      s.handle,
 		// The terminal owns the id — /new hands it one and it may hand
 		// back another — so the chat is told rather than keeping a
 		// guess of its own. /dump reads what it was told.
@@ -214,12 +220,18 @@ type fleetWatch struct {
 	// asked about the right one. The terminal owns the id; this reads
 	// it rather than keeping a second copy.
 	conv func() string
+	// send puts a message on the screen from off the UI goroutine. It
+	// is the program's own Send, set once the program exists, and it
+	// is used for exactly one thing: saying the model moved when
+	// something other than this terminal moved it.
+	send func(tea.Msg)
 
 	mu     sync.Mutex
 	views  []fleet.View
 	states map[string]fleet.State // last state per task, to notice changes
 	status *Status                // what /status last said, for the status line
 	model  *Resolution            // which model this conversation is on
+	shown  string                 // the model the status line is showing
 }
 
 func newFleetWatch(c *chatClient) *fleetWatch {
@@ -303,7 +315,30 @@ func (w *fleetWatch) pollModel(ctx context.Context) {
 	}
 	w.mu.Lock()
 	w.model = res
+	line, send := res.Line(), w.send
+	moved := line != "" && line != w.shown
+	if moved {
+		w.shown = line
+	}
 	w.mu.Unlock()
+	// The status line is mote's to draw and this is not the UI
+	// goroutine, so the change goes back as a message. Only when it
+	// actually changed: the poll runs every few seconds and a message
+	// per poll would redraw the screen for nothing.
+	if moved && send != nil {
+		if msg := tui.SetModel(line)(); msg != nil {
+			send(msg)
+		}
+	}
+}
+
+// sendWith hands the watch the program's own Send. It is set after the
+// program exists and read on the poll goroutine, so it goes under the
+// same lock as everything else here.
+func (w *fleetWatch) sendWith(fn func(tea.Msg)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.send = fn
 }
 
 func (w *fleetWatch) resolution() *Resolution {
@@ -312,25 +347,14 @@ func (w *fleetWatch) resolution() *Resolution {
 	return w.model
 }
 
-// line is the right of the status line: the model actually in use and
-// how hard it is thinking.
-//
-// Only those two, and they are on the right rather than the left for
-// one reason — mote reads Options.Model once, at New, and this can
-// change under the conversation at any moment. The device and the
-// conversation are already on the left, where mote puts them, so
-// repeating either here would be noise. Where the model came from is
-// deliberately absent: it is a sentence, it changes nothing, and
-// `/model` prints it when asked.
-func (w *fleetWatch) line() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.model.Line()
-}
-
 // where is the right of the status line: where Vera believes the
 // person is, in a phrase. It is read on the UI goroutine, so it reads
 // the cache and gets out.
+//
+// The model used to be here, because mote read Options.Model once, at
+// New, and the model can change under a conversation at any moment.
+// tui.SetModel ended that — it is on the left now, with the device and
+// the conversation, and this line is what it was written for.
 func (w *fleetWatch) where() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -532,7 +556,7 @@ func sideSubtitle(v fleet.View) string {
 // mind's fleet tool makes, for when you know exactly what you want
 // and do not need to say it in prose. /help is mote's.
 var chatCommands = []tui.Command{
-	{Name: "model", Help: "/model [name [effort]] — which model this conversation is on, or move it to another"},
+	{Name: "model", Help: "/model — pick from the models verad can reach; /model <name> [effort] moves this conversation straight there"},
 	{Name: "costs", Help: "/costs [7d] [by model|conversation|day] — what the journal says every exchange cost"},
 	{Name: "rail", Help: "show or hide the fleet rail (ctrl+t, F2) — it starts hidden inside rook"},
 	{Name: "tasks", Help: "every task and what is believed about it"},
@@ -595,26 +619,41 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 		return func() tea.Msg { return railToggle() }
 
 	case "model":
-		// verad is the authority: this asks, and it prints what it is
-		// told. With no argument that is a report; with one it is a
-		// change, and the change sticks to the conversation.
+		// verad is the authority throughout: this asks, and it draws
+		// or prints what it is told. With no argument it puts the card
+		// up — see modelpick.go. With one it is a change, typed, and
+		// the change sticks to this conversation.
 		c, conv := s.c, s.conversation()
+		w := s.w
+		if rest == "" {
+			return off(func(ctx context.Context) tea.Cmd {
+				ans, err := c.models(ctx, conv)
+				if err != nil {
+					// A verad too old to list them can still say what
+					// this conversation is on, and that answer is
+					// worth more than an error about a missing route.
+					res, err2 := c.model(ctx, conv)
+					if err2 != nil {
+						return tui.Fail("model: %s", err)
+					}
+					return tui.Note("%s — %s", res.Line(), res.Says())
+				}
+				if len(ans.Models) == 0 {
+					return tui.Fail("no models: verad has no key for any provider")
+				}
+				return tui.Choose(s.modelPick(ans))
+			})
+		}
 		want, effort, _ := strings.Cut(rest, " ")
 		effort = strings.TrimSpace(effort)
-		w := s.w
 		return off(func(ctx context.Context) tea.Cmd {
-			var res *Resolution
-			var err error
-			if rest == "" {
-				res, err = c.model(ctx, conv)
-			} else {
-				res, err = c.chooseModel(ctx, conv, want, effort)
-			}
+			res, err := c.chooseModel(ctx, conv, want, effort)
 			if err != nil {
 				return tui.Fail("model: %s", err)
 			}
 			w.pollModel(ctx)
-			return tea.Batch(tui.Note("%s — %s", res.Line(), res.Says()), tui.Refresh())
+			return tea.Batch(tui.SetModel(res.Line()),
+				tui.Note("%s — %s", res.Line(), res.Says()), tui.Refresh())
 		})
 
 	case "costs":

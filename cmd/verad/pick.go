@@ -6,18 +6,21 @@
 // ask it was to restart the daemon and lose the conversation.
 //
 // So the model is now a property of the exchange rather than of the
-// process. Five things can say what it should be, and they are ranked
+// process. Six things can say what it should be, and they are ranked
 // so that the most specific statement wins:
 //
 //	this conversation  (`/model opus` — remembered, and it sticks)
 //	this message       (`vera say -m opus` — one exchange only)
 //	--model            (what this daemon was started with)
+//	the saved default  (Enter in the `/model` picker — kept, see saved.go)
 //	the profile        (profiles/supervisor/profile.md `model:`)
 //	the built-in default
 //
 // The profile's line used to outrank the flag. It does not any more:
 // a profile is a default about what this agent is, and a flag is
-// somebody typing right now.
+// somebody typing right now. The saved default is between the two for
+// the same reason: it is a person overruling the profile, and it is
+// not somebody typing right now.
 //
 // verad is the single writer. The terminal never keeps its own idea of
 // which model a conversation is on — it asks, and it is told.
@@ -38,6 +41,7 @@ const (
 	fromMessage      = "this message"
 	fromFlag         = "the --model flag"
 	fromEffortFlag   = "the --effort flag"
+	fromSaved        = "the saved default"
 	fromBuiltin      = "the built-in default"
 )
 
@@ -195,6 +199,20 @@ func (m *Mind) choose(conversation string, said Pick) (Choice, error) {
 	}
 	effort, explicit := m.BaseEffort, m.EffortExplicit
 
+	// The saved default outranks what startup resolved, unless startup
+	// resolved it from the flag — the one thing it does not outrank.
+	// It is read here rather than folded into m.Model at startup so
+	// that a PUT /model moves the next exchange rather than the next
+	// process.
+	if d, ok := m.Default.Get(); ok {
+		if d.Model != "" && c.ModelFrom != fromFlag {
+			c.Model, c.ModelFrom = d.Model, fromSaved
+		}
+		if d.Effort != "" && c.EffortFrom != fromEffortFlag {
+			effort, explicit, c.EffortFrom = d.Effort, true, fromSaved
+		}
+	}
+
 	if m.Picks != nil && conversation != "" {
 		if p, ok := m.Picks.Get(conversation); ok {
 			if p.Model != "" {
@@ -232,7 +250,15 @@ func (m *Mind) choose(conversation string, said Pick) (Choice, error) {
 
 // base is the daemon's own model as a Choice — the one dictation asks,
 // because a cursor has no conversation and so has chosen nothing.
+//
+// It resolves rather than reading the fields, so that a saved default
+// reaches everything with no conversation of its own. What is left is
+// the fallback for a machine that cannot build a wire at all, which is
+// the startup answer and is the most honest thing there is to say.
 func (m *Mind) base() Choice {
+	if c, err := m.choose("", Pick{}); err == nil {
+		return c
+	}
 	return Choice{
 		Model:      m.Model,
 		Vendor:     m.vendor(),
@@ -285,4 +311,36 @@ func (m *Mind) Choose(conversation, model, effort string) (Resolution, error) {
 		return Resolution{}, err
 	}
 	return m.Pick(conversation)
+}
+
+// SetDefault moves the daemon's own model — what everything with no
+// conversation of its own runs on — and keeps it. An empty model and
+// an empty effort forgets the saved choice and puts the daemon back on
+// the flag, the profile or the built-in default.
+//
+// It does not outrank --model: a daemon started with one says so, and
+// this is written down for the next one rather than ignored. The
+// answer says what is actually in force, which is how a caller finds
+// out that the flag won.
+func (m *Mind) SetDefault(model, effort string) (Resolution, error) {
+	if m.Default == nil {
+		return Resolution{}, errors.New("this verad keeps no saved default")
+	}
+	model, effort = strings.TrimSpace(model), strings.TrimSpace(effort)
+	if effort != "" && !validEffort(effort) {
+		return Resolution{}, fmt.Errorf("effort %q: it is none, minimal, low, medium, high, xhigh or max", effort)
+	}
+	want := Pick{Model: model, Effort: effort}
+	if !want.empty() {
+		// The same check Choose makes, and for the same reason: a model
+		// with no wire on this machine is refused before it is written
+		// down, not on the next thing said.
+		if _, err := m.choose("", Pick{Model: model, Effort: effort}); err != nil {
+			return Resolution{}, err
+		}
+	}
+	if err := m.Default.Set(want); err != nil {
+		return Resolution{}, err
+	}
+	return m.Pick("")
 }

@@ -147,6 +147,8 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("POST /transcribe", l.transcribe)
 	mux.HandleFunc("GET /stt", l.sttStatus)
 	mux.HandleFunc("GET /mcp", l.mcpServers)
+	mux.HandleFunc("GET /models", l.listModels)
+	mux.HandleFunc("PUT /model", l.setDefaultModel)
 	mux.HandleFunc("GET /conversations/{id}/model", l.conversationModel)
 	mux.HandleFunc("POST /conversations/{id}/model", l.setConversationModel)
 	mux.HandleFunc("POST /stt/install", l.sttInstall)
@@ -264,6 +266,56 @@ func (l *lanTransport) answerAsk(w http.ResponseWriter, r *http.Request) {
 type Picker interface {
 	Pick(conversation string) (Resolution, error)
 	Choose(conversation, model, effort string) (Resolution, error)
+	Models(conversation string) ModelsAnswer
+	SetDefault(model, effort string) (Resolution, error)
+}
+
+// listModels is every model this daemon can reach, and what is in
+// force. It is a table rather than a call to the vendor — see
+// models.go — and it is the whole of what the `/model` picker draws,
+// so a terminal never has to know which models exist.
+//
+// The conversation is optional: with one, the answer says what that
+// conversation chose for itself, which is the row the picker ticks.
+func (l *lanTransport) listModels(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.picker == nil {
+		http.Error(w, "no model: this verad is echoing", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, l.picker.Models(r.URL.Query().Get("conversation")))
+}
+
+// setDefaultModel moves the daemon's own model and keeps it — Enter in
+// the picker. It outranks the profile and not --model, so the answer
+// is what is actually in force rather than what was asked for: a
+// daemon started with --model says so by answering with the flag's.
+func (l *lanTransport) setDefaultModel(w http.ResponseWriter, r *http.Request) {
+	if !l.authed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if l.picker == nil {
+		http.Error(w, "no model: this verad is echoing", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		Model  string `json:"model"`
+		Effort string `json:"effort"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	res, err := l.picker.SetDefault(body.Model, body.Effort)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, res)
 }
 
 // conversationModel says what is in force for a conversation, and
