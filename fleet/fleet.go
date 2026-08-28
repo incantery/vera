@@ -137,6 +137,11 @@ type View struct {
 	Unread []Status `json:"unread,omitempty"`
 	// Report is what the task wrote to its report file, if anything.
 	Report string `json:"report,omitempty"`
+	// AutoLand says whether the supervisor lands this itself. It is on
+	// the view because it changes what is TRUE to say about a finished
+	// task: with it on, "ready to land" is wrong — nobody is waiting
+	// for the person, the landing is already happening.
+	AutoLand bool `json:"auto_land,omitempty"`
 }
 
 func New(m mux.Mux, store *Store) *Fleet {
@@ -752,7 +757,7 @@ func (f *Fleet) Tasks(ctx context.Context) ([]View, error) {
 	panes := f.panes(ctx)
 	var open, closed []View
 	for _, t := range tasks {
-		v := View{Task: t}
+		v := View{Task: t, AutoLand: f.AutoLand}
 		v.Last, _ = f.Store.Last(t.ID)
 		v.Unread, _ = f.Store.Unread(t.ID)
 		v.Report = f.Store.Report(t.ID)

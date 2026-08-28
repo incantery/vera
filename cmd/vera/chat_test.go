@@ -401,10 +401,11 @@ func TestNoticesWhenATaskNeedsYou(t *testing.T) {
 
 	done := running
 	done.State = fleet.Finished
-	done.Last = &fleet.Status{Verb: fleet.Done, Text: "report written"}
-	done.Report = "# Findings"
+	done.Last = &fleet.Status{Verb: fleet.Done, Text: "merged"}
 	evs := w.absorb([]fleet.View{done}, now)
-	if len(evs) != 1 || !strings.Contains(evs[0].Text, "a1 finished") || !strings.Contains(evs[0].Text, "report written") || !strings.Contains(evs[0].Text, "/report a1") {
+	// Landing is the person's here (AutoLand is off on this view), so
+	// "ready to land" is the true thing to say.
+	if len(evs) != 1 || !strings.Contains(evs[0].Text, "a1 finished — ready to land") {
 		t.Fatalf("events: %+v", evs)
 	}
 	if evs := w.absorb([]fleet.View{done}, now); len(evs) != 0 {
@@ -414,13 +415,72 @@ func TestNoticesWhenATaskNeedsYou(t *testing.T) {
 	landed := done
 	landed.State = fleet.Closed
 	evs = w.absorb([]fleet.View{landed}, now)
-	if len(evs) != 1 || !strings.HasPrefix(evs[0].Text, "✓ a1") || !strings.Contains(evs[0].Text, "report written") {
+	if len(evs) != 1 || !strings.HasPrefix(evs[0].Text, "landed a1") || !strings.Contains(evs[0].Text, "merged") {
 		t.Fatalf("a landing says so: %+v", evs)
 	}
 
 	// The rail agrees: what closed is off it.
 	if items := w.side(); len(items) != 0 {
 		t.Errorf("rail: %+v", items)
+	}
+}
+
+// A ship task the supervisor lands by itself is never "ready to land":
+// nobody is waiting for the person, and the next thing they hear is
+// that it landed.
+func TestAShipTaskVeraLandsHerselfDoesNotAskThemToLandIt(t *testing.T) {
+	w := newFleetWatch(nil)
+	now := time.Now()
+	v := fleet.View{Task: &fleet.Task{ID: "b2", Kind: fleet.Ship, Brief: "Move the thing"}, State: fleet.Running, AutoLand: true}
+	w.absorb([]fleet.View{v}, now)
+
+	v.State = fleet.Finished
+	evs := w.absorb([]fleet.View{v}, now)
+	if len(evs) != 1 || strings.Contains(evs[0].Text, "ready to land") || !strings.Contains(evs[0].Text, "landing it") {
+		t.Fatalf("events: %+v", evs)
+	}
+
+	// And a landing that failed says what went wrong, not "a decision".
+	v.State = fleet.Decision
+	v.LandFailure = "merge conflict in README"
+	evs = w.absorb([]fleet.View{v}, now)
+	if len(evs) != 1 || !strings.Contains(evs[0].Text, "blocked: merge conflict in README") {
+		t.Fatalf("a failed landing should say so: %+v", evs)
+	}
+}
+
+// A scout that finishes has nothing to land. What it has is a report,
+// and until somebody has read it the task needs them.
+func TestAScoutReportsRatherThanLands(t *testing.T) {
+	w := newFleetWatch(nil)
+	now := time.Now()
+	v := fleet.View{Task: &fleet.Task{ID: "1ea6a4b5", Kind: fleet.Scout, Brief: "Find out why it is slow"}, State: fleet.Running, AutoLand: true}
+	w.absorb([]fleet.View{v}, now)
+
+	v.State = fleet.Finished
+	v.Report = "# Findings\n\nThe cache prefix changes every turn.\n"
+	v.Unread = []fleet.Status{{Verb: fleet.Done, Text: "report written"}}
+	evs := w.absorb([]fleet.View{v}, now)
+	want := "1ea6a4b5 reported — Findings  (/report 1ea6a4b5)"
+	if len(evs) != 1 || evs[0].Text != want {
+		t.Fatalf("notice:\n got %+v\nwant %q", evs, want)
+	}
+
+	// On the rail it is not a tick: it is a row that needs them.
+	item := sideItems([]fleet.View{v})[0]
+	if item.State != tui.Blocked || item.Subtitle != "report waiting" {
+		t.Fatalf("rail row: %+v", item)
+	}
+
+	// Read is seen; then it closes, and it does not announce itself a
+	// second time.
+	v.Unread = nil
+	if item := sideItems([]fleet.View{v})[0]; item.State != tui.Done {
+		t.Fatalf("a report that was read is done: %+v", item)
+	}
+	v.State = fleet.Closed
+	if evs := w.absorb([]fleet.View{v}, now); len(evs) != 0 {
+		t.Fatalf("closing a scout that already reported is not news: %+v", evs)
 	}
 }
 

@@ -291,3 +291,42 @@ func TestAlwaysToOneVerbIsNotAlwaysToAnother(t *testing.T) {
 		t.Errorf("an always about starting would cover %q", got)
 	}
 }
+
+// What she is handed when a task starts is what she will say, so it
+// has to name the task and say how to look at it again.
+func TestTheReceiptNamesTheTaskAndHowToCheckOnIt(t *testing.T) {
+	ship := startedText(&fleet.Task{ID: "1ea6a4b5", Project: "/x/vera", Branch: "vera-1ea", Kind: fleet.Ship})
+	for _, want := range []string{"Started task 1ea6a4b5 in vera on branch vera-1ea",
+		"Vera lands it when it says done", "name it as task 1ea6a4b5", "/tasks"} {
+		if !strings.Contains(ship, want) {
+			t.Errorf("a ship receipt is missing %q:\n%s", want, ship)
+		}
+	}
+
+	scout := startedText(&fleet.Task{ID: "1ea6a4b5", Project: "/x/vera", Kind: fleet.Scout})
+	if !strings.Contains(scout, "/report 1ea6a4b5") || strings.Contains(scout, "lands it") {
+		t.Errorf("a scout's receipt should point at its report:\n%s", scout)
+	}
+}
+
+// The three things a finished task can be, and only one of them is
+// ever true at a time.
+func TestAFinishedTaskIsToldTheTruthAboutItself(t *testing.T) {
+	now := time.Now()
+	scout := fleet.View{Task: &fleet.Task{ID: "a", Kind: fleet.Scout}, State: fleet.Finished, AutoLand: true}
+	if got := fleetPhrase(scout, now); !strings.Contains(got, "REPORTED") || strings.Contains(got, "land") {
+		t.Errorf("a scout: %q", got)
+	}
+	auto := fleet.View{Task: &fleet.Task{ID: "b", Kind: fleet.Ship}, State: fleet.Finished, AutoLand: true}
+	if got := fleetPhrase(auto, now); !strings.Contains(got, "Vera is landing it") {
+		t.Errorf("a ship task Vera lands: %q", got)
+	}
+	manual := fleet.View{Task: &fleet.Task{ID: "c", Kind: fleet.Ship}, State: fleet.Finished}
+	if got := fleetPhrase(manual, now); !strings.Contains(got, "ready for them to land") {
+		t.Errorf("a ship task they land: %q", got)
+	}
+	failed := fleet.View{Task: &fleet.Task{ID: "d", Kind: fleet.Ship, LandFailure: "merge conflict in README"}, State: fleet.Decision}
+	if got := fleetPhrase(failed, now); !strings.Contains(got, "merge conflict in README") {
+		t.Errorf("a landing that failed: %q", got)
+	}
+}

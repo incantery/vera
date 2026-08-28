@@ -399,14 +399,35 @@ func (w *fleetWatch) lines() string {
 // noticeFor says, in the transcript, when a task's state changed to
 // one that needs the person — the nudge the rail alone cannot give.
 // The first sighting of a task is not news.
+//
+// Every line here is a claim about what happened, so each one is
+// checked against what actually did. A scout that finished did not
+// become "ready to land": it has nothing to land and never did, and
+// what the person wants is its report. A ship task that finished is
+// only "ready to land" when landing is theirs to do — with the
+// supervisor landing on its own, the next thing they will hear is
+// "landed", and telling them to land it in the meantime is telling
+// them to do a job somebody else already started.
 func noticeFor(prev fleet.State, seen bool, v fleet.View, now time.Time) (string, bool) {
 	if !seen || prev == v.State {
 		return "", false
 	}
-	// Landed on its own: say what happened, in the supervisor's
-	// words, so a wrong landing is visible at once.
+	// A scout's whole deliverable is its report, so that is the
+	// notice: what it found, and how to read the rest.
+	if v.Kind == fleet.Scout && (v.State == fleet.Finished || v.State == fleet.Closed) {
+		if v.State == fleet.Closed && prev == fleet.Finished {
+			return "", false // already said, when it finished
+		}
+		return fmt.Sprintf("%s reported — %s  (/report %s)", v.ID, trim(firstLine(v.Report, v.Last), 80), v.ID), true
+	}
+	// Closed: it landed, or it was torn down. Which of the two is the
+	// supervisor's own last word, so say that rather than a tick.
 	if v.State == fleet.Closed {
-		line := "✓ " + v.ID + " — " + trim(firstSentence(v.Brief), 60)
+		verb := "closed"
+		if v.Last != nil && v.Last.Verb == fleet.Done {
+			verb = "landed"
+		}
+		line := verb + " " + v.ID + " — " + trim(firstSentence(v.Brief), 60)
 		if v.Last != nil && v.Last.Text != "" {
 			line += ": " + trim(v.Last.Text, 200)
 		}
@@ -425,12 +446,34 @@ func noticeFor(prev fleet.State, seen bool, v fleet.View, now time.Time) (string
 	return line, true
 }
 
+// firstLine is the first line of a report — the sentence a scout put
+// at the top — falling back to what it last said.
+func firstLine(report string, last *fleet.Status) string {
+	for _, line := range strings.Split(report, "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(line, "# "))
+		if line != "" {
+			return line
+		}
+	}
+	if last != nil && last.Text != "" {
+		return oneLine(last.Text)
+	}
+	return "it has written nothing"
+}
+
 // sideState maps what Vera believes onto the five things a person
 // does about it: leave it, look at it, answer it, land it, fix it.
 // A state with no row — closed, or one this binary is too old to
 // know — is left off the rail rather than guessed at.
-func sideState(s fleet.State) (tui.State, bool) {
-	switch s {
+func sideState(v fleet.View) (tui.State, bool) {
+	// A scout whose report nobody has read is not done — it is the one
+	// row on the rail that actually needs them, and a tick beside it
+	// says the opposite. mote has no "needs you" of its own on this
+	// checkout, so it borrows blocked and says why underneath.
+	if v.Kind == fleet.Scout && v.Report != "" && len(v.Unread) > 0 {
+		return tui.Blocked, true
+	}
+	switch v.State {
 	case fleet.Running, fleet.Quiet:
 		return tui.Working, true
 	case fleet.Waiting, fleet.Stale, fleet.Held:
@@ -445,13 +488,18 @@ func sideState(s fleet.State) (tui.State, bool) {
 	return "", false
 }
 
+// waitingReport: a scout that has written and not been read.
+func waitingReport(v fleet.View) bool {
+	return v.Kind == fleet.Scout && v.Report != "" && len(v.Unread) > 0
+}
+
 func sideItems(views []fleet.View) []tui.SideItem {
 	var out []tui.SideItem
 	for _, v := range views {
 		if v.Task == nil || v.Closed {
 			continue
 		}
-		st, ok := sideState(v.State)
+		st, ok := sideState(v)
 		if !ok {
 			continue
 		}
@@ -468,6 +516,9 @@ func sideItems(views []fleet.View) []tui.SideItem {
 // sideSubtitle is the one line under a task: what it last said, or
 // failing that where it is working.
 func sideSubtitle(v fleet.View) string {
+	if waitingReport(v) {
+		return "report waiting"
+	}
 	sub := shortPath(v.Project)
 	if v.Last != nil && v.Last.Text != "" {
 		sub = trim(oneLine(v.Last.Text), 80)
@@ -798,10 +849,19 @@ func fleetPhrase(v fleet.View, now time.Time) string {
 		}
 		return "waiting on you"
 	case fleet.Decision:
+		if v.LandFailure != "" {
+			return "blocked: " + trim(oneLine(v.LandFailure), 120)
+		}
 		return "blocked on a decision from you"
 	case fleet.Held:
 		return "paused on something external"
 	case fleet.Finished:
+		switch {
+		case v.Kind == fleet.Scout:
+			return "reported"
+		case v.AutoLand:
+			return "finished — landing it"
+		}
 		return "finished — ready to land"
 	case fleet.Broken:
 		return "failed"

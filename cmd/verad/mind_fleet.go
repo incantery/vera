@@ -196,12 +196,7 @@ func (t *FleetTool) act(ctx context.Context, h tool.Handle, meta map[string]any,
 			return "", err
 		}
 		meta[tool.MetaTask] = task.ID
-		where := "in " + shortPath(task.Project)
-		if task.Branch != "" {
-			where += " on branch " + task.Branch
-		}
-		return fmt.Sprintf("Started task %s %s. It is working now and will keep going after this conversation; "+
-			"they can ask how it is going later. Tell them it has started, in a sentence.", task.ID, where), nil
+		return startedText(task), nil
 
 	case "answer":
 		if args.Task == "" || strings.TrimSpace(args.Text) == "" {
@@ -245,6 +240,26 @@ func (t *FleetTool) act(ctx context.Context, h tool.Handle, meta map[string]any,
 		return "Stopped and cleaned up.", nil
 	}
 	return "", fmt.Errorf("unknown action %q", args.Action)
+}
+
+// startedText is what the model is handed when a task opens, and so
+// what the person hears about it. It names the task and says how to
+// look at it again: a reply of "I have started that" leaves them with
+// something running somewhere and no way back to it.
+func startedText(task *fleet.Task) string {
+	where := "in " + shortPath(task.Project)
+	if task.Branch != "" {
+		where += " on branch " + task.Branch
+	}
+	deliver := "It will change the code, and Vera lands it when it says done."
+	check := "ask you how task " + task.ID + " is going, or type /tasks"
+	if task.Kind == fleet.Scout {
+		deliver = "It will investigate and write a report, changing nothing."
+		check = "ask you how task " + task.ID + " is going, or type /report " + task.ID + " once it has reported"
+	}
+	return fmt.Sprintf("Started task %s %s. %s It keeps going after this conversation ends. "+
+		"Tell them in one sentence that it has started, name it as task %s, and say they can %s.",
+		task.ID, where, deliver, task.ID, check)
 }
 
 // describeFleet is the picture, open tasks first, in the person's
@@ -311,11 +326,24 @@ func fleetPhrase(v fleet.View, now time.Time) string {
 	case fleet.Waiting:
 		return "WAITING ON THEM" + age(v.TurnEnded) + "; it asked something and needs an answer"
 	case fleet.Decision:
+		if v.LandFailure != "" {
+			return "BLOCKED: it could not be landed — " + trim(oneLine(v.LandFailure), 160)
+		}
 		return "BLOCKED on a decision from them"
 	case fleet.Held:
 		return "paused, waiting on something external"
 	case fleet.Finished:
-		return "FINISHED — ready to land"
+		// Only one of these is ever true, and saying the wrong one
+		// sends the person to do a job nobody is waiting for. A scout
+		// has nothing to land; a ship task Vera lands herself is
+		// already landing.
+		switch {
+		case v.Kind == fleet.Scout:
+			return "REPORTED — its report is the deliverable"
+		case v.AutoLand:
+			return "FINISHED — Vera is landing it"
+		}
+		return "FINISHED — ready for them to land"
 	case fleet.Broken:
 		return "FAILED; it gave up"
 	case fleet.Gone:
@@ -323,6 +351,11 @@ func fleetPhrase(v fleet.View, now time.Time) string {
 	default:
 		return string(v.State)
 	}
+}
+
+// oneLine flattens something multi-line into a sentence.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(strings.ReplaceAll(s, "\n", " ")), " ")
 }
 
 func roughDuration(d time.Duration) string {
