@@ -754,7 +754,11 @@ func TestLandingRebuildsTheBinaries(t *testing.T) {
 		t.Fatalf("both commands should have been built: %v", built)
 	}
 	for i, name := range []string{"vera", "verad"} {
-		want := "go build -o '" + filepath.Join(f.InstallDir, name) + "' ./cmd/" + name
+		// Built beside the target and renamed over it: one of these is
+		// the process doing the building.
+		final := filepath.Join(f.InstallDir, name)
+		want := "go build -o '" + final + ".new' ./cmd/" + name +
+			" && mv -f '" + final + ".new' '" + final + "'"
 		if built[i] != want {
 			t.Errorf("build %d:\n got %s\nwant %s", i, built[i], want)
 		}

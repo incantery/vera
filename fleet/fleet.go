@@ -549,8 +549,16 @@ func (f *Fleet) install(ctx context.Context, repo Repo) (string, error) {
 		run = shellRun
 	}
 	for _, name := range names {
-		out, err := run(ctx, repo.Root, fmt.Sprintf("go build -o %s ./cmd/%s",
-			shellQuote(filepath.Join(f.InstallDir, name)), name))
+		// Beside the target and then renamed over it, never written in
+		// place. One of the binaries being replaced is the process
+		// doing the replacing, and writing new code into the file a
+		// running Mach-O is paged from is how you crash it. A rename
+		// is atomic and leaves the running inode alone: this process
+		// keeps running the old one until it is restarted, which is
+		// exactly what the notice tells the person to do.
+		final := filepath.Join(f.InstallDir, name)
+		out, err := run(ctx, repo.Root, fmt.Sprintf("go build -o %s ./cmd/%s && mv -f %s %s",
+			shellQuote(final+".new"), name, shellQuote(final+".new"), shellQuote(final)))
 		if err != nil {
 			return "", fmt.Errorf("go build ./cmd/%s: %s", name, tail(out, 600))
 		}

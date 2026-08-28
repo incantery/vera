@@ -146,9 +146,13 @@ landed 05a40191 — vera and verad rebuilt; run vera restart to pick it up
 ```
 
 Not `go install`: that writes to `$GOPATH/bin`, which is not where
-`verad` runs from, which is exactly the bug this fixes. verad does not
-restart itself either — a process cannot replace itself mid-exchange,
-so the notice asks.
+`verad` runs from, which is exactly the bug this fixes. Each binary is
+built beside its target and **renamed** over it rather than written in
+place — one of them is the process doing the building, and writing new
+code into the file a running binary is paged from is how you crash it;
+a rename leaves the running inode alone. verad does not restart itself
+either — a process cannot replace itself mid-exchange — so the notice
+asks.
 
 A build that fails is a landing that failed and goes down the same
 path: the task goes `blocked` with the build error, its room stays
