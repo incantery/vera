@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -75,6 +77,17 @@ type Fleet struct {
 	// Run runs a check command in a directory and returns its output
 	// and whether it passed. Nil uses `sh -c`.
 	Run func(ctx context.Context, dir, command string) (string, error)
+	// InstallDir is where landing rebuilds a repository's commands:
+	// the directory the running daemon's own binary came from. Empty
+	// means a landing never builds anything, which is right for
+	// everything except the repository this daemon is built from.
+	//
+	// It is the daemon's own directory rather than $GOPATH/bin on
+	// purpose: `go install` writes to the latter, verad runs from the
+	// former, and a landing that put the new binary somewhere the
+	// running process will never look is a landing that quietly did
+	// nothing.
+	InstallDir string
 
 	mu      sync.Mutex
 	poke    chan struct{}
@@ -488,6 +501,17 @@ func (f *Fleet) land(ctx context.Context, t *Task) error {
 			return err
 		}
 		_ = f.Store.Append(t.ID, Status{Verb: Done, Text: fmt.Sprintf("merged %s into %s (%d commit%s)", t.Branch, repo.DefaultBranch(), ahead, plural(ahead)), By: "vera"})
+		// Landing means running. A change to the daemon that is merged
+		// and not built is a change nobody is using, and the person
+		// finds out by watching old behaviour and disbelieving the
+		// notice. A build that fails is a landing that failed, and
+		// goes down the same path.
+		if built, err := f.install(ctx, repo); err != nil {
+			return err
+		} else if built != "" {
+			_ = f.Store.Append(t.ID, Status{Verb: Done, By: "vera",
+				Text: fmt.Sprintf("landed %s — %s; run vera restart to pick it up", t.ID, built)})
+		}
 	default:
 		_ = f.Store.Append(t.ID, Status{Verb: Done, Text: "closed", By: "vera"})
 	}
@@ -499,6 +523,59 @@ func (f *Fleet) land(ctx context.Context, t *Task) error {
 	_ = f.Mux.Kill(ctx, t.Pane)
 	f.closeRoom(ctx, t)
 	return f.close(t)
+}
+
+// install rebuilds the repository's commands into InstallDir, and says
+// what it built. Nothing to do — no InstallDir, or a repository whose
+// conventions do not ask for it — is "" and no error.
+//
+// Every directory under cmd/ is a command, which is Go's own
+// convention and needs no second list in rook.toml to drift from it.
+func (f *Fleet) install(ctx context.Context, repo Repo) (string, error) {
+	if f.InstallDir == "" || !LoadConventions(repo.Root).Installs(repo.Name) {
+		return "", nil
+	}
+	names, err := commandsIn(repo.Root)
+	if err != nil || len(names) == 0 {
+		return "", err
+	}
+	run := f.Run
+	if run == nil {
+		run = shellRun
+	}
+	for _, name := range names {
+		out, err := run(ctx, repo.Root, fmt.Sprintf("go build -o %s ./cmd/%s",
+			shellQuote(filepath.Join(f.InstallDir, name)), name))
+		if err != nil {
+			return "", fmt.Errorf("go build ./cmd/%s: %s", name, tail(out, 600))
+		}
+	}
+	return strings.Join(names, " and ") + " rebuilt", nil
+}
+
+// commandsIn lists the directories under cmd/, which is where a Go
+// repository keeps the things it builds.
+func commandsIn(root string) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(root, "cmd"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			out = append(out, e.Name())
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// shellQuote makes a path safe for the `sh -c` the build goes through.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // note records the repository in Vera's memory: where it is, what it

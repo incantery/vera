@@ -389,6 +389,14 @@ func main() {
 		if *fleetModel != "" {
 			f.Model = func(*fleet.Task) string { return *fleetModel }
 		}
+		// Landing means running: a change to this repository that
+		// merges and is not built is a change nobody is using. The
+		// directory is THIS binary's, which is where `vera restart`
+		// will look — not $GOPATH/bin, which is where `go install`
+		// would have put it and where nothing runs from.
+		if exe, err := os.Executable(); err == nil {
+			f.InstallDir = filepath.Dir(exe)
+		}
 		f.StatusURL = func(task string) string {
 			return "http://127.0.0.1" + portOf(*addr) + "/fleet/" + task + "/status"
 		}
