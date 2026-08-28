@@ -180,10 +180,13 @@ func (p Pick) empty() bool { return p.Model == "" && p.Effort == "" }
 
 // choose resolves one exchange's model, most specific statement first.
 //
-// A per-conversation or per-message model that cannot be reached is an
-// error rather than a silent fall back to the base one: somebody asked
-// for a model by name and got a different one is the worst answer
-// available.
+// A model that cannot be reached is an error rather than a silent fall
+// back to the base one: asking for a model by name and being answered
+// by a different one is the worst outcome available. "Cannot be
+// reached" means there is no wire for it on this machine — no key, no
+// endpoint. Whether the far end has ever heard of the name is not
+// knowable without asking it, and a name it has not heard of comes
+// back as a 404 on the first thing said, with the name in it.
 func (m *Mind) choose(conversation string, said Pick) (Choice, error) {
 	c := Choice{
 		Model:      m.Model,
@@ -255,9 +258,10 @@ func (m *Mind) Pick(conversation string) (Resolution, error) {
 // now in force. An empty model and an empty effort clears the
 // conversation's own choice and puts it back on the daemon's.
 //
-// The model is reached before it is written down: a typo should be an
-// error on the way in, not a broken conversation on the next thing
-// said.
+// A wire for the model is built before anything is written down, so a
+// machine that cannot reach it at all says so now rather than on the
+// next thing said. That is as far as checking can go without a request
+// to the provider — see choose.
 func (m *Mind) Choose(conversation, model, effort string) (Resolution, error) {
 	if conversation == "" {
 		return Resolution{}, errors.New("a model is chosen for a conversation; this request named none")

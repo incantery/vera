@@ -84,6 +84,19 @@ mods}` shortcuts — rebuild Core, and the app's buttons appear on the
 phone. No phone rebuild. That's the Tier-0 path; richer actions (parsing
 output, reading state) graduate to a Go provider.
 
+## Trying another model
+
+`/model` in the chat says which model is answering, how hard it is
+thinking, and where that was decided. `/model claude-opus-5 high` moves
+**this conversation** onto another one, sticks across `vera chat -c`,
+and is undone by `/model` with nothing after it. `vera say -m
+claude-opus-5 "…"` does it for one exchange only. No restart either way.
+
+`vera costs` (or `/costs` in the chat) then says what that was worth:
+exchanges, tokens, dollars at list prices, how long until anything
+reached the screen, and what the agents you started spent —
+`--since 24h`, `--by model|conversation|day`.
+
 ## Troubleshooting
 
 - **Apps missing from the home list / taps don't switch the Mac.**

@@ -161,10 +161,15 @@ func TestAConversationsModelSurvivesAReopen(t *testing.T) {
 	}
 }
 
-// A model nobody can reach is an error on the way in. Writing it down
-// and failing on the next thing said would leave the conversation
-// broken with no obvious cause.
-func TestAnUnreachableModelIsRefusedBeforeItIsKept(t *testing.T) {
+// A model with no wire on this machine is an error on the way in.
+// (Whether the far end knows the NAME is a different question, and
+// only the far end can answer it — that comes back as a 404 on the
+// first thing said.)
+func TestAModelWithNoWireIsRefusedBeforeItIsKept(t *testing.T) {
+	// No keys, no endpoint: nothing can be built for any name.
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OPENAI_BASE_URL", "")
 	m := mindFor(t)
 	if _, err := m.Choose("c1", "no-such-model", ""); err == nil {
 		t.Fatal("a model with no provider was accepted")
