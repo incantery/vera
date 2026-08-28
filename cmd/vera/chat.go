@@ -104,7 +104,7 @@ func runChat(args []string) {
 	// type here. (The rail no longer needs anything: Options.SideClosed
 	// is how mote is told to start it hidden.)
 	p := tea.NewProgram(tui.New(veraAgent{c}, chatOptions(st, s, sess, greeting)))
-	w.send = p.Send
+	w.sendWith(p.Send)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "vera: "+err.Error())
 		os.Exit(1)
@@ -332,31 +332,29 @@ func (w *fleetWatch) pollModel(ctx context.Context) {
 	}
 }
 
+// sendWith hands the watch the program's own Send. It is set after the
+// program exists and read on the poll goroutine, so it goes under the
+// same lock as everything else here.
+func (w *fleetWatch) sendWith(fn func(tea.Msg)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.send = fn
+}
+
 func (w *fleetWatch) resolution() *Resolution {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.model
 }
 
-// line is the right of the status line: the model actually in use and
-// how hard it is thinking.
-//
-// Only those two, and they are on the right rather than the left for
-// one reason — mote reads Options.Model once, at New, and this can
-// change under the conversation at any moment. The device and the
-// conversation are already on the left, where mote puts them, so
-// repeating either here would be noise. Where the model came from is
-// deliberately absent: it is a sentence, it changes nothing, and
-// `/model` prints it when asked.
-func (w *fleetWatch) line() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.model.Line()
-}
-
 // where is the right of the status line: where Vera believes the
 // person is, in a phrase. It is read on the UI goroutine, so it reads
 // the cache and gets out.
+//
+// The model used to be here, because mote read Options.Model once, at
+// New, and the model can change under a conversation at any moment.
+// tui.SetModel ended that — it is on the left now, with the device and
+// the conversation, and this line is what it was written for.
 func (w *fleetWatch) where() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()

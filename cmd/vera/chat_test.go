@@ -1330,3 +1330,46 @@ func indexDial(t *testing.T, dial []string, effort string) int {
 	t.Fatalf("no %q on the dial %v", effort, dial)
 	return -1
 }
+
+// The model can move without this terminal moving it — a `vera say -m`
+// in another window, a `/model` on the phone. verad is the authority
+// and the poll is how the status line hears about it, so what it hears
+// goes back to mote as a message rather than waiting for somebody here
+// to type.
+func TestTheWatchPushesAModelThatMovedElsewhere(t *testing.T) {
+	outsideRook(t)
+	f := newFakeVerad(t)
+	c := f.client()
+	w := newFleetWatch(c)
+	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
+	w.conv = s.conversation
+	w.pollModel(context.Background())
+	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
+
+	var pushed []tea.Msg
+	w.sendWith(func(msg tea.Msg) { pushed = append(pushed, msg) })
+
+	// Nothing moved: nothing is said. A message per poll would redraw
+	// the screen every few seconds for no reason.
+	w.pollModel(context.Background())
+	if len(pushed) != 0 {
+		t.Fatalf("a poll that changed nothing pushed %d message(s)", len(pushed))
+	}
+
+	// Somebody else moved it.
+	f.mu.Lock()
+	f.model = Resolution{Model: "claude-opus-5", Effort: "max", Provider: "anthropic",
+		ModelFrom: "this conversation", EffortFrom: "this conversation"}
+	f.mu.Unlock()
+	w.pollModel(context.Background())
+	if len(pushed) != 1 {
+		t.Fatalf("wanted one message, got %d", len(pushed))
+	}
+	for _, msg := range pushed {
+		m.Update(msg)
+	}
+	if v := screen(m); !strings.Contains(v, "vera · claude-opus-5 · max") {
+		t.Errorf("the status line did not follow verad:\n%s", v)
+	}
+}
