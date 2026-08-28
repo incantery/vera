@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"math"
 	"path/filepath"
 	"strings"
@@ -172,6 +173,38 @@ func TestTheDoneFrameSaysWhatTheExchangeSpent(t *testing.T) {
 	}
 	if !done.Done || done.Usage != nil {
 		t.Errorf("an empty message spends nothing: %+v", done)
+	}
+}
+
+// An exchange that broke halfway still spent what it spent. It goes
+// out on a frame of its own, because the reply never reached its Done
+// — a turn that cost real money and then failed is not a free turn.
+func TestAFailedExchangeStillSaysWhatItSpent(t *testing.T) {
+	model := scripted(t, scriptRound{
+		events: []provider.Event{provider.Delta("half a wor")},
+		usage:  provider.Usage{Model: "claude-opus-5", Input: 3000, Output: 800},
+	})
+	mind := &Mind{Provider: model, Model: "m", History: newHistory(), instruments: newInstruments()}
+
+	var spent *UsageFrame
+	err := mind.think(context.Background(), Message{Text: "go", Conversation: "c1"},
+		func(f Frame) error {
+			if f.Usage != nil {
+				spent = f.Usage
+			}
+			if f.Delta != "" {
+				return errors.New("the phone hung up")
+			}
+			return nil
+		})
+	if err == nil {
+		t.Fatal("a reply that could not be delivered is an error")
+	}
+	if spent == nil {
+		t.Fatal("nothing said what the broken exchange spent")
+	}
+	if spent.InputTokens != 3000 || spent.OutputTokens != 800 || !spent.Priced {
+		t.Errorf("spend: %+v", spent)
 	}
 }
 

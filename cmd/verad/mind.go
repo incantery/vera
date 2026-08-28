@@ -340,6 +340,13 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	)
 
 	if err != nil {
+		// An exchange that failed still spent what it spent, and the
+		// error frame is somebody else's to send — so the usage goes
+		// out on its own, first. It draws nothing; it is the number
+		// the screen adds to its total.
+		if u := m.spentFrame(used); u != nil {
+			_ = reply(Frame{Usage: u})
+		}
 		if errors.Is(err, context.Canceled) {
 			return nil // the phone hung up; not an error to report
 		}
