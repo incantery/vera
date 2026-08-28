@@ -466,13 +466,6 @@ func firstLine(report string, last *fleet.Status) string {
 // A state with no row — closed, or one this binary is too old to
 // know — is left off the rail rather than guessed at.
 func sideState(v fleet.View) (tui.State, bool) {
-	// A scout whose report nobody has read is not done — it is the one
-	// row on the rail that actually needs them, and a tick beside it
-	// says the opposite. mote has no "needs you" of its own on this
-	// checkout, so it borrows blocked and says why underneath.
-	if v.Kind == fleet.Scout && v.Report != "" && len(v.Unread) > 0 {
-		return tui.Blocked, true
-	}
 	switch v.State {
 	case fleet.Running, fleet.Quiet:
 		return tui.Working, true
@@ -489,6 +482,11 @@ func sideState(v fleet.View) (tui.State, bool) {
 }
 
 // waitingReport: a scout that has written and not been read.
+//
+// This is what SideItem.Needs is for, and why it is not a state. Such
+// a scout IS done — it did everything it was asked — and it is also
+// the one row on the rail that wants the person. A tick alone would
+// say "nothing to do here", which is the opposite of true.
 func waitingReport(v fleet.View) bool {
 	return v.Kind == fleet.Scout && v.Report != "" && len(v.Unread) > 0
 }
@@ -508,6 +506,7 @@ func sideItems(views []fleet.View) []tui.SideItem {
 			Title:    trim(firstSentence(v.Brief), 60),
 			Subtitle: sideSubtitle(v),
 			State:    st,
+			Needs:    waitingReport(v),
 		})
 	}
 	return out
