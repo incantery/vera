@@ -147,7 +147,15 @@ get a stream of events. Vera is that agent over HTTP, so `/say` frames
 become events: deltas into streaming markdown, status lines into the
 line you read while you wait, and `tool_call`/`tool_result` into a card
 per call with its arguments, its result, how long it took and what it
-cost. The rail on the right is the fleet — every open task, its title
+cost. The status line adds up what the exchange spent: while a turn is
+in flight it shows that turn, and once it ends the whole conversation —
+`vera · claude-opus-5 · chat-1 · $0.0595 · 12.8k tok`. The turn's own
+model spend rides on the terminal `/say` frame (`usage`: the tokens the
+provider counted, and what they would cost); the tool cards' dollars are
+added to it, so one figure covers the model and everything it handed
+work to. It survives quitting: the totals are written into the
+conversation file with the turn, so `vera chat -c` reopens with the
+conversation's cost still on the line. The rail on the right is the fleet — every open task, its title
 from the brief, its last word underneath, and one of five states a
 person acts on differently (working, idle, blocked, done, failed);
 closed tasks come off it. A task whose state turns actionable, or that
@@ -753,6 +761,40 @@ line appeared in one. So `vera.time_to_first_sign` measures time until
 anything at all reached the phone, a status line included, and the
 convention's metric is left alone. The gap between the two lines is the
 status line earning its place.
+
+## What a turn costs
+
+Two different questions, and they must not be answered with two
+different tables.
+
+`vera dump` prices whole Claude Code sessions after the fact; the chat's
+status line prices the turn you are watching. Both read
+`price` — one table of API list prices per million tokens, by model
+family, longest match wins. A family with no row gets **tokens and no
+dollars**: an unknown model is not a free one, and the wire says so
+explicitly (`priced`) so a screen can show the tokens and stay quiet
+about the money rather than print a confident `$0.00`.
+
+The figures are **notional** — API list prices, which a subscription
+does not pay. What they are good for is comparison: which turn was
+expensive, which task ran away. The number that can actually stop you is
+below, under Subscription limits.
+
+Rows whose cache rates are not published separately (the OpenAI ones)
+leave them zero, and cached tokens are then charged at the input rate —
+conservative, and never an invented discount.
+
+To correct a price, or add a model, without a rebuild:
+
+```
+VERA_PRICES="gpt-5.6-luna=0.20/1.20,opus=5/6.25/0.5/25"
+```
+
+Each entry is `family=input/output` or
+`family=input/cache-write/cache-read/output`, USD per million tokens.
+Entries that cannot be read are logged by name at startup and the rest
+are still used — a typo should be visible in the log, not in the
+figure.
 
 ## Subscription limits
 

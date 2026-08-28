@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -108,6 +109,69 @@ func TestUsageAccumulatesAcrossRounds(t *testing.T) {
 	if e.CacheReadTokens != 100 || e.CacheWriteTokens != 100 {
 		t.Fatalf("the cache numbers did not reach the journal: read %d, write %d",
 			e.CacheReadTokens, e.CacheWriteTokens)
+	}
+}
+
+// The terminal frame says what the exchange spent, so a client with a
+// screen can put it on one. Tokens are what the provider counted;
+// dollars are what those tokens would cost at list prices, and a model
+// with no price in the table gets its tokens and no dollars rather than
+// a confident zero.
+func TestTheDoneFrameSaysWhatTheExchangeSpent(t *testing.T) {
+	spend := func(t *testing.T, answered string) *UsageFrame {
+		t.Helper()
+		model := scripted(t, scriptRound{
+			events: []provider.Event{provider.Delta("ok")},
+			usage:  provider.Usage{Model: answered, Input: 3000, CacheRead: 9000, Output: 800},
+		})
+		mind := &Mind{Provider: model, Model: "m", History: newHistory(), instruments: newInstruments()}
+		var done Frame
+		if err := mind.think(context.Background(), Message{Text: "go", Conversation: "c1"},
+			func(f Frame) error {
+				if f.Done {
+					done = f
+				}
+				return nil
+			}); err != nil {
+			t.Fatal(err)
+		}
+		if done.Usage == nil {
+			t.Fatal("the done frame carried no usage")
+		}
+		return done.Usage
+	}
+
+	u := spend(t, "claude-opus-5")
+	// The prompt is all of it, cache included; the price table charges
+	// the 9000 cache reads at the cache rate and the rest at input.
+	if u.InputTokens != 12000 || u.OutputTokens != 800 || u.CacheReadTokens != 9000 {
+		t.Fatalf("tokens: %+v", u)
+	}
+	if u.Model != "claude-opus-5" {
+		t.Errorf("the model that answered is the one that is priced: %q", u.Model)
+	}
+	want := (3000*5.0 + 9000*0.5 + 800*25.0) / 1e6
+	if !u.Priced || math.Abs(u.CostUSD-want) > 1e-9 {
+		t.Errorf("cost: %v priced %v, want %v", u.CostUSD, u.Priced, want)
+	}
+
+	u = spend(t, "some-local-model")
+	if u.Priced || u.CostUSD != 0 {
+		t.Errorf("an unpriced model should not be quoted a price: %+v", u)
+	}
+	if u.InputTokens != 12000 || u.OutputTokens != 800 {
+		t.Errorf("its tokens are still counted: %+v", u)
+	}
+
+	// Nothing said, nothing spent, nothing claimed.
+	mind := &Mind{Provider: scripted(t), Model: "m", History: newHistory(), instruments: newInstruments()}
+	var done Frame
+	if err := mind.think(context.Background(), Message{Text: "  ", Conversation: "c1"},
+		func(f Frame) error { done = f; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !done.Done || done.Usage != nil {
+		t.Errorf("an empty message spends nothing: %+v", done)
 	}
 }
 
