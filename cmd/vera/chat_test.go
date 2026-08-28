@@ -28,12 +28,14 @@ import (
 // agent: /say streams an echo with a tool round, /status answers,
 // /fleet is whatever the test set, and the secret is checked.
 type fakeVerad struct {
-	url   string
-	id    Identity
-	mu    sync.Mutex
-	views []fleet.View
-	posts []string
-	model Resolution
+	url    string
+	id     Identity
+	mu     sync.Mutex
+	views  []fleet.View
+	posts  []string
+	model  Resolution
+	chosen *InForce // what this conversation chose, as /models reports it
+	dflt   *InForce // what PUT /model last saved
 }
 
 func newFakeVerad(t *testing.T) *fakeVerad {
@@ -89,6 +91,40 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		defer f.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(f.model)
 	})
+	mux.HandleFunc("GET /models", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(w, r) {
+			return
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		ans := ModelsAnswer{
+			Default: InForce{Model: "gpt-5.6-luna", Effort: "none", From: "the built-in default"},
+			Models: []ModelRow{
+				{Name: "gpt-5.6-luna", Provider: "openai", Efforts: []string{"none"},
+					Note: "effort none only (chat completions)", Priced: true},
+				{Name: "gpt-5", Provider: "openai", Efforts: []string{"none", "low", "medium", "high"}, Priced: true},
+				{Name: "claude-opus-5", Provider: "anthropic", Efforts: []string{"low", "medium", "high", "max"}, Priced: true},
+				{Name: "my-local-7b", Provider: "openai", Efforts: []string{"none"}},
+			},
+		}
+		if f.chosen != nil {
+			ans.Conversation = f.chosen
+		}
+		_ = json.NewEncoder(w).Encode(ans)
+	})
+	mux.HandleFunc("PUT /model", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(w, r) {
+			return
+		}
+		var body struct{ Model, Effort string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.posts = append(f.posts, r.URL.Path)
+		f.dflt = &InForce{Model: body.Model, Effort: body.Effort, From: "the saved default"}
+		_ = json.NewEncoder(w).Encode(Resolution{Model: body.Model, Effort: body.Effort,
+			Provider: "anthropic", ModelFrom: "the saved default", EffortFrom: "the saved default"})
+	})
 	mux.HandleFunc("POST /conversations/{id}/model", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(w, r) {
 			return
@@ -104,6 +140,7 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		}
 		f.model = Resolution{Model: body.Model, Effort: body.Effort, Provider: "anthropic",
 			ModelFrom: "this conversation", EffortFrom: "this conversation"}
+		f.chosen = &InForce{Model: body.Model, Effort: body.Effort}
 		_ = json.NewEncoder(w).Encode(f.model)
 	})
 	mux.HandleFunc("POST /fleet/", func(w http.ResponseWriter, r *http.Request) {
@@ -713,6 +750,7 @@ func deliver(m *tui.Model, cmd tea.Cmd) {
 // The whole of it, once, without a terminal: the real options over a
 // fake verad, drawn by mote with the colour turned off.
 func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
+	outsideRook(t)
 	f := newFakeVerad(t)
 	c := f.client()
 	f.setFleet(fleet.View{
@@ -972,14 +1010,25 @@ func TestNewMovesTheConversationAndItsFile(t *testing.T) {
 	}
 }
 
+// outsideRook is a test that wants the rail open: the chat starts it
+// closed inside rook, and the tests are run from a terminal that may
+// well be one.
+func outsideRook(t *testing.T) {
+	t.Helper()
+	t.Setenv("ROOK_MUX_SOCK", "")
+	t.Setenv("ROOK_SOCK", "")
+}
+
 // screen is the terminal's frame as plain text: v2 hands back a
 // tea.View, and the tests read words, not colours.
 func screen(m tea.Model) string { return ansi.Strip(m.View().Content) }
 
-// /model asks verad and prints what it is told, and /model <name>
-// moves this conversation onto another one. The terminal keeps no idea
-// of its own: verad is the single writer, and the status line follows.
+// /model <name> moves this conversation onto another one — the typed
+// form, for when you know the answer and do not need the card. The
+// terminal keeps no idea of its own: verad is the single writer, and
+// the status line follows.
 func TestModelCommandAsksVeradAndTheStatusLineFollows(t *testing.T) {
+	outsideRook(t)
 	f := newFakeVerad(t)
 	c := f.client()
 	w := newFleetWatch(c)
@@ -990,13 +1039,13 @@ func TestModelCommandAsksVeradAndTheStatusLineFollows(t *testing.T) {
 	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
-	// With no argument it reports, provenance and all.
-	deliver(m, s.handle("model", ""))
-	if v := screen(m); !strings.Contains(v, "gpt-5.6-luna · none") || !strings.Contains(v, "the built-in default") {
-		t.Errorf("/model should say what is in force and who said so:\n%s", v)
+	// What is in force is on the status line from the start, without
+	// asking: the chat polls verad for it.
+	if v := screen(m); !strings.Contains(v, "vera · gpt-5.6-luna · none") {
+		t.Errorf("the status line should open on what is in force:\n%s", v)
 	}
 
-	// With one it moves, and says so in the same words.
+	// With an argument it moves, and says so with the provenance.
 	deliver(m, s.handle("model", "claude-opus-5 high"))
 	if v := screen(m); !strings.Contains(v, "claude-opus-5 · high") || !strings.Contains(v, "this conversation") {
 		t.Errorf("/model <name> should move the conversation:\n%s", v)
@@ -1080,25 +1129,38 @@ func TestTheRailStartsHiddenInsideRook(t *testing.T) {
 		}
 	}
 
-	// /rail is mote's own toggle, so the rail comes and goes with it.
+	// mote is told at New — Options.SideClosed — rather than being sent
+	// a ctrl+t as the program starts. Closed, not gone: /rail is the
+	// same toggle and still brings it back.
 	f := newFakeVerad(t)
 	c := f.client()
 	w := newFleetWatch(c)
 	f.setFleet(fleet.View{Task: &fleet.Task{ID: "a1", Brief: "Port the chat onto mote"}, State: fleet.Running})
 	w.poll(context.Background())
 	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
-	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
-	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
-	if !strings.Contains(screen(m), "Port the chat onto mote") {
-		t.Fatal("the rail should be open to start with")
+	opts := chatOptions(&Status{Name: "vera"}, s, nil, "")
+	if !opts.SideClosed {
+		t.Error("inside rook the rail should start closed")
 	}
-	deliver(m, s.handle("rail", ""))
+	m := tui.New(veraAgent{c}, headless(opts))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 	if strings.Contains(screen(m), "Port the chat onto mote") {
-		t.Errorf("/rail did not hide it:\n%s", screen(m))
+		t.Errorf("the rail should start hidden inside rook:\n%s", screen(m))
 	}
 	deliver(m, s.handle("rail", ""))
 	if !strings.Contains(screen(m), "Port the chat onto mote") {
 		t.Errorf("/rail did not bring it back:\n%s", screen(m))
+	}
+	deliver(m, s.handle("rail", ""))
+	if strings.Contains(screen(m), "Port the chat onto mote") {
+		t.Errorf("/rail did not hide it again:\n%s", screen(m))
+	}
+
+	// And outside rook there is nothing to be redundant with, so it is
+	// simply there.
+	t.Setenv("ROOK_MUX_SOCK", "")
+	if chatOptions(&Status{Name: "vera"}, s, nil, "").SideClosed {
+		t.Error("outside rook the rail is just there")
 	}
 }
 
@@ -1110,4 +1172,161 @@ func emptySession(t *testing.T) *session.Session {
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
+}
+
+// --- the model picker -----------------------------------------------------
+
+// pickSession is a chat over a fake verad, ready to open the card.
+func pickSession(t *testing.T) (*fakeVerad, *chatSession, *tui.Model) {
+	t.Helper()
+	outsideRook(t)
+	f := newFakeVerad(t)
+	c := f.client()
+	w := newFleetWatch(c)
+	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
+	w.conv = s.conversation
+	w.pollModel(context.Background())
+	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
+	return f, s, m
+}
+
+// /model with no argument is the card: every model verad can reach,
+// what each is reached by, what it will take, and a tick on the one
+// this conversation is on.
+func TestModelWithNoArgumentOpensTheCard(t *testing.T) {
+	_, s, m := pickSession(t)
+	deliver(m, s.handle("model", ""))
+
+	v := screen(m)
+	for _, want := range []string{
+		"Select model",
+		"gpt-5.6-luna", "effort none only", // the note the table exists for
+		"claude-opus-5", "via anthropic",
+		"my-local-7b", "unpriced", // no price is said out loud
+		"effort: none",                         // the dial, on what is in force
+		"Enter to make it Vera's default",      // the two scopes,
+		"s this conversation", "Esc to cancel", // and the way out
+	} {
+		if !strings.Contains(v, want) {
+			t.Errorf("the card is missing %q:\n%s", want, v)
+		}
+	}
+	// The tick is on the model in use, not on the first row.
+	if !strings.Contains(v, "gpt-5.6-luna ✓") {
+		t.Errorf("no tick on the model in use:\n%s", v)
+	}
+}
+
+// The two ways out are two scopes, and they are two different requests.
+func TestThePickerPostsToTheRightEndpointForEachAction(t *testing.T) {
+	f, s, m := pickSession(t)
+
+	ans, err := f.client().models(context.Background(), "chat-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := s.modelPick(ans)
+	dial := effortUnion(ans.Models)
+	opus, high := indexRow(t, ans.Models, "claude-opus-5"), indexDial(t, dial, "high")
+
+	// `s` is this conversation and nothing else.
+	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Dial: high, Action: "s"}))
+	if got := f.posted(); len(got) == 0 || got[len(got)-1] != "/conversations/chat-1/model" {
+		t.Fatalf("s should move this conversation: %v", got)
+	}
+	if v := screen(m); !strings.Contains(v, "for this conversation") || !strings.Contains(v, "claude-opus-5 · high") {
+		t.Errorf("the note should say what changed and for what scope:\n%s", v)
+	}
+	// And the status line follows immediately, without waiting for a poll.
+	if v := screen(m); !strings.Contains(v, "vera · claude-opus-5 · high") {
+		t.Errorf("the status line did not follow:\n%s", v)
+	}
+
+	// Enter is Vera herself, which is a different endpoint.
+	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Dial: high, Action: "enter"}))
+	if got := f.posted(); len(got) == 0 || got[len(got)-1] != "/model" {
+		t.Fatalf("Enter should move the daemon's own: %v", got)
+	}
+	if v := screen(m); !strings.Contains(v, "as Vera's default") {
+		t.Errorf("the note should say the scope was the daemon:\n%s", v)
+	}
+
+	// Esc changes nothing and says nothing.
+	before := len(f.posted())
+	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Dial: high, Cancelled: true}))
+	if len(f.posted()) != before {
+		t.Error("cancelling sent something")
+	}
+}
+
+// The dial is the union of every row's efforts, because mote builds one
+// dial per card. So a combination no model takes is refused here, by
+// name, with what that model does take.
+func TestAnEffortAModelWillNotTakeIsRefusedByName(t *testing.T) {
+	f, s, m := pickSession(t)
+	ans, err := f.client().models(context.Background(), "chat-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := s.modelPick(ans)
+	dial := effortUnion(ans.Models)
+	if strings.Join(dial, ",") != "none,low,medium,high,max" {
+		t.Fatalf("the dial should be the union of what the rows take: %v", dial)
+	}
+
+	luna, max := indexRow(t, ans.Models, "gpt-5.6-luna"), indexDial(t, dial, "max")
+	before := len(f.posted())
+	deliver(m, p.OnPick(tui.PickChoice{Item: luna, Dial: max, Action: "s"}))
+	if len(f.posted()) != before {
+		t.Error("a combination verad would refuse was sent anyway")
+	}
+	v := screen(m)
+	if !strings.Contains(v, "gpt-5.6-luna does not take effort max") || !strings.Contains(v, "it takes none") {
+		t.Errorf("the refusal should name what that model does take:\n%s", v)
+	}
+}
+
+// A verad too old to list them can still say what this conversation is
+// on, and that is worth more than an error about a missing route.
+func TestAVeradWithNoModelsRouteStillAnswers(t *testing.T) {
+	outsideRook(t)
+	f := newFakeVerad(t)
+	c := f.client()
+	w := newFleetWatch(c)
+	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
+	w.conv = s.conversation
+	w.pollModel(context.Background())
+	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
+
+	// The fake's /models is there; the old one's is not.
+	old := &chatClient{base: f.url + "/nowhere", secret: f.id.Secret, device: f.id.Name}
+	s.c = old
+	deliver(m, s.handle("model", ""))
+	if v := screen(m); strings.Contains(v, "Select model") {
+		t.Errorf("a card was drawn from nothing:\n%s", v)
+	}
+}
+
+func indexRow(t *testing.T, rows []ModelRow, name string) int {
+	t.Helper()
+	for i, r := range rows {
+		if r.Name == name {
+			return i
+		}
+	}
+	t.Fatalf("no row %q", name)
+	return -1
+}
+
+func indexDial(t *testing.T, dial []string, effort string) int {
+	t.Helper()
+	for i, e := range dial {
+		if e == effort {
+			return i
+		}
+	}
+	t.Fatalf("no %q on the dial %v", effort, dial)
+	return -1
 }

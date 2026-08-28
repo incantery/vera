@@ -69,6 +69,48 @@ func (r *Resolution) Says() string {
 	return "model from " + r.ModelFrom + ", effort from " + r.EffortFrom
 }
 
+// ModelRow is one model verad can reach, as GET /models lists it: the
+// name, the wire that reaches it, the efforts it will actually accept,
+// what is worth knowing, and whether its tokens can be turned into
+// dollars. The terminal knows no models of its own — it draws these.
+type ModelRow struct {
+	Name     string   `json:"name"`
+	Provider string   `json:"provider"`
+	Efforts  []string `json:"efforts"`
+	Note     string   `json:"note,omitempty"`
+	Priced   bool     `json:"priced"`
+}
+
+// InForce is a model something is already on.
+type InForce struct {
+	Model  string `json:"model"`
+	Effort string `json:"effort,omitempty"`
+	From   string `json:"from,omitempty"`
+}
+
+// ModelsAnswer is GET /models: what the daemon is on, what this
+// conversation chose if it chose anything, and everything there is a
+// wire for. Conversation is nil when this conversation has chosen
+// nothing, which is not the same as having chosen the default.
+type ModelsAnswer struct {
+	Default      InForce    `json:"default"`
+	Conversation *InForce   `json:"conversation,omitempty"`
+	Models       []ModelRow `json:"models"`
+}
+
+// using is the model this conversation is actually on: its own choice
+// if it made one, and the daemon's otherwise. It is the row the picker
+// ticks.
+func (a *ModelsAnswer) using() InForce {
+	if a == nil {
+		return InForce{}
+	}
+	if a.Conversation != nil && a.Conversation.Model != "" {
+		return *a.Conversation
+	}
+	return a.Default
+}
+
 type Frame struct {
 	Delta  string `json:"delta,omitempty"`
 	Done   bool   `json:"done,omitempty"`
@@ -339,6 +381,27 @@ func (c *chatClient) openSay(ctx context.Context, msg Message) (io.ReadCloser, e
 func (c *chatClient) model(ctx context.Context, conversation string) (*Resolution, error) {
 	var r Resolution
 	return &r, c.getJSON(ctx, "/conversations/"+url.PathEscape(conversation)+"/model", &r)
+}
+
+// models is every model verad can reach, and what is in force. A
+// verad too old to answer it is a 404 and the caller falls back to
+// asking what this conversation is on.
+func (c *chatClient) models(ctx context.Context, conversation string) (*ModelsAnswer, error) {
+	var a ModelsAnswer
+	return &a, c.getJSON(ctx, "/models?conversation="+url.QueryEscape(conversation), &a)
+}
+
+// setDefaultModel moves the daemon's own model and keeps it — what
+// Enter in the picker does. The answer is what is actually in force,
+// which is how a daemon started with --model says the flag won.
+func (c *chatClient) setDefaultModel(ctx context.Context, model, effort string) (*Resolution, error) {
+	resp, err := c.do(ctx, "PUT", "/model", map[string]string{"model": model, "effort": effort})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var r Resolution
+	return &r, json.NewDecoder(resp.Body).Decode(&r)
 }
 
 // chooseModel sets a conversation's model, effort or both; both empty
