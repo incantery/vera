@@ -89,7 +89,7 @@ func (s *chatSession) modelPick(ans *ModelsAnswer) tui.Pick {
 	p := tui.Pick{
 		Title: "Select model",
 		Text: "Enter moves Vera herself; s moves this conversation only. " +
-			"←/→ sets the effort — each model takes the ones beside its name.",
+			"←/→ sets the effort — a model that will not take the one you set says what it does take.",
 		Actions: []tui.PickAction{
 			{Key: "enter", Label: "make it Vera's default"},
 			{Key: "s", Label: "this conversation"},
