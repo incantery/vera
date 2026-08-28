@@ -59,6 +59,11 @@ type Entry struct {
 	Conversation string    `json:"conversation"`
 	Device       string    `json:"device,omitempty"`
 	Model        string    `json:"model"`
+	// Effort is the reasoning dial the model was asked for — "high",
+	// "none" — because the same model at two efforts is two different
+	// bills and two different latencies, and a record that names only
+	// the model cannot tell them apart.
+	Effort string `json:"effort,omitempty"`
 	// Provider is which wire answered — "openai" or "anthropic". A
 	// model name does not always say: the same name can be reached
 	// through somebody's proxy.

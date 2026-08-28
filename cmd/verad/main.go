@@ -279,24 +279,34 @@ func main() {
 	}
 
 	wanted, source := modelFor(*model, given["model"], own)
+	effortSource := fromBuiltin
+	if given["effort"] {
+		effortSource = fromEffortFlag
+	}
 	answer, mind, how := chooseMind(mindOptions{
-		Echo:      *echoOnly,
-		Model:     wanted,
-		Source:    source,
-		APIBase:   *apiBase,
-		KeyFile:   *keyFile,
-		Effort:    *effort,
-		EffortSet: given["effort"],
-		Display:   display,
-		Gen:       generations,
-		Preface:   preface,
-		Memory:    memory,
-		Delegate:  hands,
+		Echo:         *echoOnly,
+		Model:        wanted,
+		Source:       source,
+		EffortSource: effortSource,
+		APIBase:      *apiBase,
+		KeyFile:      *keyFile,
+		Effort:       *effort,
+		EffortSet:    given["effort"],
+		Display:      display,
+		Gen:          generations,
+		Preface:      preface,
+		Memory:       memory,
+		Delegate:     hands,
 	})
 	if mind != nil {
 		// Every exchange, on disk, whatever else is watching: what
 		// `vera dump` hands to whoever is asked why Vera did that.
 		mind.Journal = &journal.Writer{Dir: filepath.Join(stateDir(), "vera", "conversations")}
+		// Which model each conversation is on, kept where the journal
+		// is: verad is the single writer of both, and a `/model` typed
+		// this morning outlives this process.
+		mind.Picks = &Picks{Path: filepath.Join(stateDir(), "vera", "models.json")}
+		lan.picker = mind
 		mind.Home = place
 		if own != nil {
 			mind.Hands = own
@@ -547,8 +557,10 @@ func echo(ctx context.Context, msg Message, reply func(Frame) error) error {
 type mindOptions struct {
 	Echo bool
 	// Model is which model to ask, already resolved; Source is where
-	// that came from, for the banner.
+	// that came from, for the banner and for `/model`. EffortSource is
+	// the same for the dial.
 	Model, Source string
+	EffortSource  string
 	// APIBase and KeyFile are the OpenAI-compatible path, unchanged:
 	// an endpoint of your own, and a key file to reach it with.
 	APIBase, KeyFile string
@@ -595,6 +607,11 @@ func chooseMind(o mindOptions) (Handler, *Mind, string) {
 		Provider:        p,
 		Vendor:          vendorOf(p),
 		Model:           o.Model,
+		ModelFrom:       o.Source,
+		EffortFrom:      o.EffortSource,
+		BaseEffort:      o.Effort,
+		EffortExplicit:  o.EffortSet,
+		Wires:           &Wires{OpenAIKey: findKey(o.KeyFile), OpenAIBase: o.APIBase},
 		ThinkingDisplay: o.Display,
 		History:         newHistory(),
 		Gen:             o.Gen,
@@ -603,21 +620,9 @@ func chooseMind(o mindOptions) (Handler, *Mind, string) {
 		Delegate:        o.Delegate,
 		instruments:     newInstruments(),
 	}
-	if mind.Vendor == "anthropic" {
-		mind.Effort = provider.Effort(o.Effort)
-	} else {
-		// The endpoint verad was written against refuses function tools
-		// unless reasoning is off — found at the socket, not in a doc —
-		// so that is still what it is told, and only when there are
-		// tools. An --effort somebody actually typed overrides it,
-		// because an explicit dial is a stronger statement than a
-		// workaround for a different model.
-		mind.Thinking = provider.ThinkingOff
-		mind.Effort = provider.Effort("none")
-		if o.EffortSet {
-			mind.Effort = provider.Effort(o.Effort)
-		}
-	}
+	// What the vendor allows, decided in the one place that decides it
+	// for every exchange after this one too. See tune.
+	mind.Effort, mind.Thinking = tune(mind.Vendor, o.Effort, o.EffortSet)
 
 	how := o.Model + " via " + mind.Vendor
 	if mind.Effort != "" {
@@ -627,19 +632,9 @@ func chooseMind(o mindOptions) (Handler, *Mind, string) {
 		how += ", thinking " + string(mind.ThinkingDisplay)
 	}
 	if o.Source != "" {
-		how += " (" + o.Source + ")"
+		how += " (from " + o.Source + ")"
 	}
 	return mind.think, mind, how
-}
-
-// vendorOf is which wire mote picked. The concrete type is the answer;
-// there is no interface method for it, and a name is what the banner
-// and the telemetry label both want.
-func vendorOf(p provider.Provider) string {
-	if _, ok := p.(*provider.Anthropic); ok {
-		return "anthropic"
-	}
-	return "openai"
 }
 
 // displayFor reads --thinking-display. It is checked here rather than
@@ -663,10 +658,13 @@ func displayFor(word string) (provider.Display, error) {
 // suits it is part of that. The flag's own default is the last word,
 // for a verad running --no-tools with no profile to read.
 func modelFor(flagValue string, given bool, own *Hands) (model, source string) {
-	if given || own == nil || own.Model == "" {
-		return flagValue, ""
+	switch {
+	case given:
+		return flagValue, fromFlag
+	case own != nil && own.Model != "":
+		return own.Model, home.ProfileDir + "/profile.md"
 	}
-	return own.Model, "from " + home.ProfileDir + "/profile.md"
+	return flagValue, fromBuiltin
 }
 
 func validEffort(s string) bool {

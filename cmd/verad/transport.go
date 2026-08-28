@@ -33,6 +33,16 @@ type Message struct {
 	// the answer can lean on what that machine has reported about
 	// where their attention is. A phone leaves it empty.
 	Device string `json:"device,omitempty"`
+
+	// Model and Effort are this ONE exchange's model, for a caller
+	// that wants to ask a different one without changing what the
+	// conversation is on — `vera say -m opus`. Empty is the usual
+	// case: whatever the conversation, the flag or the profile says.
+	// A conversation's own choice, set through
+	// POST /conversations/{id}/model, is more specific still and wins
+	// over both. See pick.go for the whole order.
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
 }
 
 // Frame is one piece of the reply. A reply is a sequence of Deltas
