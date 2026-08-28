@@ -557,7 +557,9 @@ func (f *Fleet) install(ctx context.Context, repo Repo) (string, error) {
 		// keeps running the old one until it is restarted, which is
 		// exactly what the notice tells the person to do.
 		final := filepath.Join(f.InstallDir, name)
-		out, err := run(ctx, repo.Root, fmt.Sprintf("go build -o %s ./cmd/%s && mv -f %s %s",
+		// The version is stamped the way a hand build stamps it, so
+		// `vera version` after a landing names the commit, not "dev".
+		out, err := run(ctx, repo.Root, fmt.Sprintf("go build -ldflags \"-X main.version=$(git describe --always --dirty)\" -o %s ./cmd/%s && mv -f %s %s",
 			shellQuote(final+".new"), name, shellQuote(final+".new"), shellQuote(final)))
 		if err != nil {
 			return "", fmt.Errorf("go build ./cmd/%s: %s", name, tail(out, 600))

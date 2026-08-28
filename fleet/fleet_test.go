@@ -757,7 +757,7 @@ func TestLandingRebuildsTheBinaries(t *testing.T) {
 		// Built beside the target and renamed over it: one of these is
 		// the process doing the building.
 		final := filepath.Join(f.InstallDir, name)
-		want := "go build -o '" + final + ".new' ./cmd/" + name +
+		want := "go build -ldflags \"-X main.version=$(git describe --always --dirty)\" -o '" + final + ".new' ./cmd/" + name +
 			" && mv -f '" + final + ".new' '" + final + "'"
 		if built[i] != want {
 			t.Errorf("build %d:\n got %s\nwant %s", i, built[i], want)
