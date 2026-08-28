@@ -2,6 +2,7 @@ package costs
 
 import (
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -202,5 +203,38 @@ func TestNothingJournaledIsNotAnError(t *testing.T) {
 	}
 	if len(rep.Groups) != 0 || !strings.Contains(rep.Text(), "no exchanges") {
 		t.Errorf("empty: %+v\n%s", rep.Groups, rep.Text())
+	}
+}
+
+// A row's fleet spend must not be lost because a later exchange in the
+// same row happened to start nothing. Priced is a floor marker, and a
+// floor that lifts itself back up is worse than none.
+func TestAnUnpricedAgentStaysUnpricedForTheWholeRow(t *testing.T) {
+	now := time.Now()
+	dir := t.TempDir()
+	w := &journal.Writer{Dir: dir}
+	// A round that names a session Claude Code no longer has: nothing
+	// to read, so the money behind it is not known.
+	if err := w.Write(journal.Entry{
+		At: now, Conversation: "c1", Model: "claude-opus-5", InputTokens: 10, OutputTokens: 1,
+		Rounds: []journal.Round{{Tool: "delegate", Session: "gone-1"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// And one that started nothing at all, after it.
+	if err := w.Write(journal.Entry{
+		At: now, Conversation: "c1", Model: "claude-opus-5", InputTokens: 10, OutputTokens: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Build(Options{Dir: dir, Now: now, ClaudeDir: filepath.Join(t.TempDir(), "no-claude-here")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Groups[0].Fleet.Sessions != 0 {
+		t.Errorf("a session with no file on disk should count as none: %+v", rep.Groups[0].Fleet)
+	}
+	if rep.Total.Fleet.USD != rep.Groups[0].Fleet.USD {
+		t.Errorf("the total lost the row's fleet spend: %v vs %v", rep.Total.Fleet.USD, rep.Groups[0].Fleet.USD)
 	}
 }

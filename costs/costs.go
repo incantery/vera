@@ -104,8 +104,6 @@ type Report struct {
 	By     string
 	Groups []Group
 	Total  Group
-	// Files is how many conversation files were read.
-	Files int
 }
 
 // Build reads the journal and adds it up.
@@ -132,7 +130,7 @@ func Build(o Options) (Report, error) {
 		return Report{}, err
 	}
 	rep := Report{Since: o.Since, By: o.By}
-	rep.Total.Priced = true
+	rep.Total.Priced, rep.Total.Fleet.Priced = true, true
 	groups := map[string]*Group{}
 	spend := newSpender(o.FleetDir, o.ClaudeDir)
 
@@ -141,19 +139,17 @@ func Build(o Options) (Report, error) {
 		if err != nil {
 			continue
 		}
-		counted := false
 		for _, e := range entries {
 			if !cutoff.IsZero() && e.At.Before(cutoff) {
 				continue
 			}
-			counted = true
 			if rep.From.IsZero() || e.At.Before(rep.From) {
 				rep.From = e.At
 			}
 			key := keyOf(e, o.By, f.Conversation)
 			g := groups[key]
 			if g == nil {
-				g = &Group{Key: key, Priced: true}
+				g = &Group{Key: key, Priced: true, Fleet: dump.Spend{Priced: true}}
 				groups[key] = g
 			}
 			// Once per exchange, not once per row it lands in: the
@@ -163,9 +159,6 @@ func Build(o Options) (Report, error) {
 			agents := spend.forEntry(e)
 			fold(g, e, agents)
 			fold(&rep.Total, e, agents)
-		}
-		if counted {
-			rep.Files++
 		}
 	}
 
@@ -216,9 +209,6 @@ func fold(g *Group, e journal.Entry, agents dump.Spend) {
 		g.signs = append(g.signs, e.FirstSignMs)
 	}
 	g.ToolRounds += len(e.Rounds)
-	if g.Fleet.Sessions == 0 && g.Fleet.USD == 0 {
-		g.Fleet.Priced = true
-	}
 	g.Fleet.USD += agents.USD
 	g.Fleet.Sessions += agents.Sessions
 	if !agents.Priced {
