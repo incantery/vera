@@ -182,12 +182,15 @@ line you read while you wait, and `tool_call`/`tool_result` into a card
 per call with its arguments, its result, how long it took and what it
 cost. The status line adds up what the exchange spent: while a turn is
 in flight it shows that turn, and once it ends the whole conversation —
-`seths-mbp · chat-1 · $0.0595 · 12.8k tok`, with `claude-opus-5 · high`
-on the right. The device and the conversation are mote's, on the left;
-the model is on the right because it can change under the conversation
-at any moment and mote reads `Options.Model` once, at New, while the
-right-hand line is re-read on a timer. Where the model came from is
-deliberately not on the line — `/model` prints it. The turn's own
+`seths-mbp · claude-opus-5 · high · chat-1 · $0.0595 · 12.8k tok`, with
+where Vera believes you are on the right. The model sits with the
+device and the conversation, on the left, where mote draws
+`Options.Model` — it used to be on the right because mote read that
+field once, at New, and the model can change under a conversation at
+any moment. `tui.SetModel` ended that: the picker moves it, and so does
+the poll when a `vera say -m` in another window moved it. Where the
+model came from is deliberately not on the line — `/model` prints it.
+The turn's own
 model spend rides on the terminal `/say` frame (`usage`: the tokens the
 provider counted, and what they would cost); the tool cards' dollars are
 added to it, so one figure covers the model and everything it handed
@@ -206,7 +209,8 @@ what it wrote and marks it seen), `/answer <id> <text>`, `/land`,
 for a folder of everything, `/debug` for what Vera currently believes
 about where you are — devices, focus, terminal, integrations — from the
 same facts the model's preface is built from, and `/quit`. Two more are
-about the model itself: `/model` (below) and `/costs`. `/help` is
+about the model itself: `/model` — a card of everything verad can
+reach, see below — and `/costs`. `/help` is
 mote's: it lists these and the keys. `esc` stops a reply in flight,
 `ctrl+c` leaves, `ctrl+t` or `F2` (or `/rail`) hides the rail,
 `tab`/`ctrl+o` walk and open tool cards. It exists so iterating on the
@@ -215,7 +219,9 @@ mind is typing, not picking up a phone.
 **Inside rook the rail starts hidden.** rook has an agents pane showing
 the same fleet, and two of them is one too many; the greeting says so
 and the toggle still works. `$ROOK_MUX_SOCK` (or the older `$ROOK_SOCK`)
-is how the chat knows.
+is how the chat knows, and `Options.SideClosed` is how mote is told —
+it used to be a `ctrl+t` sent as the program started, which worked and
+looked like the person had pressed it.
 
 A scout on the rail is the one row that is done and still wants you:
 its report is the deliverable, and until somebody has read it the row
@@ -224,30 +230,39 @@ rather than a tick that would say there is nothing to do here.
 
 ## Switching the model
 
-The model is a property of the **exchange**, not of the process. Five
+The model is a property of the **exchange**, not of the process. Six
 things can say what it should be, and the most specific wins:
 
 | | |
 | --- | --- |
-| this conversation | `/model claude-opus-5 high` — remembered, and it sticks |
+| this conversation | `/model claude-opus-5 high`, or `s` in the picker — remembered, and it sticks |
 | this message | `vera say -m claude-opus-5 -e high` — one exchange |
 | `--model` / `--effort` | what this daemon was started with |
+| the saved default | Enter in the picker — `~/.local/state/vera/model.json` |
 | the profile | `profiles/supervisor/profile.md` front matter `model:` |
 | the built-in default | |
 
 The profile used to outrank the flag. It does not any more: a profile is
 a default about what this agent *is*, and a flag is somebody typing.
+The saved default is between the two for the same reason — it is a
+person overruling the profile, and it is not somebody typing right now.
+So a daemon started with `--model` keeps it, and the choice is written
+down for the next one rather than ignored; the answer to the request
+says what is actually in force, which is how a caller finds out the
+flag won.
 
 `verad` is the single writer. The terminal keeps no idea of its own —
 it asks, on the same timer as the rail, and draws the answer, so a
 `/model` in one window and a `vera say -m` in another cannot disagree:
 
 ```
+GET  /models[?conversation=…]                         what it can reach, and what is in force
+PUT  /model                     {"model":"…","effort":"…"}   the daemon's own; both empty clears it
 GET  /conversations/{id}/model                        what is in force, and who said so
 POST /conversations/{id}/model  {"model":"…","effort":"…"}   set it; both empty clears it
 ```
 
-Both answer the same shape:
+The two per-conversation routes and `PUT /model` answer the same shape:
 
 ```json
 {"model":"claude-opus-5","effort":"high","provider":"anthropic",
@@ -255,6 +270,51 @@ Both answer the same shape:
 ```
 
 `POST /say` also takes optional `model` and `effort` for one exchange.
+
+### What it can reach
+
+`GET /models` is the picker's whole source. A **table** in `models.go`
+— name, vendor, the efforts that model will actually accept, a note —
+filtered by which keys are on the machine, and priced or not per
+`price/`. Not a call to the vendor: no API answers "which of your
+models will take this request with these tools at this effort", and the
+fact worth having written down was found at the socket. **A provider
+with no key contributes no rows**, because a picker offering
+`claude-opus-5` on a laptop with no `ANTHROPIC_API_KEY` is a picker
+that hands you an error three keystrokes later.
+
+```json
+{"default":{"model":"gpt-5.6-luna","effort":"none","from":"the built-in default"},
+ "conversation":{"model":"gpt-5","effort":"medium"},
+ "models":[{"name":"gpt-5.6-luna","provider":"openai","efforts":["none"],
+            "note":"effort none only (chat completions)","priced":true},
+           {"name":"claude-opus-5","provider":"anthropic",
+            "efforts":["low","medium","high","max"],"priced":true}]}
+```
+
+`conversation` is absent when this conversation has chosen nothing of
+its own, which is not the same as having chosen the default.
+`$VERA_MODELS` adds rows, or corrects them, without a rebuild — one
+entry per model, `name=provider:eff1|eff2`:
+
+```
+VERA_MODELS="my-local-7b=openai:none|high, gpt-5=openai:none"
+```
+
+An entry that will not parse is named in the log at startup and
+dropped; it does not take the good ones with it, the same courtesy
+`$VERA_PRICES` gets.
+
+`/model` in the chat draws that list as a card (mote's `tui.Pick`):
+one row per model, `via <provider> · <note>`, `unpriced` said out loud
+when nobody has a price, and a tick on the one this conversation is
+using. `←/→` sets the effort; the dial is the **union** of every row's
+efforts, because a `Pick` builds one dial and the selection moves under
+it, so a combination a model will not take is refused by name with what
+it does take. Enter makes it Vera's own default, `s` moves this
+conversation only, Esc leaves nothing behind. `/model <name> [effort]`
+is still the typed form, and still the fastest way when you know the
+answer.
 
 Which wire a model reaches is mote's decision, from the name and the
 keys on this machine, and it is made per exchange through one cached
