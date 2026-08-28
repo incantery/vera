@@ -28,6 +28,45 @@ type Message struct {
 	Text         string `json:"text"`
 	Conversation string `json:"conversation,omitempty"`
 	Device       string `json:"device,omitempty"`
+	// Model and Effort are this one exchange's model — `vera say -m`.
+	// A conversation's own choice (POST /conversations/{id}/model) is
+	// more specific and wins over them.
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
+}
+
+// Resolution is which model a conversation is on and who decided, as
+// verad answers /conversations/{id}/model. The terminal never keeps an
+// idea of its own: it asks, every few seconds, and draws the answer.
+type Resolution struct {
+	Model      string `json:"model"`
+	Effort     string `json:"effort,omitempty"`
+	Provider   string `json:"provider,omitempty"`
+	ModelFrom  string `json:"model_from,omitempty"`
+	EffortFrom string `json:"effort_from,omitempty"`
+}
+
+// Line is model and effort in the form the status line wants.
+func (r *Resolution) Line() string {
+	if r == nil || r.Model == "" {
+		return ""
+	}
+	if r.Effort == "" {
+		return r.Model
+	}
+	return r.Model + " · " + r.Effort
+}
+
+// Says is where each half came from — what `/model` prints and the
+// status line deliberately does not.
+func (r *Resolution) Says() string {
+	if r == nil || r.ModelFrom == "" {
+		return ""
+	}
+	if r.EffortFrom == "" || r.EffortFrom == r.ModelFrom {
+		return "from " + r.ModelFrom
+	}
+	return "model from " + r.ModelFrom + ", effort from " + r.EffortFrom
 }
 
 type Frame struct {
@@ -285,12 +324,34 @@ func (c *chatClient) answer(ctx context.Context, id, choice string) error {
 // openSay starts an exchange. It is separate from reading it because
 // an agent.Agent must fail before it returns a channel if the call
 // could not start at all — a wrong secret is not a mid-stream error.
-func (c *chatClient) openSay(ctx context.Context, text, conversation string) (io.ReadCloser, error) {
-	resp, err := c.do(ctx, "POST", "/say", Message{Text: text, Conversation: conversation, Device: c.device})
+func (c *chatClient) openSay(ctx context.Context, msg Message) (io.ReadCloser, error) {
+	msg.Device = c.device
+	resp, err := c.do(ctx, "POST", "/say", msg)
 	if err != nil {
 		return nil, err
 	}
 	return resp.Body, nil
+}
+
+// model asks what a conversation is on. A verad too old to answer, or
+// one with no model at all, is not an error the screen should shout
+// about — the caller shows nothing.
+func (c *chatClient) model(ctx context.Context, conversation string) (*Resolution, error) {
+	var r Resolution
+	return &r, c.getJSON(ctx, "/conversations/"+url.PathEscape(conversation)+"/model", &r)
+}
+
+// chooseModel sets a conversation's model, effort or both; both empty
+// puts it back on the daemon's own.
+func (c *chatClient) chooseModel(ctx context.Context, conversation, model, effort string) (*Resolution, error) {
+	resp, err := c.do(ctx, "POST", "/conversations/"+url.PathEscape(conversation)+"/model",
+		map[string]string{"model": model, "effort": effort})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var r Resolution
+	return &r, json.NewDecoder(resp.Body).Decode(&r)
 }
 
 // streamFrames hands each ndjson frame to fn until the terminal one.
@@ -312,8 +373,8 @@ func streamFrames(r io.Reader, fn func(Frame)) error {
 
 // say is openSay and streamFrames together — what a verb without a
 // screen wants.
-func (c *chatClient) say(ctx context.Context, text, conversation string, fn func(Frame)) error {
-	body, err := c.openSay(ctx, text, conversation)
+func (c *chatClient) say(ctx context.Context, msg Message, fn func(Frame)) error {
+	body, err := c.openSay(ctx, msg)
 	if err != nil {
 		return err
 	}

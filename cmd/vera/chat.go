@@ -23,6 +23,7 @@ import (
 	"github.com/incantery/mote/agent"
 	"github.com/incantery/mote/session"
 	"github.com/incantery/mote/tui"
+	"github.com/incantery/vera/costs"
 	"github.com/incantery/vera/dump"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
@@ -86,17 +87,42 @@ func runChat(args []string) {
 	defer open.closeAll()
 
 	s := &chatSession{c: c, w: w, conv: conv, dir: dir, open: open}
+	// The watch asks about whichever conversation is current, and /new
+	// moves that — so it reads the id rather than being handed one.
+	w.conv = s.conversation
+	w.pollModel(ctx)
 	greeting := chatGreeting(st, sess)
 	if *debug {
 		greeting += "\n\n" + beliefMarkdown(st, s.conversation())
 	}
 
-	err = tui.Run(veraAgent{c}, chatOptions(st, s, sess, greeting))
-	if err != nil {
+	// Not tui.Run: inside rook the fleet rail is redundant with rook's
+	// own agents pane, and mote decides whether the rail starts open at
+	// New. The one honest way to start it closed without a mote of our
+	// own is to toggle it the way a person would, once, as the program
+	// starts. Send blocks until Run is reading, so this lands as one of
+	// the first messages and nothing has to be timed.
+	p := tea.NewProgram(tui.New(veraAgent{c}, chatOptions(st, s, sess, greeting)))
+	if insideRook() {
+		go p.Send(railToggle())
+	}
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "vera: "+err.Error())
 		os.Exit(1)
 	}
 }
+
+// insideRook: this chat is a pane in rook, which has an agents pane of
+// its own showing the same fleet. ROOK_MUX_SOCK is what rook exports
+// for its socket (see mux.RookSock); ROOK_SOCK is the older name and
+// is still honoured.
+func insideRook() bool {
+	return os.Getenv("ROOK_MUX_SOCK") != "" || os.Getenv("ROOK_SOCK") != ""
+}
+
+// railToggle is mote's own ctrl+t, as a message. It is what /rail
+// sends and what hides the rail on the way in.
+func railToggle() tea.Msg { return tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl} }
 
 func newConversation() string { return "chat-" + time.Now().Format("20060102-150405") }
 
@@ -104,19 +130,22 @@ func newConversation() string { return "chat-" + time.Now().Format("20060102-150
 // so that what a test drives is what `vera chat` runs.
 func chatOptions(st *Status, s *chatSession, sess *session.Session, greeting string) tui.Options {
 	return tui.Options{
-		Name:         st.Name,
-		Model:        st.Mind,
+		Name: st.Name,
+		// Not Options.Model: mote reads that once, at New, and the
+		// model can change under this conversation at any moment —
+		// `/model opus`, or a `vera say -m` in another window. So the
+		// model in use goes on the right, where it is re-read on a
+		// timer, and it is the model rather than the sentence about
+		// where it came from. `/model` prints that.
 		Conversation: s.conversation(),
 		Session:      sess,
 		Greeting:     greeting,
 		Side:         s.w.side,
 		SideTitle:    "fleet",
-		// One line of Vera's own beside the model name: where she
-		// believes the person is, refreshed with the rail.
-		StatusRight: s.w.where,
-		Notices:     s.w.notices,
-		Commands:    chatCommands,
-		Handle:      s.handle,
+		StatusRight:  s.w.line,
+		Notices:      s.w.notices,
+		Commands:     chatCommands,
+		Handle:       s.handle,
 		// The terminal owns the id — /new hands it one and it may hand
 		// back another — so the chat is told rather than keeping a
 		// guess of its own. /dump reads what it was told.
@@ -135,6 +164,11 @@ func chatSessionDir() string { return filepath.Join(stateDir(), "chat") }
 func chatGreeting(st *Status, sess *session.Session) string {
 	g := "**" + st.Name + "** — say something, or `/` for the fleet. " +
 		"`/help` has the keys; the rail on the right is every task and what is believed about it."
+	if insideRook() {
+		g = "**" + st.Name + "** — say something, or `/` for the fleet. " +
+			"`/help` has the keys. The rail starts hidden here: rook already has an agents pane " +
+			"showing the same fleet. `/rail`, ctrl+t or F2 brings it back."
+	}
 	if n := len(sess.Turns()); n > 0 {
 		turns := "turns"
 		if n == 1 {
@@ -176,10 +210,16 @@ type fleetWatch struct {
 	c       *chatClient
 	notices chan agent.Event
 
+	// conv says which conversation is current, so the model can be
+	// asked about the right one. The terminal owns the id; this reads
+	// it rather than keeping a second copy.
+	conv func() string
+
 	mu     sync.Mutex
 	views  []fleet.View
 	states map[string]fleet.State // last state per task, to notice changes
 	status *Status                // what /status last said, for the status line
+	model  *Resolution            // which model this conversation is on
 }
 
 func newFleetWatch(c *chatClient) *fleetWatch {
@@ -201,6 +241,7 @@ func (w *fleetWatch) run(ctx context.Context, every time.Duration) {
 		case <-t.C:
 			w.poll(ctx)
 			w.pollStatus(ctx)
+			w.pollModel(ctx)
 		}
 	}
 }
@@ -240,6 +281,53 @@ func (w *fleetWatch) absorbStatus(st *Status) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.status = st
+}
+
+// pollModel re-reads which model this conversation is on. verad is the
+// authority: `/model` in another window, or a profile edited and a
+// restart, changes the answer and the status line has to follow. A
+// failed read leaves the last answer standing.
+func (w *fleetWatch) pollModel(ctx context.Context) {
+	if w.conv == nil {
+		return
+	}
+	id := w.conv()
+	if id == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	res, err := w.c.model(ctx, id)
+	if err != nil {
+		return
+	}
+	w.mu.Lock()
+	w.model = res
+	w.mu.Unlock()
+}
+
+func (w *fleetWatch) resolution() *Resolution {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.model
+}
+
+// line is the right of the status line: the model actually in use, how
+// hard it is thinking, and which machine is asking. The provenance is
+// deliberately not here — it is a sentence, it changes nothing, and
+// `/model` prints it on request.
+func (w *fleetWatch) line() string {
+	w.mu.Lock()
+	model, st := w.model, w.status
+	w.mu.Unlock()
+	var parts []string
+	if l := model.Line(); l != "" {
+		parts = append(parts, l)
+	}
+	if st != nil && st.Name != "" {
+		parts = append(parts, st.Name)
+	}
+	return strings.Join(parts, " · ")
 }
 
 // where is the right of the status line: where Vera believes the
@@ -396,6 +484,9 @@ func sideSubtitle(v fleet.View) string {
 // mind's fleet tool makes, for when you know exactly what you want
 // and do not need to say it in prose. /help is mote's.
 var chatCommands = []tui.Command{
+	{Name: "model", Help: "/model [name [effort]] — which model this conversation is on, or move it to another"},
+	{Name: "costs", Help: "/costs [7d] [by model|conversation|day] — what the journal says every exchange cost"},
+	{Name: "rail", Help: "show or hide the fleet rail (ctrl+t, F2) — it starts hidden inside rook"},
 	{Name: "tasks", Help: "every task and what is believed about it"},
 	{Name: "start", Help: "/start [@repo] <brief> — put a task on the rail"},
 	{Name: "scout", Help: "/scout [@repo] <brief> — a task that reports instead of landing"},
@@ -447,6 +538,53 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 	switch name {
 	case "quit", "q":
 		return tea.Quit
+
+	case "rail":
+		// mote's own toggle, sent the way a key press arrives. The
+		// command exists so that /help says the rail is there at all —
+		// inside rook it starts hidden and a person who never presses
+		// F2 would never learn it.
+		return func() tea.Msg { return railToggle() }
+
+	case "model":
+		// verad is the authority: this asks, and it prints what it is
+		// told. With no argument that is a report; with one it is a
+		// change, and the change sticks to the conversation.
+		c, conv := s.c, s.conversation()
+		want, effort, _ := strings.Cut(rest, " ")
+		effort = strings.TrimSpace(effort)
+		w := s.w
+		return off(func(ctx context.Context) tea.Cmd {
+			var res *Resolution
+			var err error
+			if rest == "" {
+				res, err = c.model(ctx, conv)
+			} else {
+				res, err = c.chooseModel(ctx, conv, want, effort)
+			}
+			if err != nil {
+				return tui.Fail("model: %s", err)
+			}
+			w.pollModel(ctx)
+			return tea.Batch(tui.Note("%s — %s", res.Line(), res.Says()), tui.Refresh())
+		})
+
+	case "costs":
+		// The same numbers `vera costs` prints, on the screen that is
+		// already open. Arguments are the same words in either order:
+		// `/costs 24h by conversation`.
+		spec := rest
+		return off(func(context.Context) tea.Cmd {
+			o, err := costOptionsFrom(spec)
+			if err != nil {
+				return tui.Fail("costs: %s", err)
+			}
+			rep, err := costs.Build(o)
+			if err != nil {
+				return tui.Fail("costs: %s", err)
+			}
+			return tui.Show(rep.Markdown())
+		})
 
 	case "tasks", "t":
 		w := s.w

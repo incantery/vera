@@ -31,11 +31,16 @@ type fakeVerad struct {
 	mu    sync.Mutex
 	views []fleet.View
 	posts []string
+	model Resolution
 }
 
 func newFakeVerad(t *testing.T) *fakeVerad {
 	t.Helper()
-	f := &fakeVerad{id: Identity{Peer: "peer-under-test", Secret: "s3cret", Name: "test-mac"}}
+	f := &fakeVerad{
+		id: Identity{Peer: "peer-under-test", Secret: "s3cret", Name: "test-mac"},
+		model: Resolution{Model: "gpt-5.6-luna", Effort: "none", Provider: "openai",
+			ModelFrom: "the built-in default", EffortFrom: "the built-in default"},
+	}
 	mux := http.NewServeMux()
 	authed := func(w http.ResponseWriter, r *http.Request) bool {
 		if r.Header.Get("Authorization") == "Bearer "+f.id.Secret {
@@ -73,6 +78,31 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(f.views)
+	})
+	mux.HandleFunc("GET /conversations/{id}/model", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(w, r) {
+			return
+		}
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(f.model)
+	})
+	mux.HandleFunc("POST /conversations/{id}/model", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(w, r) {
+			return
+		}
+		var body struct{ Model, Effort string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.posts = append(f.posts, r.URL.Path)
+		if body.Model == "no-such-model" {
+			http.Error(w, "cannot reach no-such-model", http.StatusBadRequest)
+			return
+		}
+		f.model = Resolution{Model: body.Model, Effort: body.Effort, Provider: "anthropic",
+			ModelFrom: "this conversation", EffortFrom: "this conversation"}
+		_ = json.NewEncoder(w).Encode(f.model)
 	})
 	mux.HandleFunc("POST /fleet/", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(w, r) {
@@ -118,7 +148,7 @@ func TestChatClientSpeaksThePhonesWire(t *testing.T) {
 	c := f.client()
 
 	var got []Frame
-	if err := c.say(context.Background(), "hello there", "conv-1", func(fr Frame) { got = append(got, fr) }); err != nil {
+	if err := c.say(context.Background(), Message{Text: "hello there", Conversation: "conv-1"}, func(fr Frame) { got = append(got, fr) }); err != nil {
 		t.Fatal(err)
 	}
 	var text strings.Builder
@@ -135,7 +165,7 @@ func TestChatClientSpeaksThePhonesWire(t *testing.T) {
 	}
 
 	bad := &chatClient{base: f.url, secret: "wrong", device: f.id.Name}
-	if err := bad.say(context.Background(), "x", "c", func(Frame) {}); err == nil {
+	if err := bad.say(context.Background(), Message{Text: "x", Conversation: "c"}, func(Frame) {}); err == nil {
 		t.Fatal("the secret is required")
 	}
 }
@@ -629,14 +659,18 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	})
 	w := newFleetWatch(c)
 	w.poll(context.Background())
-	w.absorbStatus(&Status{RunsInFlight: 1})
+	w.absorbStatus(&Status{Name: "test-mac", RunsInFlight: 1})
 	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
+	w.conv = s.conversation
+	w.pollModel(context.Background())
 
 	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera", Mind: "echo"}, s, nil, "say something")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
+	// The status line: the model actually in use and the machine
+	// asking, on the right, with no "(from profiles/…)" anywhere.
 	view := screen(m)
-	for _, want := range []string{"vera", "echo", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o", "1 run in flight"} {
+	for _, want := range []string{"vera", "gpt-5.6-luna \u00b7 none", "test-mac", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the screen is missing %q:\n%s", want, view)
 		}

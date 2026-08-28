@@ -14,9 +14,11 @@ import (
 // for driving Vera from a pane while building her: the reply streams
 // to stdout, status lines go to stderr, and the conversation id is
 // stable so the next call continues it.
-const sayUsage = `vera say [-c conversation] <text>   (or text on stdin)
+const sayUsage = `vera say [-c conversation] [-m model] [-e effort] <text>   (or text on stdin)
 
   -c   conversation id (default "cli"; pass a new one to start over)
+  -m   model for THIS exchange only (claude-opus-5, gpt-5-mini, …)
+  -e   how hard to think for this exchange: none, minimal, low, medium, high, xhigh, max
 `
 
 func runSay(args []string) error {
@@ -24,6 +26,8 @@ func runSay(args []string) error {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, sayUsage) }
 	conv := fs.String("c", "cli", "")
+	model := fs.String("m", "", "")
+	effort := fs.String("e", "", "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -51,7 +55,7 @@ func runSay(args []string) error {
 	defer cancel()
 	wrote := false
 	var spent *UsageFrame
-	err = c.say(ctx, text, *conv, func(f Frame) {
+	err = c.say(ctx, Message{Text: text, Conversation: *conv, Model: *model, Effort: *effort}, func(f Frame) {
 		if f.Usage != nil {
 			spent = f.Usage
 		}

@@ -223,3 +223,70 @@ func (s *Session) describe() string {
 	}
 	return b.String()
 }
+
+// --- what a task or a delegation cost, for whoever else is asking ----
+
+// `vera costs` reads the journal and has the same question this
+// package already answers for a dump: what did the agent behind that
+// round actually spend? The answer must be the same number in both
+// places, so it is this code rather than a second copy of it.
+
+// Spend is what one or more Claude Code sessions cost. Priced is false
+// if any session ran on a model the price table does not know: the
+// dollars are then a floor, not a total, and a caller should say so.
+type Spend struct {
+	USD      float64
+	Priced   bool
+	Sessions int
+}
+
+func (s *Spend) add(sess *Session) {
+	usd, priced := sess.CostAll()
+	s.USD += usd
+	s.Sessions++
+	if !priced {
+		s.Priced = false
+	}
+}
+
+// SessionSpend is what one Claude Code session cost, by id — a
+// delegation, which the journal records as a session and nothing else.
+// A session whose file is gone comes back with no sessions counted.
+func SessionSpend(claudeDir, id string) Spend {
+	spend := Spend{Priced: true}
+	path := findSession(claudeDir, id)
+	if path == "" {
+		return spend
+	}
+	s, err := readSession(path)
+	if err != nil {
+		return spend
+	}
+	spend.add(s)
+	return spend
+}
+
+// TaskSpend is what every session belonging to a fleet task cost. The
+// task id in the file is what says a session belongs to it, exactly as
+// a dump decides — a scout works in the checkout itself, beside every
+// session the person ever ran there.
+func TaskSpend(claudeDir, worktree, task string, since time.Time) Spend {
+	spend := Spend{Priced: true}
+	for _, path := range sessionsIn(claudeDir, worktree, task, since) {
+		s, err := readSession(path)
+		if err != nil {
+			continue
+		}
+		spend.add(s)
+	}
+	return spend
+}
+
+// ClaudeDir is where Claude Code keeps its sessions.
+func ClaudeDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude")
+}
