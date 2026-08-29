@@ -87,7 +87,7 @@ func runChat(args []string) {
 	open := &openSessions{list: []*session.Session{sess}}
 	defer open.closeAll()
 
-	s := &chatSession{c: c, w: w, conv: conv, dir: dir, open: open}
+	s := &chatSession{c: c, w: w, conv: conv, dir: dir, open: open, board: macPasteboard()}
 	// The watch asks about whichever conversation is current, and /new
 	// moves that — so it reads the id rather than being handed one.
 	w.conv = s.conversation
@@ -104,7 +104,7 @@ func runChat(args []string) {
 	// says so with tui.SetModel rather than waiting for somebody to
 	// type here. (The rail no longer needs anything: Options.SideClosed
 	// is how mote is told to start it hidden.)
-	p := tea.NewProgram(tui.New(veraAgent{c: c, held: &s.held}, chatOptions(st, s, sess, greeting)))
+	p := tea.NewProgram(withPasteKey(tui.New(veraAgent{c: c, held: &s.held}, chatOptions(st, s, sess, greeting)), s))
 	w.sendWith(p.Send)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "vera: "+err.Error())
@@ -569,7 +569,7 @@ var chatCommands = []tui.Command{
 	{Name: "land", Help: "/land <id> — merge its branch and close it"},
 	{Name: "stop", Help: "/stop <id> [force] — tear a task down"},
 	{Name: "seen", Help: "/seen <id> — you have read it"},
-	{Name: "paste", Help: "attach the picture on the pasteboard — it goes with your next message"},
+	{Name: "paste", Help: "attach the picture on the pasteboard (ctrl+v does it too) — it goes with your next message"},
 	{Name: "image", Help: "/image <path> — attach a picture from a file; /image with nothing forgets what is attached"},
 	{Name: "new", Help: "a fresh conversation, in its own file"},
 	{Name: "sessions", Help: "the conversations on disk"},
@@ -592,6 +592,10 @@ type chatSession struct {
 	// The agent takes it on the next message; see stage.go. Its zero
 	// value is an empty stage, so a chat built without one works.
 	held stage
+	// board is the pasteboard /paste and ctrl+v read. Its zero value
+	// is a machine with none — which is every machine that is not a
+	// Mac, and every test that does not hand one over.
+	board pasteboard
 
 	mu   sync.Mutex
 	conv string
@@ -690,9 +694,10 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 	case "paste":
 		// The pasteboard is read now, not at send time: a person who
 		// pastes and then copies something else meant the first one.
-		held := &s.held
+		// ctrl+v is this same fetch on a keystroke — see pastekey.go.
+		board, held := s.board, &s.held
 		return off(func(context.Context) tea.Cmd {
-			im, err := pasteboardImage()
+			im, err := board.picture()
 			if err != nil {
 				return tui.Fail("%s", err)
 			}
