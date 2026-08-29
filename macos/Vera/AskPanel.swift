@@ -40,10 +40,15 @@ private let askLineLimit = 6
 enum AskReturn {
     /// The keystroke breaks the line rather than sending it.
     static func isNewline(modifiers: NSEvent.ModifierFlags, afterBackslash: Bool) -> Bool {
-        if modifiers.contains(.shift) || modifiers.contains(.option) || modifiers.contains(.control) {
-            return true
-        }
-        return afterBackslash
+        hasModifier(modifiers) || afterBackslash
+    }
+
+    /// Whether a modifier asked for the newline, rather than a
+    /// backslash having asked for it. Only these three: command is a
+    /// shortcut on its way somewhere, and caps lock and fn are not an
+    /// instruction about anything.
+    static func hasModifier(_ modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.contains(.shift) || modifiers.contains(.option) || modifiers.contains(.control)
     }
 
     /// ctrl+J is a newline wherever Return is. The key is read with its
@@ -153,7 +158,10 @@ final class AskPanel {
             } else if !AskReturn.isNewlineChord(unmodified: event.charactersIgnoringModifiers, modifiers: mods) {
                 return event
             }
-            Self.breakLine(in: editor, swallowingBackslash: backslash && mods.isEmpty)
+            // The backslash is only an instruction when it is the
+            // thing that asked; a modifier did the asking otherwise,
+            // and every character of the question stays.
+            Self.breakLine(in: editor, swallowingBackslash: backslash && !AskReturn.hasModifier(mods))
             return nil
         }
     }

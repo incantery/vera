@@ -38,6 +38,14 @@ struct AskReturnTests {
         // shortcut passing through does not silently break the line.
         expect(!AskReturn.isNewline(modifiers: .command, afterBackslash: false), "command+Return still sends")
 
+        // Caps lock and fn are not an instruction about anything, so
+        // a backslash still gets to be the one that asked — and is
+        // still the one swallowed.
+        expect(!AskReturn.hasModifier(.capsLock), "caps lock is not a newline modifier")
+        expect(!AskReturn.hasModifier(.function), "fn is not a newline modifier")
+        expect(!AskReturn.hasModifier(.command), "command is not a newline modifier")
+        expect(AskReturn.isNewline(modifiers: .capsLock, afterBackslash: true), "caps lock does not undo the backslash")
+
         // ctrl+J, and nothing else wearing control.
         expect(AskReturn.isNewlineChord(unmodified: "j", modifiers: .control), "ctrl+J is a newline")
         expect(!AskReturn.isNewlineChord(unmodified: "j", modifiers: []), "a bare j is a j")
