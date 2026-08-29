@@ -462,7 +462,10 @@ func (f *Fleet) Answer(ctx context.Context, id, text string, images ...string) e
 	if err != nil {
 		return err
 	}
-	text = attach.Brief(text, images)
+	// One line, not a paragraph: this is TYPED into a pane, and a
+	// newline typed into a terminal is a Return that would send half
+	// the answer.
+	text = attach.Line(text, images)
 	if err := f.Mux.Send(ctx, t.Pane, text); err != nil {
 		return err
 	}

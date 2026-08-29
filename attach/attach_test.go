@@ -367,3 +367,26 @@ func TestPathsAndSummary(t *testing.T) {
 		t.Fatalf("summary %q", s)
 	}
 }
+
+// An answer is typed into a pane, and a newline typed into a terminal
+// is a Return that sends half of it. So the one-line form has no line
+// breaks of its own, whatever else it says.
+func TestLineHasNoLineBreaks(t *testing.T) {
+	if got := Line("just words", nil); got != "just words" {
+		t.Fatalf("no pictures must change nothing: %q", got)
+	}
+	got := Line("here is what I see", []string{"/s/a.png", "/s/b.png"})
+	if strings.Contains(got, "\n") {
+		t.Fatalf("a newline would send half of it: %q", got)
+	}
+	for _, want := range []string{"here is what I see", "/s/a.png", "/s/b.png", "image files", "open them"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q: %s", want, got)
+		}
+	}
+	// A picture with nothing said is still a whole message.
+	alone := Line("", []string{"/s/a.png"})
+	if strings.HasPrefix(alone, " ") || !strings.Contains(alone, "image file,") {
+		t.Errorf("a picture on its own reads as %q", alone)
+	}
+}

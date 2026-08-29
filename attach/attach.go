@@ -362,6 +362,29 @@ func Brief(task string, paths []string) string {
 	return b.String()
 }
 
+// Line is text with its pictures named on ONE line, for somewhere the
+// words are TYPED rather than handed over — a terminal pane.
+//
+// A newline typed into a pane is a Return, and a Return in the middle
+// of an answer sends half of it and leaves the rest as a second
+// message. Brief's paragraph is right for a subprocess argument and
+// wrong here, so this is the same information with no line breaks of
+// its own.
+func Line(text string, paths []string) string {
+	if len(paths) == 0 {
+		return text
+	}
+	said := strings.TrimSpace(text)
+	if said != "" {
+		said += " "
+	}
+	noun := "image file"
+	if len(paths) > 1 {
+		noun = "image files"
+	}
+	return said + "[attached: " + strings.Join(paths, ", ") + " — " + noun + ", open them]"
+}
+
 // Summary is one short line for a screen: "2 images (1.4 MB)".
 func Summary(saved []Saved) string {
 	if len(saved) == 0 {

@@ -837,9 +837,15 @@ paste ──► POST /say {images:[{name,mime,data}]}
             │
             └─ the paths ride the exchange's context onto every tool Handle
                  delegate ─► claude -p "<task>\n\nRead them before you start:\n  /…/ab12.png"
-                 fleet    ─► the same paragraph in the brief, and in an
-                             answer typed into a room
+                 fleet    ─► the same paragraph in the brief, and a
+                             one-line form in an answer typed into a room
 ```
+
+The two forms exist because a brief is *handed over* as a subprocess
+argument and an answer is *typed into a pane*. A newline typed into a
+terminal is a Return, and a Return in the middle of an answer sends
+half of it — so `attach.Line` says the same thing with no line breaks
+of its own.
 
 The model never copies a path around: it never saw one, and a path it
 invented would be a file that is not there. It only has to decide *who

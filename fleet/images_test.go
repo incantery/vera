@@ -73,6 +73,13 @@ func TestAnswerCanCarryAPicture(t *testing.T) {
 	if !strings.Contains(typed, "here is what I see") || !strings.Contains(typed, "/state/vera/images/c/bb.png") {
 		t.Fatalf("what was typed into the room: %q", typed)
 	}
+	// Typed, not handed over: a newline in what is SENT is a Return,
+	// and a Return in the middle sends half the answer and leaves the
+	// rest sitting in the box. (The one at the end is the Enter the
+	// fake records separately, which is the send.)
+	if strings.Contains(m.typed[0], "\n") {
+		t.Fatalf("a newline was typed into the pane: %q", m.typed[0])
+	}
 	// The log says what was typed, so the record and the pane agree.
 	log, err := store.Statuses(task.ID)
 	if err != nil {
