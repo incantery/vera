@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// A spawn carries the pictures onto the record and into the brief the
-// pane runs, and a resume a day later hands over the same evidence.
+// A spawn carries the pictures into the brief the pane runs, and onto
+// the record — a task reopened tomorrow has to be handed the same
+// evidence, and the store is the only thing that outlives the process.
 func TestSpawnKeepsAndBriefsTheImages(t *testing.T) {
 	r := newRepo(t)
 	m := newFakeMux()
