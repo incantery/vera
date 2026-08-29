@@ -22,7 +22,7 @@ test:
 # it is not part of `test`.
 test-mac:
 	@mkdir -p bin
-	@swiftc -o bin/askpanel-tests macos/Vera/AskPanel.swift macos/Tests/AskReturnTests.swift
+	@swiftc -o bin/askpanel-tests macos/Vera/AskPanel.swift macos/Vera/Attachment.swift macos/Tests/AskReturnTests.swift
 	@./bin/askpanel-tests
 
 install: build test

@@ -71,3 +71,29 @@ func TestInheritTrust(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A screenshot the person handed over rides in the brief, named as
+// evidence. The agent in the room has eyes; Vera does not, and the
+// whole point of the task may be in the picture.
+func TestScaffoldNamesTheImages(t *testing.T) {
+	task := &Task{
+		Kind: Ship, Brief: "Fix the overlap in the header.",
+		Worktree: "/w/repo--fix", Branch: "fix", Project: "/w/repo",
+		Images: []string{"/state/vera/images/c/aa.png", "/state/vera/images/c/bb.png"},
+	}
+	s := scaffold(task, "", "")
+	for _, want := range []string{"2 images", "/state/vera/images/c/aa.png", "/state/vera/images/c/bb.png", "do not commit"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q:\n%s", want, s)
+		}
+	}
+	// The person's words are still the first thing the agent reads.
+	if !strings.HasPrefix(s, "Fix the overlap in the header.") {
+		t.Error("the images displaced the ask")
+	}
+	// And a task with none reads exactly as it did before.
+	plain := scaffold(&Task{Kind: Ship, Brief: "Fix it.", Worktree: "/w", Project: "/w"}, "", "")
+	if strings.Contains(plain, "attached") {
+		t.Errorf("a task with no pictures talks about pictures:\n%s", plain)
+	}
+}

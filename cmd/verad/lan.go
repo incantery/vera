@@ -17,6 +17,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/fleet"
 	"io"
 	"log/slog"
@@ -186,6 +187,14 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	}
 }
 
+// maxSayBody is the ceiling on one message. It was a megabyte when a
+// message was words; a pasted screenshot of a 5K display is several
+// times that once base64 has grown it by a third, and attach caps a
+// single picture at 16 MB and a message at eight of them. This is the
+// envelope those two ceilings need, and it is still a bound: a paired
+// device cannot hand this daemon an arbitrary amount of memory.
+const maxSayBody = (attach.MaxImages*attach.MaxBytes)*4/3 + 1<<20
+
 // say starts a run and shows it to you. The two are separable, which is
 // the point: this connection ending does not end the work.
 func (l *lanTransport) say(h Handler) http.HandlerFunc {
@@ -199,7 +208,7 @@ func (l *lanTransport) say(h Handler) http.HandlerFunc {
 		}
 
 		var msg Message
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&msg); err != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSayBody)).Decode(&msg); err != nil {
 			http.Error(w, "bad message", http.StatusBadRequest)
 			return
 		}

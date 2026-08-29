@@ -448,13 +448,30 @@ final class Core {
         }
     }
 
+    /// What `POST /say` carries. A struct rather than a dictionary
+    /// because a message is no longer all strings: pictures ride with
+    /// the words.
+    private struct Said: Encodable {
+        let text: String
+        let conversation: String
+        let device: String
+        let images: [SayImage]?
+    }
+
     /// One exchange, streamed. The first words should be on screen while
     /// the rest is still being composed.
-    func say(_ text: String, conversation: String) -> AsyncThrowingStream<Frame, Error> {
+    ///
+    /// Images are pictures pasted into the ask panel. Core keeps them
+    /// and hands their paths to whichever agent it gives the work to;
+    /// it cannot look at them itself. Empty is the ordinary case and
+    /// nothing about the message changes.
+    func say(_ text: String, conversation: String, images: [SayImage] = []) -> AsyncThrowingStream<Frame, Error> {
         // Built here, on the actor, so the stream's task needs nothing
         // of this object but a request and an address for the error.
         let prepared = Result {
-            try authed("/say", method: "POST", body: try JSONEncoder().encode(["text": text, "conversation": conversation, "device": device]))
+            try authed("/say", method: "POST", body: try JSONEncoder().encode(
+                Said(text: text, conversation: conversation, device: device,
+                     images: images.isEmpty ? nil : images)))
         }
         let address = self.address
         return AsyncThrowingStream { continuation in

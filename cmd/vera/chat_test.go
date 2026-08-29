@@ -33,6 +33,7 @@ type fakeVerad struct {
 	mu     sync.Mutex
 	views  []fleet.View
 	posts  []string
+	said   []Message // every /say, whole, for a test that cares what rode on one
 	model  Resolution
 	chosen *InForce // what this conversation chose, as /models reports it
 	dflt   *InForce // what PUT /model last saved
@@ -59,6 +60,9 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		}
 		var m Message
 		_ = json.NewDecoder(r.Body).Decode(&m)
+		f.mu.Lock()
+		f.said = append(f.said, m)
+		f.mu.Unlock()
 		enc := json.NewEncoder(w)
 		_ = enc.Encode(Frame{Run: "r1"})
 		_ = enc.Encode(Frame{Status: "thinking"})
@@ -174,6 +178,13 @@ func (f *fakeVerad) setFleet(v ...fleet.View) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.views = v
+}
+
+// messages is every /say this fake received, in order.
+func (f *fakeVerad) messages() []Message {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Message(nil), f.said...)
 }
 
 func (f *fakeVerad) posted() []string {
@@ -298,7 +309,7 @@ func TestTheDoneEventCarriesWhatTheTurnSpent(t *testing.T) {
 
 func TestAgentStreamsAnExchange(t *testing.T) {
 	f := newFakeVerad(t)
-	a := veraAgent{f.client()}
+	a := veraAgent{c: f.client()}
 
 	ch, err := a.Send(context.Background(), "chat-1", "hello there")
 	if err != nil {
@@ -340,7 +351,7 @@ func TestAgentStreamsAnExchange(t *testing.T) {
 	}
 
 	// A call that cannot start is an error, not a channel that carries one.
-	bad := veraAgent{&chatClient{base: f.url, secret: "wrong", device: "x"}}
+	bad := veraAgent{c: &chatClient{base: f.url, secret: "wrong", device: "x"}}
 	if _, err := bad.Send(context.Background(), "chat-1", "hi"); err == nil {
 		t.Fatal("a rejected /say should fail before the channel")
 	}
@@ -766,7 +777,7 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	w.conv = s.conversation
 	w.pollModel(context.Background())
 
-	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera", Mind: "echo"}, s, nil, "say something")))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(&Status{Name: "vera", Mind: "echo"}, s, nil, "say something")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
 	// The status line: the model actually in use and the machine
@@ -869,7 +880,7 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 
 	sess := openChat(t, dir, "chat-1")
 	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
-	m := tui.New(veraAgent{c}, headless(chatOptions(st, s, sess, chatGreeting(st, sess))))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(st, s, sess, chatGreeting(st, sess))))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	drive(t, m, func() bool { return len(sess.Turns()) == 1 }, m.Init(), say(m, "what is on the rail?"))
@@ -890,7 +901,7 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 		t.Fatalf("%d turns on disk, want the one exchange", n)
 	}
 	s2 := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{}}
-	m2 := tui.New(veraAgent{c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
+	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
 	m2.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	view := screen(m2)
@@ -936,7 +947,7 @@ func TestTheStatusLineSaysWhatItCost(t *testing.T) {
 
 	sess := openChat(t, dir, "chat-1")
 	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
-	m := tui.New(veraAgent{c}, headless(chatOptions(st, s, sess, "hello")))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(st, s, sess, "hello")))
 	m.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 
 	// Nothing spent, nothing claimed: a fresh screen shows no money.
@@ -963,7 +974,7 @@ func TestTheStatusLineSaysWhatItCost(t *testing.T) {
 	// Reopened, the total comes back with the turn.
 	again := openChat(t, dir, "chat-1")
 	s2 := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{}}
-	m2 := tui.New(veraAgent{c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
+	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
 	m2.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	if v := screen(m2); !strings.Contains(v, want) {
 		t.Errorf("a reopened conversation should still know what it cost:\n%s", v)
@@ -981,7 +992,7 @@ func TestNewMovesTheConversationAndItsFile(t *testing.T) {
 
 	sess := openChat(t, dir, "chat-1")
 	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
-	m := tui.New(veraAgent{c}, headless(chatOptions(st, s, sess, "hello")))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(st, s, sess, "hello")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	deliver(m, s.handle("new", ""))
@@ -1036,7 +1047,7 @@ func TestModelCommandAsksVeradAndTheStatusLineFollows(t *testing.T) {
 	w.conv = s.conversation
 	w.pollModel(context.Background())
 
-	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
 	// What is in force is on the status line from the start, without
@@ -1142,7 +1153,7 @@ func TestTheRailStartsHiddenInsideRook(t *testing.T) {
 	if !opts.SideClosed {
 		t.Error("inside rook the rail should start closed")
 	}
-	m := tui.New(veraAgent{c}, headless(opts))
+	m := tui.New(veraAgent{c: c}, headless(opts))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 	if strings.Contains(screen(m), "Port the chat onto mote") {
 		t.Errorf("the rail should start hidden inside rook:\n%s", screen(m))
@@ -1186,7 +1197,7 @@ func pickSession(t *testing.T) (*fakeVerad, *chatSession, *tui.Model) {
 	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
 	w.conv = s.conversation
 	w.pollModel(context.Background())
-	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 	return f, s, m
 }
@@ -1297,7 +1308,7 @@ func TestAVeradWithNoModelsRouteStillAnswers(t *testing.T) {
 	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
 	w.conv = s.conversation
 	w.pollModel(context.Background())
-	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
 	// The fake's /models is there; the old one's is not.
@@ -1344,7 +1355,7 @@ func TestTheWatchPushesAModelThatMovedElsewhere(t *testing.T) {
 	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
 	w.conv = s.conversation
 	w.pollModel(context.Background())
-	m := tui.New(veraAgent{c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(&Status{Name: "vera"}, s, nil, "")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
 	var pushed []tea.Msg
@@ -1388,7 +1399,7 @@ func TestBackslashEnterIsANewlineNotASend(t *testing.T) {
 
 	sess := openChat(t, dir, "chat-1")
 	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
-	m := tui.New(veraAgent{c}, headless(chatOptions(st, s, sess, "hello")))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(st, s, sess, "hello")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	m.Update(tea.KeyPressMsg{Code: '\\', Text: "what is on the rail,\\"})

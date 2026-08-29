@@ -210,7 +210,16 @@ func watchCtx(parent context.Context, conn net.Conn) context.Context {
 // like the LAN transport: that one is meant to be read with curl in a
 // terminal, and this one will never be.
 
-const maxFrame = 4 << 20
+// maxFrame is a ceiling on one length-prefixed message, and the size
+// of the buffer a peer can ask this process to allocate. It was four
+// megabytes when a message was words; a pasted screenshot needs more.
+//
+// It is deliberately well under the LAN's ceiling: this is the radio,
+// where a very large message is slow enough to feel broken, and where
+// the number is also an allocation somebody else chooses. A phone with
+// more pictures than this fits should reach the Mac over the network,
+// which is the route it tries first anyway.
+const maxFrame = 32 << 20
 
 func writeFrame(w io.Writer, f Frame) error {
 	payload, err := json.Marshal(f)

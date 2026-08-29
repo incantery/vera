@@ -84,12 +84,18 @@ final class Conversation {
         conversationID = UUID().uuidString
     }
 
-    func send(_ text: String) {
+    /// Images are pictures attached in the composer. They ride the
+    /// same message the words do — Vera keeps them on the Mac and
+    /// hands their paths to whichever agent she gives the work to.
+    ///
+    /// A picture with no words is a whole message: pointing at
+    /// something is a thing people do.
+    func send(_ text: String, images: [SayImage] = []) {
         guard let pairing else { return }
         let said = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !said.isEmpty else { return }
+        guard !said.isEmpty || !images.isEmpty else { return }
 
-        exchanges.append(Exchange(said: said))
+        exchanges.append(Exchange(said: said, images: images.isEmpty ? nil : images.count))
         let index = exchanges.count - 1
         replying = true
         // Saved before the answer as well as after: the app can be
@@ -101,7 +107,7 @@ final class Conversation {
         inFlight = Task { [weak self] in
             let client = Client(pairing: pairing, conversation: self?.conversationID ?? "")
             do {
-                for try await frame in client.say(said) {
+                for try await frame in client.say(said, images: images) {
                     guard let self, !Task.isCancelled else { return }
                     exchanges[index].apply(frame)
                     // Saved the moment the run is known. Waiting until

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/incantery/mote/tool"
+	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/fleet"
 	"go.opentelemetry.io/otel/propagation"
 )
@@ -130,10 +131,17 @@ func (t *DelegateTool) Run(ctx context.Context, args json.RawMessage, h tool.Han
 	// done, in the harness's voice, not "running tool".
 	h.Say(delegating(a.Task))
 
+	// The pictures that came with the person's message, named in the
+	// task. Vera cannot look at a screenshot; the thing she is handing
+	// this to can, and it only needs the path. The model is not asked
+	// to copy them into its own prose — it never saw them, and a path
+	// it invented would be a file that is not there.
+	task := attach.Brief(a.Task, attached(h))
+
 	started := time.Now()
-	res, err := t.Delegate.run(ctx, a.Task)
+	res, err := t.Delegate.run(ctx, task)
 	elapsed := time.Since(started)
-	logDelegation(h.Value(keyConversation), a.Task, res, elapsed, err)
+	logDelegation(h.Value(keyConversation), task, res, elapsed, err)
 
 	// What it reached, for the harness and not for the model: the
 	// Claude Code session it opened, and what that session cost. The

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/incantery/vera/attach"
 )
 
 // The brief is a contract, not a suggestion — firstmate's rule, and
@@ -42,6 +44,15 @@ func scaffold(t *Task, statusURL, reportPath string) string {
 		default:
 			fmt.Fprintf(&b, "When you are done, write a short summary of what you changed and why — with anything the person should know or decide — as markdown to %s. Write it before you report done.\n\n", reportPath)
 		}
+	}
+	if len(t.Images) > 0 {
+		// Named as evidence rather than as work: the agent is being
+		// shown what the person was looking at, and the files live in
+		// Vera's own state directory, outside the room. attach.Brief
+		// says all of that in the words the delegate also uses, so a
+		// task and a delegation read the same.
+		b.WriteString(strings.TrimSpace(attach.Brief("", t.Images)))
+		b.WriteString("\n\n")
 	}
 	if statusURL != "" {
 		fmt.Fprintf(&b, `Report where you stand by running this whenever it changes — it is how Vera knows without reading your screen:

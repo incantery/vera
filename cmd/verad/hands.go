@@ -625,9 +625,13 @@ func (m *Mind) invokeTool(ctx context.Context, conversation, device string, x *e
 			// start with no project named means. It is what the
 			// harness knows and the arguments do not say.
 			tool.Cwd: m.looking(device),
-			// Vera's own key; mote documents the two above and lets a
+			// Vera's own keys; mote documents the two above and lets a
 			// harness add what it knows.
 			keyConversation: conversation,
+			// The pictures that came with the message. A tool that
+			// hands work to somebody with eyes passes them on; every
+			// other tool ignores them. See images.go.
+			keyImages: strings.Join(imagesOn(ctx), "\n"),
 		},
 	})
 	elapsed := time.Since(started)

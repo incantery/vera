@@ -43,6 +43,11 @@ the phone by scanning the QR at `http://localhost:4780/`. First ride:
   **Compact**; Xcode offers **Build / Run / Stop / Test**; Chrome offers
   **Reload / New Tab**. Teaching Vera a new app is a descriptor on the
   Mac — the phone never changes. See `cmd/vera/capability.go`.
+- **A screenshot is a sentence.** Paste one — ⌘V into the Mac's ask
+  panel, Attach on the phone, `/paste` in the chat, `vera say -i` — and
+  it rides your message. Vera cannot see it: she keeps it and hands the
+  file to whichever agent she gives the work to, and Claude Code opens
+  it. "What is wrong with this?" is a whole question again.
 - **Attention you can jump to.** The home screen is the places on the
   Mac, ranked by frecency, the one in front of you marked. Tap to go
   there — the Mac follows you, and the phone follows the Mac.

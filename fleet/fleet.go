@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/mux"
 )
 
@@ -126,6 +127,9 @@ type Request struct {
 	Kind    Kind
 	Mode    Mode
 	Brief   string
+	// Images are pictures that came with the ask, as absolute paths on
+	// this machine. The agent opens them; nothing here does.
+	Images []string
 }
 
 // View is a task as the phone and the mind see it: the record plus
@@ -225,6 +229,7 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 		Kind:        req.Kind,
 		Mode:        req.Mode,
 		Brief:       req.Brief,
+		Images:      req.Images,
 		Spawned:     time.Now(),
 		Incarnation: newID(),
 	}
@@ -447,11 +452,20 @@ func (f *Fleet) Report(id string, st Status) error {
 // Answer types a reply into the task's pane and sends it — a person
 // (or Vera) resolving what the agent asked. The status log records it,
 // so a returning phone sees the decision as well as the question.
-func (f *Fleet) Answer(ctx context.Context, id, text string) error {
+//
+// Images are pictures that came with the answer: "here is the failure
+// you asked about". They are named in what is typed, because the agent
+// on the other end reads files and the pane carries text. What goes in
+// the log is what was typed, so the record and the pane agree.
+func (f *Fleet) Answer(ctx context.Context, id, text string, images ...string) error {
 	t, err := f.Store.Load(id)
 	if err != nil {
 		return err
 	}
+	// One line, not a paragraph: this is TYPED into a pane, and a
+	// newline typed into a terminal is a Return that would send half
+	// the answer.
+	text = attach.Line(text, images)
 	if err := f.Mux.Send(ctx, t.Pane, text); err != nil {
 		return err
 	}

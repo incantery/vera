@@ -191,7 +191,11 @@ func (t *FleetTool) act(ctx context.Context, h tool.Handle, meta map[string]any,
 			return "", fmt.Errorf("no repository was named and none is in front of them; ask which project")
 		}
 		h.Say("Opening a room for that…")
-		task, err := t.Fleet.Spawn(ctx, fleet.Request{Project: project, Kind: fleet.Kind(args.Kind), Brief: args.Brief})
+		// The pictures the person handed over ride with the brief. Vera
+		// never saw them; the agent in the room will, and a task about
+		// a screenshot without the screenshot is a task about nothing.
+		task, err := t.Fleet.Spawn(ctx, fleet.Request{Project: project, Kind: fleet.Kind(args.Kind),
+			Brief: args.Brief, Images: attached(h)})
 		if err != nil {
 			return "", err
 		}
@@ -202,7 +206,9 @@ func (t *FleetTool) act(ctx context.Context, h tool.Handle, meta map[string]any,
 		if args.Task == "" || strings.TrimSpace(args.Text) == "" {
 			return "", fmt.Errorf("answer needs a task id and the text to send")
 		}
-		if err := t.Fleet.Answer(ctx, args.Task, args.Text); err != nil {
+		// A picture can be the answer — "this is the failure you asked
+		// about" — so it goes down the same wire the words do.
+		if err := t.Fleet.Answer(ctx, args.Task, args.Text, attached(h)...); err != nil {
 			return "", err
 		}
 		return "Sent. The task has their answer and is working again.", nil

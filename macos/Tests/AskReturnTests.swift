@@ -51,6 +51,49 @@ struct AskReturnTests {
         expect(!AskReturn.isNewlineChord(unmodified: "j", modifiers: []), "a bare j is a j")
         expect(!AskReturn.isNewlineChord(unmodified: "k", modifiers: .control), "ctrl+K is not a newline")
 
+        // ⌘V, and only the bare one: the paste-and-match shortcuts
+        // are somebody else's and must reach the field.
+        expect(AskReturn.isPaste(unmodified: "v", modifiers: .command), "command+V is a paste")
+        expect(AskReturn.isPaste(unmodified: "V", modifiers: .command), "the case of the key is not the question")
+        expect(!AskReturn.isPaste(unmodified: "v", modifiers: []), "a bare v is a v")
+        expect(!AskReturn.isPaste(unmodified: "c", modifiers: .command), "command+C is not a paste")
+        for (name, mods) in [("shift", NSEvent.ModifierFlags([.command, .shift])),
+                             ("option", [.command, .option]),
+                             ("control", [.command, .control])] {
+            expect(!AskReturn.isPaste(unmodified: "v", modifiers: mods), "command+\(name)+V is somebody else's shortcut")
+        }
+
+        // Pictures, on the way to Core. A TIFF is converted, because
+        // several apps put only that on the pasteboard and everything
+        // downstream expects one of four formats.
+        expect(Attachment.png(png: nil, tiff: nil) == nil, "nothing on the pasteboard is nothing to send")
+        expect(Attachment.png(png: Data(), tiff: nil) == nil, "empty PNG data is nothing to send")
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4,
+                                      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let asPNG = bitmap.representation(using: .png, properties: [:])!
+        let asTIFF = bitmap.representation(using: .tiff, properties: [:])!
+        expect(Attachment.png(png: asPNG, tiff: nil) == asPNG, "a PNG is passed straight through")
+        if let converted = Attachment.png(png: nil, tiff: asTIFF) {
+            expect(converted.starts(with: [0x89, 0x50, 0x4E, 0x47]), "a TIFF is converted to PNG")
+        } else {
+            expect(false, "a TIFF was not converted")
+        }
+        expect(Attachment.png(png: nil, tiff: Data([1, 2, 3])) == nil, "something that is not an image is nothing to send")
+
+        // What goes on the wire: base64, named, with the type said.
+        let picture = Attachment.image(asPNG, named: "pasted")
+        expect(picture?.name == "pasted" && picture?.mime == "image/png", "the picture says what it is")
+        expect(Data(base64Encoded: picture?.data ?? "") == asPNG, "the bytes survive the trip")
+        expect(Attachment.image(Data(), named: "empty") == nil, "an empty picture is not a picture")
+        expect(Attachment.image(Data(count: Attachment.maxBytes + 1), named: "huge") == nil,
+               "a picture over the ceiling is refused on this side")
+
+        // What the panel says is attached.
+        expect(Attachment.summary([]) == "", "nothing attached says nothing")
+        expect(Attachment.summary([picture!]) == "1 image attached", "one: \(Attachment.summary([picture!]))")
+        expect(Attachment.summary([picture!, picture!]) == "2 images attached", "two")
+
         expect(AskReturn.isReturn(keyCode: 36), "Return")
         expect(AskReturn.isReturn(keyCode: 76), "the keypad's Return")
         expect(!AskReturn.isReturn(keyCode: 48), "Tab is not Return")

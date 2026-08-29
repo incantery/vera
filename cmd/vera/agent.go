@@ -12,17 +12,32 @@ import (
 	"time"
 
 	"github.com/incantery/mote/agent"
+	"github.com/incantery/vera/attach"
 )
 
 // veraAgent is verad over HTTP, behind mote's one method.
-type veraAgent struct{ c *chatClient }
+type veraAgent struct {
+	c *chatClient
+	// held is what /paste and /image attached and have not sent. It
+	// is taken here rather than by the command that staged it,
+	// because the picture and the words are one message and this is
+	// where the message is. Nil is a chat with no way to attach.
+	held *stage
+}
 
 // Send opens the exchange before it returns, so a call that could not
 // start at all — a wrong secret, a daemon that went away — is an
 // error rather than a channel that carries one. Cancelling ctx breaks
 // the read and closes the channel.
 func (a veraAgent) Send(ctx context.Context, conversation, text string) (<-chan agent.Event, error) {
-	body, err := a.c.openSay(ctx, Message{Text: text, Conversation: conversation})
+	// Taken, not copied: an attached picture goes with exactly one
+	// thing you said. If this send fails the pictures are gone with
+	// it, which is the same as any other message that did not land.
+	var pictures []attach.Image
+	if a.held != nil {
+		pictures = a.held.take()
+	}
+	body, err := a.c.openSay(ctx, Message{Text: text, Conversation: conversation, Images: pictures})
 	if err != nil {
 		return nil, err
 	}

@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 // The only screen: what has been said, and the thing you say it with.
@@ -7,6 +8,14 @@ struct ConversationView: View {
     @State private var listener = Listener()
 
     @State private var draft = ""
+    /// Pictures attached but not yet sent. They wait here because the
+    /// picture and the sentence about it are one message, typed at two
+    /// different moments.
+    @State private var attached: [SayImage] = []
+    @State private var picking: [PhotosPickerItem] = []
+    /// Said out loud when a picture cannot be made of what was picked
+    /// — a silent drop would leave a question about nothing.
+    @State private var trouble: String?
     /// What was already in the field when recording started. The
     /// recognizer replaces its whole transcript on every update, so
     /// anything typed beforehand has to be held separately or it gets
@@ -25,6 +34,10 @@ struct ConversationView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { composer }
         }
         .task { _ = await listener.authorize() }
+        .onChange(of: picking) { _, items in
+            guard !items.isEmpty else { return }
+            Task { await absorb(items) }
+        }
         .onChange(of: listener.heard) { _, heard in
             guard listener.isListening else { return }
             draft = typedBeforeRecording.isEmpty ? heard : typedBeforeRecording + " " + heard
@@ -104,8 +117,27 @@ struct ConversationView: View {
                     .padding(.bottom, 10)
             }
 
+            if !attached.isEmpty || trouble != nil {
+                HStack(spacing: 8) {
+                    if let trouble {
+                        Text(trouble).foregroundStyle(N.accent300)
+                    } else {
+                        Image(systemName: "photo")
+                        Text(Attachment.summary(attached) + " going with this")
+                        Button("clear") { attached = [] }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(N.accent300)
+                    }
+                    Spacer()
+                }
+                .font(N.body(12))
+                .foregroundStyle(N.dim)
+                .padding(.horizontal, 26)
+                .padding(.bottom, 10)
+            }
+
             HStack(alignment: .bottom, spacing: 10) {
-                Attach()
+                Attach(picking: $picking, onPaste: pasteImage)
 
                 TextField(
                     "",
@@ -124,7 +156,7 @@ struct ConversationView: View {
                 .background(N.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 MicButton(listening: listener.isListening, action: toggleRecording)
-                SendButton(enabled: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                SendButton(enabled: !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attached.isEmpty,
                            action: send)
             }
             .padding(.horizontal, 18)
@@ -159,26 +191,61 @@ struct ConversationView: View {
     private func send() {
         if listener.isListening { listener.stop() }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        conversation.send(text)
+        // A picture on its own is a whole message.
+        guard !text.isEmpty || !attached.isEmpty else { return }
+        conversation.send(text, images: attached)
         draft = ""
+        attached = []
+        trouble = nil
         typedBeforeRecording = ""
+    }
+
+    /// The pasteboard, if it is holding a picture. iOS shows its own
+    /// "pasted from" banner; that is the system telling the person what
+    /// happened, and it is not this app's to suppress.
+    private func pasteImage() {
+        guard let picture = Attachment.fromPasteboard() else {
+            trouble = "There's no picture on the clipboard."
+            return
+        }
+        attached.append(picture)
+        trouble = nil
+    }
+
+    /// What the photo picker handed over, turned into something the
+    /// Mac keeps. A phone's own pictures are HEIC, which nothing
+    /// downstream reads, so this is where they stop being HEIC.
+    private func absorb(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let picture = Attachment.image(data, named: item.itemIdentifier ?? "photo")
+            else {
+                trouble = "I couldn't make a picture of that one."
+                continue
+            }
+            attached.append(picture)
+            trouble = nil
+        }
+        picking = []
     }
 }
 
 // MARK: - Composer buttons
 
-/// Photos and files, when there is anything on the other end that could
-/// read them. Disabled rather than absent: the shape of the composer is
-/// part of what is being judged, and a button that quietly does nothing
-/// would be worse than one that says it isn't ready.
+/// Pictures, from the two places a phone has them: the library, and
+/// whatever was last copied.
+///
+/// Vera cannot see them. She keeps them on the Mac and hands the files
+/// to whichever agent she gives the work to — which is what makes a
+/// screenshot worth sending at all.
 private struct Attach: View {
+    @Binding var picking: [PhotosPickerItem]
+    let onPaste: () -> Void
+
     var body: some View {
         Menu {
-            Section("Not yet") {
-                Button("Photo") {}.disabled(true)
-                Button("File") {}.disabled(true)
-            }
+            PhotosPicker("Photo", selection: $picking, maxSelectionCount: 4, matching: .images)
+            Button("Paste", action: onPaste)
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 19, weight: .medium))
@@ -244,11 +311,21 @@ private struct ExchangeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(exchange.said)
-                .font(N.body(15))
-                .leading(15, 1.5)
-                .foregroundStyle(N.dim)
-                .fixedSize(horizontal: false, vertical: true)
+            if !exchange.said.isEmpty {
+                Text(exchange.said)
+                    .font(N.body(15))
+                    .leading(15, 1.5)
+                    .foregroundStyle(N.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // What went with it. The picture itself is not kept here —
+            // the Mac has it — but a transcript that did not say one
+            // was sent would make the answer read as a non sequitur.
+            if let count = exchange.images, count > 0 {
+                Label(count == 1 ? "1 image" : "\(count) images", systemImage: "photo")
+                    .font(N.body(12))
+                    .foregroundStyle(N.dim.opacity(0.7))
+            }
 
             // Everything that came back, where it came back. A question
             // shown under the paragraph that follows it is a question

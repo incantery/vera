@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/price"
 )
@@ -33,6 +34,11 @@ type Message struct {
 	// more specific and wins over them.
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+	// Images are pictures that came with the words — `vera say -i`,
+	// the chat's /image and /paste. Vera keeps them and hands their
+	// paths to whichever agent she gives the work to; she cannot look
+	// at them herself. Empty is the ordinary case.
+	Images []attach.Image `json:"images,omitempty"`
 }
 
 // Resolution is which model a conversation is on and who decided, as

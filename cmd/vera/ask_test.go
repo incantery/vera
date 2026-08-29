@@ -15,7 +15,7 @@ import (
 // is not one renders the card and says the question went nowhere. So
 // the assertion is the test: without it the ask is decoration.
 func TestTheChatIsAnAnswerer(t *testing.T) {
-	var a agent.Agent = veraAgent{&chatClient{}}
+	var a agent.Agent = veraAgent{c: &chatClient{}}
 	if _, ok := a.(agent.Answerer); !ok {
 		t.Fatal("the chat cannot answer an ask, so every one of them would hang")
 	}
@@ -55,7 +55,7 @@ func TestAnswerPostsToTheAskRoute(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := veraAgent{&chatClient{base: srv.URL, secret: "s3cret"}}
+	a := veraAgent{c: &chatClient{base: srv.URL, secret: "s3cret"}}
 	if err := a.Answer(context.Background(), "call_7", agent.Always); err != nil {
 		t.Fatal(err)
 	}
