@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/mux"
 )
 
 func TestRailFramesSpeakRooksVocabulary(t *testing.T) {
@@ -17,16 +18,28 @@ func TestRailFramesSpeakRooksVocabulary(t *testing.T) {
 		{Task: &fleet.Task{ID: "b2", Project: "/x/rook", Brief: "Scout the feed", Spawned: now, Session: "rook--vera-b2"}, State: fleet.Running},
 		{Task: &fleet.Task{ID: "c3", Project: "/x/vera", Brief: "Old", Closed: true}, State: fleet.Closed},
 	}
-	spaces, agents := railFrames(repos, tasks, "/x/vera")
+	// Rook holds a workspace on each checkout — plus a task's room,
+	// which is a sibling dir and claims nothing for the repo.
+	panes := []mux.Pane{
+		{ID: mux.ID{Session: "rook--vera-b2"}, Path: "/x/rook--vera-b2"},
+		{ID: mux.ID{Session: "main"}, Path: "/x/rook/mux/src"},
+		{ID: mux.ID{Session: "v"}, Path: "/x/vera"},
+	}
+	spaces, agents := railFrames(repos, tasks, "/x/vera", panes)
 	if spaces.Op != "items.push" || spaces.Params.Surface != "spaces" || len(spaces.Params.Items) != 2 {
 		t.Fatalf("spaces: %+v", spaces)
 	}
 	rook, vera := spaces.Params.Items[0], spaces.Params.Items[1]
-	if rook.State != "blocked" || rook.Subtitle != "2 tasks" || rook.Current {
+	if rook.State != "blocked" || rook.Subtitle != "2 tasks" || rook.Current || rook.Workspace != "main" {
 		t.Errorf("rook row: %+v", rook)
 	}
-	if vera.State != "idle" || !vera.Current || vera.Subtitle != "" {
+	if vera.State != "idle" || !vera.Current || vera.Subtitle != "" || vera.Workspace != "v" {
 		t.Errorf("vera row (closed task does not count): %+v", vera)
+	}
+	// A repo with no workspace open is not a space.
+	none, _ := railFrames(repos, tasks, "", panes[:1])
+	if len(none.Params.Items) != 0 {
+		t.Errorf("a task's room does not make its repo a space: %+v", none.Params.Items)
 	}
 	if len(agents.Params.Items) != 2 || agents.Params.Items[0].ID != "b2" {
 		t.Fatalf("agents newest first, closed omitted: %+v", agents.Params.Items)

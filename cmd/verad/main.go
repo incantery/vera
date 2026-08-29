@@ -464,7 +464,16 @@ func main() {
 				}
 				return ""
 			}
-			rl := newRail(side, f, f.Projects, focus)
+			panes := func(ctx context.Context) []mux.Pane {
+				pctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				defer cancel()
+				ps, err := term.List(pctx)
+				if err != nil {
+					return nil
+				}
+				return ps
+			}
+			rl := newRail(side, f, f.Projects, focus, panes)
 			// An engine that comes back has an empty rail: push it
 			// again, changed or not.
 			t.onBack = rl.Reset

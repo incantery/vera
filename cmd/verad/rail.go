@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -70,7 +71,12 @@ func railState(s fleet.State) string {
 
 // railFrames builds the two frames from what the fleet believes.
 // focused is the repo root in front of the person, for `current`.
-func railFrames(repos []fleet.Repo, tasks []fleet.View, focused string) (spaces, agents railFrame) {
+// panes is the mux's pane table: a repo is a *space* only when a
+// workspace is open in it, and the row names that workspace so rook
+// folds its own row for it in rather than listing both. Rook lists
+// every workspace it holds by itself; a repo with nothing open is not
+// a space, it is something the picker could open.
+func railFrames(repos []fleet.Repo, tasks []fleet.View, focused string, panes []mux.Pane) (spaces, agents railFrame) {
 	// Spaces: every known repo; its state is the loudest of its open
 	// tasks' — blocked beats working beats done beats idle.
 	rank := map[string]int{"idle": 0, "done": 1, "working": 2, "blocked": 3, "failed": 3}
@@ -88,6 +94,10 @@ func railFrames(repos []fleet.Repo, tasks []fleet.View, focused string) (spaces,
 	}
 	spaces = railFrame{V: 1, Op: "items.push", Params: railParams{Surface: "spaces", Items: []railItem{}}}
 	for _, r := range repos {
+		ws := workspaceIn(panes, r.Root)
+		if ws == "" {
+			continue
+		}
 		state := byRepo[r.Root]
 		if state == "" {
 			state = "idle"
@@ -104,7 +114,7 @@ func railFrames(repos []fleet.Repo, tasks []fleet.View, focused string) (spaces,
 		} else if n > 1 {
 			sub = itoa(n) + " tasks"
 		}
-		spaces.Params.Items = append(spaces.Params.Items, railItem{ID: r.Root, Title: r.Name, Subtitle: sub, State: state, Current: r.Root == focused})
+		spaces.Params.Items = append(spaces.Params.Items, railItem{ID: r.Root, Title: r.Name, Subtitle: sub, State: state, Current: r.Root == focused, Workspace: ws})
 	}
 
 	// Agents: one row per open task, newest first — what it is doing,
@@ -123,6 +133,21 @@ func railFrames(repos []fleet.Repo, tasks []fleet.View, focused string) (spaces,
 		agents.Params.Items = append(agents.Params.Items, railItem{ID: t.ID, Title: title, Subtitle: sub, State: railState(t.State), Current: t.State.Actionable(), Workspace: t.Session})
 	}
 	return spaces, agents
+}
+
+// workspaceIn is the workspace holding a pane whose cwd is the repo's
+// main checkout (or inside it), or "". A task's worktree is a sibling
+// directory, not inside the root, so a task's room never stands in
+// for the repo's own space. The first such workspace in pane order
+// wins; two workspaces on one checkout is a person's choice rook
+// still lists in full.
+func workspaceIn(panes []mux.Pane, root string) string {
+	for _, p := range panes {
+		if p.Path == root || strings.HasPrefix(p.Path, root+"/") {
+			return p.ID.Session
+		}
+	}
+	return ""
 }
 
 // railWord is the short word for a state, for a row's subtitle.
@@ -159,14 +184,15 @@ type rail struct {
 	fleet    *fleet.Fleet
 	projects *fleet.Projects
 	focus    func() string // repo root in front of the person, or ""
+	panes    func(context.Context) []mux.Pane
 	poke     chan struct{}
 	mu       sync.Mutex // guards last: Reset comes from the mux watcher
 	last     [2][]byte
 	warned   bool
 }
 
-func newRail(side mux.Sider, f *fleet.Fleet, p *fleet.Projects, focus func() string) *rail {
-	return &rail{side: side, fleet: f, projects: p, focus: focus, poke: make(chan struct{}, 1)}
+func newRail(side mux.Sider, f *fleet.Fleet, p *fleet.Projects, focus func() string, panes func(context.Context) []mux.Pane) *rail {
+	return &rail{side: side, fleet: f, projects: p, focus: focus, panes: panes, poke: make(chan struct{}, 1)}
 }
 
 // Reset forgets what was last pushed, so the next push sends both
@@ -217,7 +243,11 @@ func (r *rail) push(ctx context.Context) {
 	if r.focus != nil {
 		focused = r.focus()
 	}
-	spaces, agents := railFrames(repos, tasks, focused)
+	var panes []mux.Pane
+	if r.panes != nil {
+		panes = r.panes(ctx)
+	}
+	spaces, agents := railFrames(repos, tasks, focused, panes)
 	for i, f := range []railFrame{spaces, agents} {
 		b, err := json.Marshal(f)
 		if err != nil {
