@@ -743,7 +743,7 @@ func TestBeliefReadsLikeThePreface(t *testing.T) {
 // deliver hands a command's messages to the model the way a running
 // program would, unwrapping batches. It is the only way to drive the
 // terminal from outside: the message types are the terminal's own.
-func deliver(m *tui.Model, cmd tea.Cmd) {
+func deliver(m tea.Model, cmd tea.Cmd) {
 	if cmd == nil {
 		return
 	}

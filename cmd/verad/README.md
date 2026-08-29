@@ -205,11 +205,11 @@ lands, also says so in the transcript.
 Slash commands are the fleet verbs by hand: `/tasks`, `/start [@repo]
 <brief>` opens a room, `/scout`, `/resume`, `/report <id>` (which prints
 what it wrote and marks it seen), `/answer <id> <text>`, `/land`,
-`/stop [force]`, `/seen`, `/new` for a fresh conversation, `/paste` and
-`/image <path>` to send a picture with what you say next, `/dump [note]`
-for a folder of everything, `/debug` for what Vera currently believes
-about where you are — devices, focus, terminal, integrations — from the
-same facts the model's preface is built from, and `/quit`. Two more are
+`/stop [force]`, `/seen`, `/new` for a fresh conversation, `/paste`
+(ctrl+v does the same) and `/image <path>` to send a picture with what
+you say next, `/dump [note]` for a folder of everything, `/debug` for
+what Vera currently believes about where you are — devices, focus,
+terminal, integrations — from the same facts the model's preface is built from, and `/quit`. Two more are
 about the model itself: `/model` — a card of everything verad can
 reach, see below — and `/costs`. `/help` is
 mote's: it lists these and the keys. `esc` stops a reply in flight,
@@ -851,19 +851,23 @@ The model never copies a path around: it never saw one, and a path it
 invented would be a file that is not there. It only has to decide *who
 does the work*, which is the decision it was already making.
 
-**Where they come from.** Four doors, three of which can really paste:
+**Where they come from.** Four doors, and all of them paste:
 
 | door | how |
 | --- | --- |
 | the phone | Attach ▸ Photo (library) or Paste (clipboard) |
 | the Mac's ask panel | ⌘V — but only when the pasteboard holds a picture, so pasting a URL into the field is untouched |
-| `vera chat` | `/paste` takes the pasteboard, `/image <path>` takes a file |
+| `vera chat` | ctrl+v takes the pasteboard; `/paste` is the same fetch typed, `/image <path>` takes a file |
 | `vera say` | `-i shot.png`, repeatable |
 
-A terminal **cannot be pasted into**: ⌘V over a TUI puts text on the
-wire and nothing else, in rook or anywhere else. `/paste` is the chat
-asking for the picture instead of waiting to be handed one — the
-keystroke is still ⌘⇧⌃4, in whatever you were looking at.
+A terminal **cannot be pasted into** — not by ⌘V, which is the
+emulator's key and puts text on the wire and nothing else, in rook or
+anywhere else. So the chat goes and reads the pasteboard itself, on a
+key the terminal really does see: **ctrl+v** takes the picture if
+there is one and the words if there is not, so the gesture means here
+what it means everywhere else and text paste is untouched. `/paste` is
+the same fetch, typed. The screenshot keystroke is still ⌘⇧⌃4, in
+whatever you were looking at.
 
 An attached picture **waits** for words rather than being sent on its
 own, because the picture and the sentence about it are one message
