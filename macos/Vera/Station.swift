@@ -382,8 +382,14 @@ final class Station {
     // MARK: - Typed
 
     /// A question from the panel. Same conversation, different door.
+    ///
+    /// Anything pasted into the panel goes with it, and is taken off
+    /// the panel here: a picture belongs to exactly one question, and
+    /// the next one starts empty.
     func askTyped(_ text: String) {
-        panel.model.lastQuestion = text
+        let pictures = panel.model.attached
+        panel.model.attached = []
+        panel.model.lastQuestion = pictures.isEmpty ? text : text + " · " + Attachment.summary(pictures)
         panel.model.answer = ""
         panel.model.status = nil
         panel.model.error = nil
@@ -393,7 +399,7 @@ final class Station {
         Task { [weak self] in
             guard let self else { return }
             do {
-                for try await frame in core.say(text, conversation: conversation) {
+                for try await frame in core.say(text, conversation: conversation, images: pictures) {
                     if let run = frame.run { interaction.run = run }
                     if let status = frame.status { panel.model.status = status }
                     if let delta = frame.delta { panel.model.answer += delta }

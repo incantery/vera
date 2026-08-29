@@ -29,10 +29,17 @@ struct PeerRequest: Encodable, Sendable {
     struct Said: Encodable, Sendable {
         var text: String
         var conversation: String
+        /// Pictures that came with the words. The radio carries a
+        /// smaller message than the network does — the Mac caps one
+        /// frame at 32 MB — so a phone with more than that to send
+        /// should be reaching it over wifi, which is the route this
+        /// one is the fallback for.
+        var images: [SayImage]?
     }
 
-    static func say(_ text: String, in conversation: String) -> PeerRequest {
-        PeerRequest(op: "say", message: Said(text: text, conversation: conversation))
+    static func say(_ text: String, in conversation: String, with images: [SayImage] = []) -> PeerRequest {
+        PeerRequest(op: "say", message: Said(text: text, conversation: conversation,
+                                             images: images.isEmpty ? nil : images))
     }
 
     static func resume(_ run: String, from seen: Int) -> PeerRequest {

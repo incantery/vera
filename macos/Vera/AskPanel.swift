@@ -21,6 +21,11 @@ final class AskModel {
     var error: String?
     var busy = false
     var lastQuestion = ""
+    /// Pictures pasted into the panel, waiting on the question they
+    /// belong to. Vera cannot see them; she hands them to whichever
+    /// agent she gives the work to. Taken by the send, so a picture
+    /// goes with exactly one question.
+    var attached: [SayImage] = []
 }
 
 /// How tall the field grows before it scrolls itself. The same six the
@@ -60,6 +65,19 @@ enum AskReturn {
 
     /// Return, and the one on the keypad.
     static func isReturn(keyCode: UInt16) -> Bool { keyCode == 36 || keyCode == 76 }
+
+    /// ⌘V, and nothing else: ⌘⇧V and ⌘⌥V are somebody's paste-and-match
+    /// shortcuts and are not this.
+    ///
+    /// The keystroke is only intercepted when the pasteboard actually
+    /// holds a picture — see AskPanel. Pasting text into the field has
+    /// to keep working, and a field that swallowed ⌘V would be a field
+    /// you cannot paste a URL into.
+    static func isPaste(unmodified: String?, modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.contains(.command)
+            && !modifiers.contains(.shift) && !modifiers.contains(.option) && !modifiers.contains(.control)
+            && unmodified?.lowercased() == "v"
+    }
 }
 
 /// A borderless panel that can still become key — the Spotlight shape.
@@ -75,7 +93,7 @@ final class AskPanel {
     var onClose: () -> Void = {}
 
     private var panel: NSPanel?
-    private var newlineKeys: Any?
+    private var panelKeys: Any?
     private(set) var isVisible = false
 
     func toggle() {
@@ -88,7 +106,7 @@ final class AskPanel {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
         let visible = screen.visibleFrame
-        watchForNewlineKeys(in: panel)
+        watchForKeys(in: panel)
         let size = NSSize(width: 560, height: panel.frame.height)
         panel.setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.maxY - visible.height * 0.28 - size.height, width: size.width, height: size.height), display: true)
         isVisible = true
@@ -103,8 +121,8 @@ final class AskPanel {
     func hide() {
         guard isVisible, let panel else { return }
         isVisible = false
-        if let newlineKeys { NSEvent.removeMonitor(newlineKeys) }
-        newlineKeys = nil
+        if let panelKeys { NSEvent.removeMonitor(panelKeys) }
+        panelKeys = nil
         panel.orderOut(nil)
         onClose()
     }
@@ -131,26 +149,40 @@ final class AskPanel {
         return panel
     }
 
-    /// Puts a newline in the field on the keys that mean one.
+    /// The keystrokes SwiftUI does not hand over: the newline ones,
+    /// and a ⌘V that is a picture.
     ///
     /// SwiftUI hands a `TextField` one keystroke — the plain Return
     /// that `onSubmit` answers — and nothing for the rest, so the
     /// modified ones are read here and written into the field editor,
     /// which is the AppKit text view the field is being typed into.
+    /// A pasted picture is the same problem from the other side: the
+    /// field would take the pasteboard's text and drop its image, so
+    /// the keystroke is caught before the field sees it — but ONLY
+    /// when there is an image, so an ordinary paste is untouched.
     /// A monitor rather than a rewrite of the field: everything else
     /// about the door is SwiftUI's, and should stay that way. It lives
     /// exactly as long as the panel is up — the door is shut far more
     /// of the time than it is open, and a key monitor that outlives
     /// what it is for is a key monitor nobody remembers is there.
-    private func watchForNewlineKeys(in panel: NSPanel) {
-        guard newlineKeys == nil else { return }
-        newlineKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+    private func watchForKeys(in panel: NSPanel) {
+        guard panelKeys == nil else { return }
+        panelKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isVisible, event.window === panel,
                   let editor = panel.firstResponder as? NSTextView
             else { return event }
 
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let backslash = Self.backslashBeforeCursor(editor)
+            // ⌘V with a picture on the pasteboard attaches it. With
+            // anything else on the pasteboard the keystroke is passed
+            // straight through, so pasting a URL into the field is
+            // exactly what it always was.
+            if AskReturn.isPaste(unmodified: event.charactersIgnoringModifiers, modifiers: mods) {
+                guard Attachment.hasImage(), let picture = Attachment.fromPasteboard() else { return event }
+                self.model.attached.append(picture)
+                return nil
+            }
             if AskReturn.isReturn(keyCode: event.keyCode) {
                 // A plain Return is left alone: it is the send, and
                 // SwiftUI's own `onSubmit` is what answers it.
@@ -206,11 +238,28 @@ struct AskView: View {
                     .focused($focused)
                     .onSubmit {
                         let q = model.question.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !q.isEmpty, !model.busy else { return }
+                        // A picture on its own is a whole question —
+                        // pointing at something is what ⌘V here means.
+                        guard !q.isEmpty || !model.attached.isEmpty, !model.busy else { return }
                         onAsk(q)
                         model.question = ""
                     }
                 if model.busy { ProgressView().controlSize(.small) }
+            }
+            // What is going with the question. A count rather than a
+            // thumbnail: the panel is one line tall by design, and the
+            // mistake worth catching is not knowing anything is
+            // attached at all.
+            if !model.attached.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "photo")
+                    Text(Attachment.summary(model.attached))
+                    Button("clear") { model.attached = [] }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.accentColor)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
             }
             if !model.lastQuestion.isEmpty {
                 Divider()

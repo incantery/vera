@@ -115,6 +115,11 @@ struct Step: Identifiable, Codable, Sendable, Equatable {
 struct Exchange: Identifiable, Codable, Sendable {
     var id = UUID()
     var said: String
+    /// How many pictures went with it. A count rather than the
+    /// pictures: the transcript is a record of what was said, and the
+    /// bytes are the Mac's to keep. Optional so a transcript written
+    /// before this existed still decodes.
+    var images: Int?
     var steps: [Step] = []
     var failed: String?
     var done = false
@@ -291,7 +296,7 @@ extension Exchange {
 extension Exchange {
 
     enum CodingKeys: String, CodingKey {
-        case id, said, steps, failed, done, status, run, seen
+        case id, said, images, steps, failed, done, status, run, seen
         /// Only ever read. A transcript written before a reply could be
         /// anything but words has one of these and no steps.
         case reply
@@ -301,6 +306,7 @@ extension Exchange {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         said = try container.decodeIfPresent(String.self, forKey: .said) ?? ""
+        images = try container.decodeIfPresent(Int.self, forKey: .images)
         failed = try container.decodeIfPresent(String.self, forKey: .failed)
         done = try container.decodeIfPresent(Bool.self, forKey: .done) ?? false
         status = try container.decodeIfPresent(String.self, forKey: .status)
@@ -318,6 +324,7 @@ extension Exchange {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(said, forKey: .said)
+        try container.encodeIfPresent(images, forKey: .images)
         try container.encode(steps, forKey: .steps)
         try container.encodeIfPresent(failed, forKey: .failed)
         try container.encode(done, forKey: .done)

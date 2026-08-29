@@ -401,20 +401,32 @@ struct Client: Sendable {
     /// it is fast and already warm when you are at home; peer-to-peer
     /// is the answer when the network refuses to carry the traffic,
     /// which is the normal state of a hotel or a guest wifi.
-    func say(_ text: String) -> AsyncThrowingStream<Frame, Error> {
+    /// Images are pictures the person attached. The Mac keeps them and
+    /// hands their paths to whichever agent it gives the work to; it
+    /// cannot look at them itself. Empty is the ordinary case and
+    /// nothing about the message changes.
+    func say(_ text: String, images: [SayImage] = []) -> AsyncThrowingStream<Frame, Error> {
         route(
-            peer: .say(text, in: conversation),
+            peer: .say(text, in: conversation, with: images),
             lan: stream { address in
             var request = URLRequest(url: URL(string: "http://\(address)/say")!)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONEncoder().encode([
-                "text": text,
-                "conversation": self.conversation,
-            ])
+            request.httpBody = try JSONEncoder().encode(Said(
+                text: text,
+                conversation: self.conversation,
+                images: images.isEmpty ? nil : images))
             return request
             }
         )
+    }
+
+    /// What `POST /say` carries. A struct rather than a dictionary
+    /// because a message is no longer all strings.
+    private struct Said: Encodable {
+        let text: String
+        let conversation: String
+        let images: [SayImage]?
     }
 
     /// Rejoin work already under way on the Mac, skipping the frames
