@@ -23,6 +23,7 @@ import (
 	"github.com/incantery/mote/agent"
 	"github.com/incantery/mote/session"
 	"github.com/incantery/mote/tui"
+	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/costs"
 	"github.com/incantery/vera/dump"
 	"github.com/incantery/vera/fleet"
@@ -103,7 +104,7 @@ func runChat(args []string) {
 	// says so with tui.SetModel rather than waiting for somebody to
 	// type here. (The rail no longer needs anything: Options.SideClosed
 	// is how mote is told to start it hidden.)
-	p := tea.NewProgram(tui.New(veraAgent{c}, chatOptions(st, s, sess, greeting)))
+	p := tea.NewProgram(tui.New(veraAgent{c: c, held: &s.held}, chatOptions(st, s, sess, greeting)))
 	w.sendWith(p.Send)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "vera: "+err.Error())
@@ -568,6 +569,8 @@ var chatCommands = []tui.Command{
 	{Name: "land", Help: "/land <id> — merge its branch and close it"},
 	{Name: "stop", Help: "/stop <id> [force] — tear a task down"},
 	{Name: "seen", Help: "/seen <id> — you have read it"},
+	{Name: "paste", Help: "attach the picture on the pasteboard — it goes with your next message"},
+	{Name: "image", Help: "/image <path> — attach a picture from a file; /image with nothing forgets what is attached"},
 	{Name: "new", Help: "a fresh conversation, in its own file"},
 	{Name: "sessions", Help: "the conversations on disk"},
 	{Name: "dump", Help: "/dump [note] — this conversation, in a folder, to report a problem"},
@@ -585,6 +588,10 @@ type chatSession struct {
 	w    *fleetWatch
 	dir  string        // where the conversation files live
 	open *openSessions // the ones this run opened, to close at the end
+	// held is what /paste and /image have attached and not yet sent.
+	// The agent takes it on the next message; see stage.go. Its zero
+	// value is an empty stage, so a chat built without one works.
+	held stage
 
 	mu   sync.Mutex
 	conv string
@@ -680,6 +687,35 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 			return tea.Batch(tui.Note("%s", w.lines()), tui.Refresh())
 		})
 
+	case "paste":
+		// The pasteboard is read now, not at send time: a person who
+		// pastes and then copies something else meant the first one.
+		held := &s.held
+		return off(func(context.Context) tea.Cmd {
+			im, err := pasteboardImage()
+			if err != nil {
+				return tui.Fail("%s", err)
+			}
+			return tui.Note("%s", held.add(im))
+		})
+
+	case "image", "img":
+		held := &s.held
+		if rest == "" {
+			if n := held.clear(); n > 0 {
+				return tui.Note("forgot %d attached %s", n, plural(n, "image"))
+			}
+			return tui.Fail("/image <path> — a PNG, JPEG, GIF or WebP to send with your next message")
+		}
+		path := expandHome(rest)
+		return off(func(context.Context) tea.Cmd {
+			im, err := attach.Read(path)
+			if err != nil {
+				return tui.Fail("%s", err)
+			}
+			return tui.Note("%s", held.add(im))
+		})
+
 	case "new":
 		// A new id needs a new file, or the next conversation is
 		// written into the last one's. The chat's own copy of the id
@@ -690,6 +726,9 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 			return tui.Fail("session: %s", err)
 		}
 		s.open.add(next)
+		// A picture attached to the conversation you just left does
+		// not follow you into the next one.
+		s.held.clear()
 		return tea.Batch(tui.SetConversation(conv), tui.SetSession(next),
 			tui.Note("new conversation %s — the last one is still in %s", conv, s.dir))
 

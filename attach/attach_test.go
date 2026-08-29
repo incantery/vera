@@ -111,17 +111,24 @@ func TestSavesWrappedAndUnpaddedBase64(t *testing.T) {
 	}
 }
 
-// The CLI hands over a file rather than base64ing it into a JSON body.
-// It is copied: what an agent is given has to outlive the temporary
-// file a screenshot tool wrote.
-func TestCopiesAFileSoItOutlivesTheOriginal(t *testing.T) {
+// Read is how a caller on this machine turns a file into a message:
+// the CLI's -i, the chat's /image and /paste. What is kept is a copy,
+// so it outlives whatever temporary file a screenshot tool wrote.
+func TestReadTurnsAFileIntoAMessageAndTheCopyOutlivesIt(t *testing.T) {
 	s := store(t)
 	raw := pngBytes(t, 13)
 	src := filepath.Join(t.TempDir(), "shot.png")
 	if err := os.WriteFile(src, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := s.Save("c", []Image{{Path: src}})
+	im, err := Read(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if im.Name != "shot.png" {
+		t.Fatalf("lost the name: %q", im.Name)
+	}
+	saved, err := s.Save("c", []Image{im})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +141,27 @@ func TestCopiesAFileSoItOutlivesTheOriginal(t *testing.T) {
 	on, err := os.ReadFile(saved[0].Path)
 	if err != nil || !bytes.Equal(on, raw) {
 		t.Fatalf("the copy did not survive the original: %v", err)
+	}
+
+	// A file that is not there, one that is too big, and one that is
+	// not a picture at all are the caller's to hear about before
+	// anything is encoded and before an exchange is paid for.
+	if _, err := Read(filepath.Join(t.TempDir(), "gone.png")); err == nil {
+		t.Error("read a file that is not there")
+	}
+	prose := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(prose, []byte("this is just some prose"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Read(prose); err == nil || !strings.Contains(err.Error(), "notes.txt") {
+		t.Errorf("read something that is not a picture: %v", err)
+	}
+	huge := filepath.Join(t.TempDir(), "huge.png")
+	if err := os.WriteFile(huge, bytes.Repeat([]byte{0}, MaxBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Read(huge); err == nil {
+		t.Error("read a file over the ceiling")
 	}
 }
 
@@ -194,11 +222,8 @@ func TestRefusesTooManyAndTooBig(t *testing.T) {
 	if _, err := s.Save("c", many); err == nil {
 		t.Fatal("took more than it will carry")
 	}
-	huge := filepath.Join(t.TempDir(), "huge.png")
-	if err := os.WriteFile(huge, bytes.Repeat([]byte{0}, MaxBytes+1), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Save("c", []Image{{Path: huge}}); err == nil {
+	over := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0}, MaxBytes+1))
+	if _, err := s.Save("c", []Image{{Data: over}}); err == nil {
 		t.Fatal("took an image over the ceiling")
 	}
 }
@@ -206,10 +231,9 @@ func TestRefusesTooManyAndTooBig(t *testing.T) {
 func TestRefusesNonsense(t *testing.T) {
 	s := store(t)
 	for name, im := range map[string]Image{
-		"neither":      {Name: "x"},
-		"both":         {Data: "abc", Path: "/tmp/x.png"},
-		"not base64":   {Data: "!!!! not base64 !!!!"},
-		"missing file": {Path: filepath.Join(t.TempDir(), "gone.png")},
+		"nothing at all": {Name: "x"},
+		"not base64":     {Data: "!!!! not base64 !!!!"},
+		"empty":          {Data: base64.StdEncoding.EncodeToString(nil)},
 	} {
 		if _, err := s.Save("c", []Image{im}); err == nil {
 			t.Errorf("%s: took it", name)

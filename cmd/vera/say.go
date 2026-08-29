@@ -8,18 +8,31 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/incantery/vera/attach"
 )
 
 // `vera say`: one exchange, no screen. For scripts, for other agents,
 // for driving Vera from a pane while building her: the reply streams
 // to stdout, status lines go to stderr, and the conversation id is
 // stable so the next call continues it.
-const sayUsage = `vera say [-c conversation] [-m model] [-e effort] <text>   (or text on stdin)
+const sayUsage = `vera say [-c conversation] [-m model] [-e effort] [-i image] <text>   (or text on stdin)
 
   -c   conversation id (default "cli"; pass a new one to start over)
   -m   model for THIS exchange only (claude-opus-5, gpt-5-mini, …)
   -e   how hard to think for this exchange: none, minimal, low, medium, high, xhigh, max
+  -i   a picture to send with it (PNG, JPEG, GIF or WebP); repeat for more.
+       Vera cannot see it — she hands the file to whichever agent she
+       gives the work to, and that agent opens it.
 `
+
+// images is -i, once per picture. A repeated flag rather than a
+// comma-separated list: file names contain commas, and a screenshot's
+// name usually contains a space as well.
+type images []string
+
+func (i *images) String() string     { return strings.Join(*i, ", ") }
+func (i *images) Set(v string) error { *i = append(*i, v); return nil }
 
 func runSay(args []string) error {
 	fs := flag.NewFlagSet("say", flag.ContinueOnError)
@@ -28,6 +41,8 @@ func runSay(args []string) error {
 	conv := fs.String("c", "cli", "")
 	model := fs.String("m", "", "")
 	effort := fs.String("e", "", "")
+	var pictures images
+	fs.Var(&pictures, "i", "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -35,11 +50,24 @@ func runSay(args []string) error {
 		return err
 	}
 	text := strings.TrimSpace(strings.Join(fs.Args(), " "))
-	if text == "" {
+	if text == "" && len(pictures) == 0 {
 		b, _ := readAll(os.Stdin)
 		text = strings.TrimSpace(string(b))
 	}
-	if text == "" {
+	// The bytes are read here, on this side of the wire, where the
+	// file is already this process's to read. A picture that is not
+	// there, or is not a picture, is said now rather than after an
+	// exchange has been paid for.
+	var attached []attach.Image
+	for _, path := range pictures {
+		im, err := attach.Read(path)
+		if err != nil {
+			return fmt.Errorf("-i %s: %w", path, err)
+		}
+		attached = append(attached, im)
+	}
+	// A picture on its own is a whole message — "look at this".
+	if text == "" && len(attached) == 0 {
 		return errors.New("nothing to say")
 	}
 	base, err := ensure()
@@ -55,7 +83,7 @@ func runSay(args []string) error {
 	defer cancel()
 	wrote := false
 	var spent *UsageFrame
-	err = c.say(ctx, Message{Text: text, Conversation: *conv, Model: *model, Effort: *effort}, func(f Frame) {
+	err = c.say(ctx, Message{Text: text, Conversation: *conv, Model: *model, Effort: *effort, Images: attached}, func(f Frame) {
 		if f.Usage != nil {
 			spent = f.Usage
 		}

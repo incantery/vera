@@ -36,7 +36,14 @@ import (
 )
 
 // Image is one picture on the wire, as a phone, a Mac panel or the CLI
-// sends it. Exactly one of Data and Path says where the bytes are.
+// sends it.
+//
+// Bytes and nothing else. A path would have been cheaper for a caller
+// on this machine, and it is left out on purpose: it would be a field
+// meaning "read whatever file I name", arriving over a network, from a
+// device, to be handed to an agent with a shell. Read() is how a
+// local caller turns a file into one of these, on its own side of the
+// wire, where the file is already its to read.
 type Image struct {
 	// Name is what the person called it — "Screenshot 2026-08-29.png".
 	// Decoration: the file Vera writes is named after its contents.
@@ -47,11 +54,48 @@ type Image struct {
 	// Data is the picture itself: base64, with or without a `data:`
 	// URI wrapper around it.
 	Data string `json:"data,omitempty"`
-	// Path is a file already on this machine — what the CLI sends
-	// rather than base64ing a screenshot into a JSON body. It is
-	// copied into the store like any other: what Vera hands an agent
-	// has to outlive whatever temporary file it came from.
-	Path string `json:"path,omitempty"`
+}
+
+// Read turns a file on this machine into an Image ready to send —
+// what `vera say -i` and the chat's /image and /paste do.
+//
+// The ceiling is checked here rather than after base64 has grown it by
+// a third: a caller that pointed at a movie should be told so before
+// anything is encoded.
+func Read(path string) (Image, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Image{}, err
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
+	if err != nil {
+		return Image{}, err
+	}
+	if _, err := checked(raw); err != nil {
+		return Image{}, err
+	}
+	// Sniffed here as well as in Save. A person who typed the wrong
+	// file name should hear about it now — before an exchange has been
+	// paid for — rather than as a complaint that comes back with the
+	// answer.
+	kind, ok := kindOf(raw)
+	if !ok {
+		return Image{}, fmt.Errorf("%s is %s, not a picture Vera keeps — send a PNG, JPEG, GIF or WebP",
+			filepath.Base(path), kind)
+	}
+	return Image{Name: filepath.Base(path), MIME: kind, Data: base64.StdEncoding.EncodeToString(raw)}, nil
+}
+
+// kindOf is what the bytes are, and whether it is one of the four.
+// Sniffed rather than believed: a caller that says PNG and sends a PDF
+// would otherwise hand an agent a file it cannot read.
+func kindOf(raw []byte) (string, bool) {
+	// The sniffer answers a Content-Type, which may carry parameters.
+	kind, _, _ := strings.Cut(http.DetectContentType(raw), ";")
+	kind = strings.TrimSpace(kind)
+	_, ok := kinds[kind]
+	return kind, ok
 }
 
 // The ceilings. Generous enough for a Retina screenshot of a whole
@@ -136,15 +180,12 @@ func (s *Store) Save(conversation string, images []Image) ([]Saved, error) {
 		if err != nil {
 			return nil, fmt.Errorf("image %d: %w", i+1, err)
 		}
-		kind := http.DetectContentType(raw)
-		// The sniffer answers "image/png; charset=…" for nothing, but
-		// it is a Content-Type and may carry parameters.
-		kind, _, _ = strings.Cut(kind, ";")
-		ext, ok := kinds[strings.TrimSpace(kind)]
+		kind, ok := kindOf(raw)
 		if !ok {
 			return nil, fmt.Errorf("image %d (%s) is %s, which Vera does not keep — send a PNG, JPEG, GIF or WebP",
 				i+1, describeName(im.Name), kind)
 		}
+		ext := kinds[kind]
 		sum := sha256.Sum256(raw)
 		path := filepath.Join(dir, hex.EncodeToString(sum[:])[:16]+ext)
 		// Content-addressed, so the same screenshot pasted twice is
@@ -159,52 +200,32 @@ func (s *Store) Save(conversation string, images []Image) ([]Saved, error) {
 	return out, nil
 }
 
-// bytes is the picture itself, however it was handed over.
+// bytes is the picture itself, decoded.
 func (im Image) bytes() ([]byte, error) {
 	data := strings.TrimSpace(im.Data)
-	path := strings.TrimSpace(im.Path)
-	switch {
-	case data != "" && path != "":
-		return nil, errors.New("say where the bytes are once: data or path, not both")
-
-	case data != "":
-		// A `data:` URI is what a pasteboard and a browser both hand
-		// out, and stripping it here means no caller has to know.
-		if strings.HasPrefix(data, "data:") {
-			_, rest, ok := strings.Cut(data, ",")
-			if !ok {
-				return nil, errors.New("that data: URI has no comma in it")
-			}
-			data = rest
-		}
-		// Whitespace is what a base64 that travelled through a text
-		// field looks like. RawStdEncoding covers a sender that
-		// dropped the padding.
-		data = strings.Join(strings.Fields(data), "")
-		raw, err := base64.StdEncoding.DecodeString(data)
-		if err != nil {
-			if raw, err = base64.RawStdEncoding.DecodeString(data); err != nil {
-				return nil, errors.New("the image data is not base64")
-			}
-		}
-		return checked(raw)
-
-	case path != "":
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("cannot read %s: %w", path, err)
-		}
-		defer f.Close()
-		// Read one byte past the ceiling rather than the whole file:
-		// a caller pointing at a movie should be told no, not
-		// buffered first.
-		raw, err := io.ReadAll(io.LimitReader(f, MaxBytes+1))
-		if err != nil {
-			return nil, err
-		}
-		return checked(raw)
+	if data == "" {
+		return nil, errors.New("an image with no bytes in it is nothing")
 	}
-	return nil, errors.New("an image with no bytes and no path is nothing")
+	// A `data:` URI is what a pasteboard and a browser both hand out,
+	// and stripping it here means no caller has to know.
+	if strings.HasPrefix(data, "data:") {
+		_, rest, ok := strings.Cut(data, ",")
+		if !ok {
+			return nil, errors.New("that data: URI has no comma in it")
+		}
+		data = rest
+	}
+	// Whitespace is what a base64 that travelled through a text field
+	// looks like. RawStdEncoding covers a sender that dropped the
+	// padding.
+	data = strings.Join(strings.Fields(data), "")
+	raw, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		if raw, err = base64.RawStdEncoding.DecodeString(data); err != nil {
+			return nil, errors.New("the image data is not base64")
+		}
+	}
+	return checked(raw)
 }
 
 func checked(raw []byte) ([]byte, error) {
