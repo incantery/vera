@@ -9,7 +9,8 @@
 //
 //   - Vera's own model is reached through mote's provider, whose
 //     Message is text and nothing else. She cannot look at a picture
-//     today. (See LIMITS.md — it is a mote change, not a Vera one.)
+//     today, and making her able to is a change to mote rather than
+//     to Vera. See "Pictures" in cmd/verad/README.md.
 //   - The agents she hands work to — Claude Code, as a delegate or in
 //     a fleet room — read images from disk perfectly well. Handing
 //     over a file path is the whole of what they need, and it costs no

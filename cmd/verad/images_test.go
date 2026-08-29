@@ -286,3 +286,62 @@ func TestAPictureThatCouldNotBeKeptIsSaidOutLoud(t *testing.T) {
 		t.Error("the model was told about a picture that was never kept")
 	}
 }
+
+// The HTTP seam: a picture posted to /say reaches the handler with its
+// bytes intact, and a body big enough to hold a screenshot of a whole
+// display is not turned away at the door — /say carried a megabyte
+// when a message was words.
+func TestAPictureSurvivesTheWire(t *testing.T) {
+	got := make(chan Message, 1)
+	base, id := serveLANWith(t, func(_ context.Context, msg Message, reply func(Frame) error) error {
+		got <- msg
+		return reply(Frame{Done: true})
+	}, nil)
+
+	// Megabytes of real picture: past the megabyte /say carried when a
+	// message was words, and about what a screenshot of a large
+	// display actually weighs.
+	big := bigShot(t)
+	if len(big) < 2<<20 {
+		t.Fatalf("the test's own picture is only %d bytes", len(big))
+	}
+	body, err := json.Marshal(Message{
+		Text: "what is wrong here", Conversation: "c1",
+		Images: []attach.Image{{Name: "shot.png", Data: base64.StdEncoding.EncodeToString(big)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream(t, base, id, string(body), func(Frame) {})
+
+	select {
+	case msg := <-got:
+		if len(msg.Images) != 1 || msg.Images[0].Name != "shot.png" {
+			t.Fatalf("what arrived: %+v", msg.Images)
+		}
+		back, err := base64.StdEncoding.DecodeString(msg.Images[0].Data)
+		if err != nil || !bytes.Equal(back, big) {
+			t.Fatalf("the bytes did not survive the wire: %v", err)
+		}
+	default:
+		t.Fatal("nothing reached the handler")
+	}
+}
+
+// bigShot is a PNG the size of a screenshot: noise, because a
+// compressible one would encode to nothing and prove nothing about
+// what the wire will carry.
+func bigShot(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1200, 900))
+	seed := uint32(1)
+	for i := range img.Pix {
+		seed = seed*1664525 + 1013904223
+		img.Pix[i] = byte(seed >> 24)
+	}
+	var b bytes.Buffer
+	if err := png.Encode(&b, img); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}

@@ -21,8 +21,9 @@ const usage = `vera — talk to her, and keep her running
   vera log [-f]           verad's log
   vera url                the pairing page
   vera home               where her memory lives (MEMORY.md, memory/, projects/)
-  vera say [-c id] [-m model] [-e effort] <text>
-                          one exchange, reply on stdout — for scripts and other agents
+  vera say [-c id] [-m model] [-e effort] [-i image] <text>
+                          one exchange, reply on stdout — for scripts and other agents.
+                          -i attaches a picture; she hands it to the agent she gives the work to
   vera costs [--since 7d] [--by model|conversation|day]
                           what the journal says every exchange cost
   vera tasks              every task and what is believed about it

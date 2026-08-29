@@ -205,7 +205,8 @@ lands, also says so in the transcript.
 Slash commands are the fleet verbs by hand: `/tasks`, `/start [@repo]
 <brief>` opens a room, `/scout`, `/resume`, `/report <id>` (which prints
 what it wrote and marks it seen), `/answer <id> <text>`, `/land`,
-`/stop [force]`, `/seen`, `/new` for a fresh conversation, `/dump [note]`
+`/stop [force]`, `/seen`, `/new` for a fresh conversation, `/paste` and
+`/image <path>` to send a picture with what you say next, `/dump [note]`
 for a folder of everything, `/debug` for what Vera currently believes
 about where you are — devices, focus, terminal, integrations — from the
 same facts the model's preface is built from, and `/quit`. Two more are
@@ -810,6 +811,106 @@ ask or deny, `answer` is what the person said, `reason` is the
 sentence the model was told. `vera dump`'s transcript shows them —
 "denied (start a task for that)", "asked → yes" — because the decision
 is usually the answer to the question somebody came with.
+
+## Pictures
+
+A screenshot is the cheapest sentence there is: *this, here, look*.
+Saying it in prose costs a paragraph and loses the part that mattered.
+So every door Vera answers takes one — and every one of them hands it
+to somebody who can actually see it, because **Vera cannot**.
+
+That asymmetry is the design, and it is not laziness. Her own model is
+reached through mote's `provider`, whose `Message` is text and nothing
+else; there is no shape in that interface a picture fits. But the
+agents she hands work to read images off the disk perfectly well. So an
+image is **kept once and travels as a path**:
+
+```
+paste ──► POST /say {images:[{name,mime,data}]}
+            │
+            ├─ attach.Store  ~/.local/state/vera/images/<conversation>/<sha>.png
+            │
+            ├─ the turn the model reads gains one sentence:
+            │  "They attached an image … you cannot see it yourself …
+            │   any task you hand to the delegate or the fleet is given
+            │   these files automatically"
+            │
+            └─ the paths ride the exchange's context onto every tool Handle
+                 delegate ─► claude -p "<task>\n\nRead them before you start:\n  /…/ab12.png"
+                 fleet    ─► the same paragraph in the brief, and in an
+                             answer typed into a room
+```
+
+The model never copies a path around: it never saw one, and a path it
+invented would be a file that is not there. It only has to decide *who
+does the work*, which is the decision it was already making.
+
+**Where they come from.** Four doors, three of which can really paste:
+
+| door | how |
+| --- | --- |
+| the phone | Attach ▸ Photo (library) or Paste (clipboard) |
+| the Mac's ask panel | ⌘V — but only when the pasteboard holds a picture, so pasting a URL into the field is untouched |
+| `vera chat` | `/paste` takes the pasteboard, `/image <path>` takes a file |
+| `vera say` | `-i shot.png`, repeatable |
+
+A terminal **cannot be pasted into**: ⌘V over a TUI puts text on the
+wire and nothing else, in rook or anywhere else. `/paste` is the chat
+asking for the picture instead of waiting to be handed one — the
+keystroke is still ⌘⇧⌃4, in whatever you were looking at.
+
+An attached picture **waits** for words rather than being sent on its
+own, because the picture and the sentence about it are one message
+typed at two different moments — and because the exchange that carries
+it is the one that decides who the work goes to. It is taken by exactly
+one message; `/new` drops it. A picture with **no** words is still a
+whole message: pointing at something is a thing people do.
+
+**What is kept, and what is refused.** PNG, JPEG, GIF and WebP,
+sniffed rather than believed — a caller that says PNG and sends a PDF
+is refused by name, because the alternative is an agent handed a file
+it cannot read and a person told the work is under way. 16 MB an image,
+eight an message, content-addressed so the same screenshot pasted twice
+is one file, and a conversation nobody has added to for a month is
+swept. `attach.Read` sniffs too, so a mistyped file name is refused
+while you are typing rather than after an exchange has been paid for.
+
+The wire carries **bytes, never a path**. A path field would mean "read
+whatever file I name", arriving over a network, from a device, to be
+handed to an agent with a shell. `attach.Read` is how a local caller
+turns a file into a message, on its own side of the wire, where the
+file is already its to read.
+
+**A picture that could not be kept is said out loud** — an error frame
+the person sees — and the words are still answered without it. The one
+behaviour worth ruling out is silently dropping the evidence and
+answering anyway, which leaves somebody reading a reply about the wrong
+thing with no way to tell why.
+
+**Three platform edges, found the hard way:**
+
+- **Vera has no eyes, and it is mote's to change.** `provider.Message`
+  is `{Role, Text, Calls, CallID, Error, Raw}`. When it grows a picture,
+  the first half of `images.go` changes and the second half — the paths
+  onto the Handle, the delegate, the fleet — does not.
+- **`the clipboard as «class PNGf»` does not work on a current macOS.**
+  It is in every answer on the internet. It fails with
+  `errAEAccessDenied (-10003)` even when `clipboard info` says the PNG
+  is right there, and the failure is **not catchable by the script's
+  own `try`**. `/paste` asks `NSPasteboard` directly, through JXA's ObjC
+  bridge, and works.
+- **A phone's own pictures are HEIC**, which none of the four formats
+  covers. `ios/Vera/Attachment.swift` re-encodes anything that is not
+  already one of them, shrinking by *quality* before *size* so the words
+  in a screenshot survive. A screenshot arrives as a PNG and crosses
+  untouched.
+
+Two things this deliberately does not do. `/start` and `/scout` by hand
+carry no picture — talk to Vera and she starts the task, which is the
+designed path and the one that decides who the work goes to. And the
+peer link's frame cap is 32 MB rather than the LAN's: over the radio a
+very large message reads as broken, and the number is also an
+allocation somebody else chooses.
 
 ## Delegation
 
