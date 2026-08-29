@@ -17,7 +17,11 @@
 // to carry a partial one.
 package main
 
-import "context"
+import (
+	"context"
+
+	"github.com/incantery/vera/attach"
+)
 
 // Message is what the person said.
 type Message struct {
@@ -43,6 +47,16 @@ type Message struct {
 	// over both. See pick.go for the whole order.
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+
+	// Images are the pictures that came with the words — a screenshot
+	// pasted into the panel, a photo picked on the phone. They are
+	// kept once on this machine and travel onward as file paths: Vera
+	// herself has no eyes, and the agents she hands work to read
+	// images from disk. See package attach.
+	//
+	// Empty is the ordinary case and changes nothing about the
+	// exchange.
+	Images []attach.Image `json:"images,omitempty"`
 }
 
 // Frame is one piece of the reply. A reply is a sequence of Deltas

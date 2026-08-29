@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
@@ -113,6 +114,10 @@ type Mind struct {
 	// supervisor profile's policy. Nil is a Vera who can only ask
 	// somebody else to look.
 	Hands *Hands
+	// Attachments is where a pasted screenshot is kept. Nil is a Vera
+	// who refuses pictures out loud — see keep(); it is not a Vera who
+	// quietly ignores them.
+	Attachments *attach.Store
 
 	instruments
 
@@ -193,7 +198,20 @@ const maxRounds = 8
 
 func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) error {
 	text := strings.TrimSpace(msg.Text)
-	if text == "" {
+
+	// The pictures first, before a token is spent. A message whose
+	// whole point is the screenshot has to fail out loud rather than
+	// be answered as though it were prose — so a picture that could
+	// not be kept is an error frame the person sees, and the words are
+	// still answered, without it.
+	shots, aerr := m.keep(msg)
+	if aerr != nil {
+		_ = reply(Frame{Error: "That image did not come through: " + aerr.Error()})
+	}
+
+	// A picture with no words is a whole message — "look at this" is
+	// what pointing means. Nothing at all still ends here.
+	if text == "" && len(shots) == 0 {
 		return reply(Frame{Done: true})
 	}
 
@@ -212,11 +230,20 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// project this afternoon.
 	m.Hands.Refresh(ctx)
 	system := m.preface() + m.present(msg.Device, text)
+	// What she is actually asked: their words, plus the one sentence
+	// that says a picture came with them and that she cannot see it.
+	// From here down `asked` is the turn — it is what is sent,
+	// recorded, journalled and remembered, because it is what the
+	// model read.
+	asked := text + attach.Note(shots)
+	// And the files themselves, down the context, for whichever tool
+	// ends up handing this work to somebody who can look.
+	ctx = withImages(ctx, attach.Paths(shots))
 	// Every tool she has, in one list from one registry: the delegate
 	// and the fleet first — handing work away is what she should reach
 	// for before doing it herself — and mote's built-ins after them.
 	tools := m.Hands.Definitions()
-	ctx, x := m.begin(ctx, msg, choice, text, len(prior), system, tools)
+	ctx, x := m.begin(ctx, msg, choice, asked, len(prior), system, tools)
 
 	// The system prompt is a field of the request now rather than the
 	// first message: half the APIs do not have a system role, and the
@@ -233,7 +260,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		}
 		messages = append(messages, provider.User(t.Content))
 	}
-	messages = append(messages, provider.User(text))
+	messages = append(messages, provider.User(asked))
 
 	// A callback cannot fail — a consumer that wants to stop cancels
 	// the context — so a phone that hung up mid-sentence is this pair:
@@ -306,12 +333,12 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 			break
 		}
 
-		asked := provider.Assistant(answer.String()[said:], calls...)
+		assistant := provider.Assistant(answer.String()[said:], calls...)
 		// THE line that stops the 400 on the next round: a turn that
 		// thought and then asked for a tool has to hand its reasoning
 		// back with the ask.
-		asked.Raw = raw
-		messages = append(messages, asked)
+		assistant.Raw = raw
+		messages = append(messages, assistant)
 		x.asked(calls)
 		for _, call := range calls {
 			started := time.Now()
@@ -329,13 +356,13 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		}
 	}
 
-	x.finish(ctx, text, answer.String(), used, err)
+	x.finish(ctx, asked, answer.String(), used, err)
 	spend(ctx, used.Prompt, used.Completion)
 
 	// On disk before anything else: the log line and the remote record
 	// are copies; this is the one `vera dump` reads.
 	if m.Journal != nil {
-		if jerr := m.Journal.Write(x.entry(msg, choice, system, text, answer.String(), used, err)); jerr != nil {
+		if jerr := m.Journal.Write(x.entry(msg, choice, system, asked, answer.String(), used, err)); jerr != nil {
 			slog.Error("journal", "error", jerr.Error())
 		}
 	}
@@ -349,7 +376,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		"gen_ai.provider.name", choice.Vendor,
 		"gen_ai.request.model", choice.Model,
 		"gen_ai.request.effort", string(choice.Effort),
-		"gen_ai.prompt", text,
+		"gen_ai.prompt", asked,
 		"gen_ai.completion", answer.String(),
 		"turns_recalled", len(prior),
 		"delegations", delegations,
@@ -384,7 +411,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 
 	// After the answer, not before: an exchange that failed did not
 	// happen, and half of one poisons every exchange after it.
-	m.History.remember(msg.Conversation, text, answer.String(), kept, choice.Model)
+	m.History.remember(msg.Conversation, asked, answer.String(), kept, choice.Model)
 
 	// Extraction used to run here, behind the reply: a second model
 	// call that read the exchange and decided what was worth keeping.

@@ -78,6 +78,12 @@ type Task struct {
 	Kind    Kind   `json:"kind"`
 	Mode    Mode   `json:"mode,omitempty"`
 	Brief   string `json:"brief"`
+	// Images are pictures the person handed over with the ask —
+	// absolute paths to files Vera keeps (see package attach). The
+	// brief names them and tells the agent to open them; the fleet
+	// never reads them itself. Kept on the record because a task that
+	// is resumed a day later has to be handed the same evidence.
+	Images []string `json:"images,omitempty"`
 
 	Worktree string `json:"worktree"` // path; the Project itself for scouts
 	Branch   string `json:"branch,omitempty"`

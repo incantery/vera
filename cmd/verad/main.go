@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/incantery/mote/provider"
 	"github.com/incantery/mote/tool"
+	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
@@ -323,6 +324,11 @@ func main() {
 		// is: verad is the single writer of both, and a `/model` typed
 		// this morning outlives this process.
 		mind.Picks = &Picks{Path: filepath.Join(stateDir(), "vera", "models.json")}
+		// And the pictures people paste, beside them. They are kept
+		// rather than passed through because what reads them is a
+		// separate process that starts after the exchange has ended —
+		// a fleet agent may not open its screenshot for an hour.
+		mind.Attachments = &attach.Store{Dir: filepath.Join(stateDir(), "vera", "images")}
 		// And which model the daemon itself is on, when somebody has
 		// said so in the picker rather than on the command line.
 		mind.Default = saved
