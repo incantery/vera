@@ -14,7 +14,7 @@ func TestRailFramesSpeakRooksVocabulary(t *testing.T) {
 	repos := []fleet.Repo{{Root: "/x/rook", Name: "rook"}, {Root: "/x/vera", Name: "vera"}}
 	tasks := []fleet.View{
 		{Task: &fleet.Task{ID: "a1", Project: "/x/rook", Brief: "Make the rail real. Then more.", Spawned: now.Add(-time.Hour)}, State: fleet.Waiting},
-		{Task: &fleet.Task{ID: "b2", Project: "/x/rook", Brief: "Scout the feed", Spawned: now}, State: fleet.Running},
+		{Task: &fleet.Task{ID: "b2", Project: "/x/rook", Brief: "Scout the feed", Spawned: now, Session: "rook--vera-b2"}, State: fleet.Running},
 		{Task: &fleet.Task{ID: "c3", Project: "/x/vera", Brief: "Old", Closed: true}, State: fleet.Closed},
 	}
 	spaces, agents := railFrames(repos, tasks, "/x/vera")
@@ -35,7 +35,16 @@ func TestRailFramesSpeakRooksVocabulary(t *testing.T) {
 	if a1.Title != "Make the rail real" || a1.Subtitle != "needs you · rook" || a1.State != "blocked" || !a1.Current {
 		t.Errorf("a1 row: %+v", a1)
 	}
+	// The row claims the workspace its session runs in, in rook's
+	// vocabulary, so rook drops the pane it found there instead of
+	// listing the agent twice.
+	if b2 := agents.Params.Items[0]; b2.Workspace != "rook--vera-b2" {
+		t.Errorf("b2 claims its workspace: %+v", b2)
+	}
 	b, _ := json.Marshal(agents)
+	if !strings.Contains(string(b), `"workspace":"rook--vera-b2"`) {
+		t.Errorf("workspace rides the frame: %s", b)
+	}
 	if strings.Contains(string(b), "\n") {
 		t.Error("a frame is one line")
 	}
@@ -43,5 +52,19 @@ func TestRailFramesSpeakRooksVocabulary(t *testing.T) {
 		if strings.Contains(string(b), never) {
 			t.Errorf("%q leaked into the rail", never)
 		}
+	}
+}
+
+func TestRailResetPushesAgain(t *testing.T) {
+	r := &rail{poke: make(chan struct{}, 1)}
+	r.last = [2][]byte{[]byte("a"), []byte("b")}
+	r.Reset()
+	if r.last[0] != nil || r.last[1] != nil {
+		t.Errorf("Reset keeps what was pushed: %q", r.last)
+	}
+	select {
+	case <-r.poke:
+	default:
+		t.Error("Reset does not poke the publisher")
 	}
 }

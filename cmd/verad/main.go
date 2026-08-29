@@ -29,6 +29,7 @@ import (
 	"github.com/incantery/vera/price"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -379,11 +380,18 @@ func main() {
 	var term mux.Mux
 	switch *muxKind {
 	case "auto":
-		if _, err := os.Stat(mux.RookSock()); err == nil {
+		// Rook is chosen when it is *installed*, not when its socket
+		// happens to answer at this instant: the choice is made once,
+		// and an engine mid-restart (`rook kill && rook`) would
+		// otherwise strand Vera on tmux — where there is no side rail
+		// and the fleet spawns where rook cannot see it. Rook's own
+		// watcher rides out an engine that is down (Gone, then Back).
+		if rookInstalled() {
 			term = mux.NewRook("")
 		} else {
 			term = mux.NewTmux("rook", "http://127.0.0.1"+portOf(*addr)+"/poke/rook")
 		}
+		slog.Info("mux: chosen", "mux", term.Name())
 	case "rook":
 		term = mux.NewRook("")
 	case "tmux":
@@ -393,8 +401,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, "vera: --mux must be auto, rook, tmux or off")
 		os.Exit(2)
 	}
+	var t *terminal
 	if term != nil {
-		t := newTerminal(term, id.Name)
+		t = newTerminal(term, id.Name)
 		lan.onPoke("rook", t.Poke)
 		lan.typer = t.Type
 		lan.goer = t.GoTo
@@ -456,6 +465,9 @@ func main() {
 				return ""
 			}
 			rl := newRail(side, f, f.Projects, focus)
+			// An engine that comes back has an empty rail: push it
+			// again, changed or not.
+			t.onBack = rl.Reset
 			prev := f.Observe
 			f.Observe = func(ev fleet.Event) {
 				if prev != nil {
@@ -748,6 +760,21 @@ func announce(t Transport, id Identity, addr, how, telemetry, conversations stri
 	if len(t.Hints()) == 0 {
 		fmt.Println("  no LAN address — a phone cannot reach this machine right now")
 	}
+}
+
+// rookInstalled says whether rook's engine is on this machine: the
+// front door on $PATH, or the engine where `make install` and the brew
+// cask put it. Presence of a binary is stable in a way a socket is not.
+func rookInstalled() bool {
+	if _, err := os.Stat(mux.RookSock()); err == nil {
+		return true
+	}
+	if _, err := exec.LookPath("rook"); err == nil {
+		return true
+	}
+	home, _ := os.UserHomeDir()
+	_, err := os.Stat(filepath.Join(home, ".local", "libexec", "rook", "engine"))
+	return err == nil
 }
 
 func portOf(addr string) string {

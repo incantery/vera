@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/incantery/vera/fleet"
@@ -31,6 +32,13 @@ type railItem struct {
 	Subtitle string `json:"subtitle,omitempty"`
 	State    string `json:"state,omitempty"`
 	Current  bool   `json:"current,omitempty"`
+	// Workspace is the rook workspace the row's agent runs in — rook's
+	// own vocabulary, and the one identity the two sides share. It is
+	// how this row claims the session rook can see there, so the rail
+	// does not list one agent twice: once as the task, once as the
+	// pane rook found running it. Title and ID are ours; rook cannot
+	// resolve either against its pane table.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 type railFrame struct {
@@ -112,7 +120,7 @@ func railFrames(repos []fleet.Repo, tasks []fleet.View, focused string) (spaces,
 	for _, t := range openTasks {
 		title := trim(firstSentence(t.Brief), 28)
 		sub := railWord(t.State) + " · " + shortPath(t.Project)
-		agents.Params.Items = append(agents.Params.Items, railItem{ID: t.ID, Title: title, Subtitle: sub, State: railState(t.State), Current: t.State.Actionable()})
+		agents.Params.Items = append(agents.Params.Items, railItem{ID: t.ID, Title: title, Subtitle: sub, State: railState(t.State), Current: t.State.Actionable(), Workspace: t.Session})
 	}
 	return spaces, agents
 }
@@ -152,12 +160,24 @@ type rail struct {
 	projects *fleet.Projects
 	focus    func() string // repo root in front of the person, or ""
 	poke     chan struct{}
+	mu       sync.Mutex // guards last: Reset comes from the mux watcher
 	last     [2][]byte
 	warned   bool
 }
 
 func newRail(side mux.Sider, f *fleet.Fleet, p *fleet.Projects, focus func() string) *rail {
 	return &rail{side: side, fleet: f, projects: p, focus: focus, poke: make(chan struct{}, 1)}
+}
+
+// Reset forgets what was last pushed, so the next push sends both
+// frames whether or not they changed. The engine holds the rail in
+// memory: after a restart it has nothing, and a producer that only
+// pushes on change would leave it blank until the fleet moved.
+func (r *rail) Reset() {
+	r.mu.Lock()
+	r.last = [2][]byte{}
+	r.mu.Unlock()
+	r.Poke()
 }
 
 func (r *rail) Poke() {
@@ -203,7 +223,10 @@ func (r *rail) push(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		if bytes.Equal(b, r.last[i]) {
+		r.mu.Lock()
+		same := bytes.Equal(b, r.last[i])
+		r.mu.Unlock()
+		if same {
 			continue
 		}
 		if err := r.side.Side(ctx, b); err != nil {
@@ -216,6 +239,8 @@ func (r *rail) push(ctx context.Context) {
 			continue
 		}
 		r.warned = false
+		r.mu.Lock()
 		r.last[i] = b
+		r.mu.Unlock()
 	}
 }

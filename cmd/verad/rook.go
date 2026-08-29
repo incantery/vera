@@ -109,6 +109,11 @@ type terminal struct {
 	mob     mux.ID
 	mobCols int
 	mobAt   time.Time
+
+	// onBack runs when the mux answers again after an outage — what a
+	// producer that pushes into it (the rail) needs to hear, because
+	// a restarted engine remembers nothing it was told.
+	onBack func()
 }
 
 func newTerminal(m mux.Mux, device string) *terminal {
@@ -318,6 +323,11 @@ func (w *terminal) run(ctx context.Context, observe func(Observation)) {
 		switch ev.Kind {
 		case mux.Gone:
 			slog.Info("terminal: mux unavailable", "mux", w.m.Name())
+		case mux.Back:
+			slog.Info("terminal: mux back", "mux", w.m.Name())
+			if w.onBack != nil {
+				w.onBack()
+			}
 		case mux.FocusChanged:
 			if ev.Pane == nil {
 				w.mu.Lock()
