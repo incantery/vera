@@ -312,18 +312,19 @@ func Note(saved []Saved) string {
 	var b strings.Builder
 	b.WriteString("\n\n[")
 	if len(saved) == 1 {
-		b.WriteString("They attached an image to this message. It is a file on this machine: " + saved[0].describe())
+		b.WriteString("They attached an image to this message. It is a file on this machine: " +
+			saved[0].describe() + ". You cannot see it yourself — you have no eyes. Claude Code can: ")
 	} else {
 		fmt.Fprintf(&b, "They attached %d images to this message. They are files on this machine:", len(saved))
 		for _, s := range saved {
 			b.WriteString("\n  " + s.describe())
 		}
-		b.WriteString("\n")
+		b.WriteString("\nYou cannot see them yourself — you have no eyes. Claude Code can: ")
 	}
-	b.WriteString(" You cannot see it yourself — you have no eyes. Claude Code can: any task you " +
-		"hand to the delegate or the fleet is given these files automatically, and the agent there " +
-		"opens them. So if the answer depends on what is in the picture, hand the work on rather " +
-		"than guessing or apologising, and do not repeat the file path back to them.]")
+	b.WriteString("any task you hand to the delegate or the fleet is given these files " +
+		"automatically, and the agent there opens them. So if the answer depends on what is in " +
+		"the picture, hand the work on rather than guessing or apologising, and do not repeat the " +
+		"file path back to them.]")
 	return b.String()
 }
 
