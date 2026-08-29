@@ -3,6 +3,7 @@ package attach
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"image"
 	"image/color"
 	"image/gif"
@@ -388,5 +389,20 @@ func TestLineHasNoLineBreaks(t *testing.T) {
 	alone := Line("", []string{"/s/a.png"})
 	if strings.HasPrefix(alone, " ") || !strings.Contains(alone, "image file,") {
 		t.Errorf("a picture on its own reads as %q", alone)
+	}
+}
+
+// A refusal has to reach the model, because an error frame does not
+// reach every client — and because the alternative is an answer about
+// nothing.
+func TestTroubleTellsHerSheDoesNotHaveIt(t *testing.T) {
+	if Trouble(nil) != "" {
+		t.Fatal("no trouble must change nothing about the turn")
+	}
+	got := Trouble(errors.New("image 1 (notes.txt) is text/plain"))
+	for _, want := range []string{"notes.txt", "could not be kept", "You do not have it", "Say so"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q: %s", want, got)
+		}
 	}
 }

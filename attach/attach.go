@@ -327,6 +327,30 @@ func Note(saved []Saved) string {
 	return b.String()
 }
 
+// Trouble is what the model is told when a picture arrived and could
+// not be kept.
+//
+// It goes in the TURN rather than out as an error frame, and that is a
+// decision about clients rather than about taste: an error frame is
+// treated as terminal by two of the four things that read this wire —
+// the phone breaks its read loop on one, the Mac panel throws — so a
+// refusal sent that way would truncate the answer it was trying to
+// annotate. The turn reaches every client, because the turn is the
+// answer.
+//
+// The one behaviour worth ruling out is answering as though nothing
+// was attached. Somebody who pasted a screenshot and asked "what is
+// wrong here?" would get a reply about nothing, with no way to tell
+// why.
+func Trouble(err error) string {
+	if err == nil {
+		return ""
+	}
+	return "\n\n[They attached an image to this message and it could not be kept: " +
+		err.Error() + ". You do not have it. Say so in a sentence — what went wrong, and that " +
+		"they can send it again — and do not answer as though you had seen it.]"
+}
+
 func (s Saved) describe() string {
 	if s.Name != "" {
 		return s.Path + " (" + s.Name + ")"

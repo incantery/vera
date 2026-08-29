@@ -887,11 +887,16 @@ handed to an agent with a shell. `attach.Read` is how a local caller
 turns a file into a message, on its own side of the wire, where the
 file is already its to read.
 
-**A picture that could not be kept is said out loud** — an error frame
-the person sees — and the words are still answered without it. The one
-behaviour worth ruling out is silently dropping the evidence and
-answering anyway, which leaves somebody reading a reply about the wrong
-thing with no way to tell why.
+**A picture that could not be kept is put in the turn**, not sent as an
+error frame, and she says so herself. That is a decision about clients
+rather than about taste: an error frame is treated as *terminal* by two
+of the four things that read this wire — the phone breaks its read loop
+on one, the Mac panel throws — so a refusal sent that way would
+truncate the answer it was trying to annotate. The turn reaches every
+client, because the turn *is* the answer. The words are still answered.
+The one behaviour worth ruling out is silently dropping the evidence
+and answering anyway, which leaves somebody reading a reply about the
+wrong thing with no way to tell why.
 
 **Three platform edges, found the hard way:**
 

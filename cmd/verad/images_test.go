@@ -250,22 +250,24 @@ func TestAPictureWithNoWordsIsStillAMessage(t *testing.T) {
 	}
 }
 
-// A picture that could not be kept is said out loud and the words are
-// still answered. Silently dropping the evidence and answering anyway
-// is the one behaviour that leaves a person unable to tell what
-// happened.
-func TestAPictureThatCouldNotBeKeptIsSaidOutLoud(t *testing.T) {
+// A picture that could not be kept is told to the model, so she says
+// so herself. Answering as though nothing was attached is the one
+// behaviour worth ruling out: somebody who pasted a screenshot and
+// asked what is wrong would get a reply about nothing.
+//
+// It rides the turn rather than an error frame because an error frame
+// is terminal for two of the four clients — see attach.Trouble.
+func TestAPictureThatCouldNotBeKeptIsToldToHer(t *testing.T) {
 	mind, _, _ := askingMind(t, says("I can only go on the words."))
 	mind.Attachments = &attach.Store{Dir: t.TempDir()}
 
-	var problems []string
 	var answer strings.Builder
 	err := mind.think(context.Background(), Message{
 		Text: "look at this", Conversation: "c1",
 		Images: []attach.Image{{Name: "notes.txt", Data: base64.StdEncoding.EncodeToString([]byte("not a picture at all"))}},
 	}, func(f Frame) error {
 		if f.Error != "" {
-			problems = append(problems, f.Error)
+			t.Errorf("an error frame would truncate the answer on the phone: %q", f.Error)
 		}
 		answer.WriteString(f.Delta)
 		return nil
@@ -273,17 +275,20 @@ func TestAPictureThatCouldNotBeKeptIsSaidOutLoud(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(problems) != 1 || !strings.Contains(problems[0], "notes.txt") {
-		t.Fatalf("what the person was told: %v", problems)
-	}
 	if answer.String() != "I can only go on the words." {
 		t.Fatalf("the words went unanswered: %q", answer.String())
 	}
-	// And the model was not told there is a picture, because there is
-	// not one.
-	turn := mind.Provider.(*scriptedModel).asked(0).Messages
-	if strings.Contains(turn[len(turn)-1].Text, "attached") {
-		t.Error("the model was told about a picture that was never kept")
+	sent := mind.Provider.(*scriptedModel).asked(0).Messages
+	turn := sent[len(sent)-1].Text
+	for _, want := range []string{"look at this", "could not be kept", "notes.txt", "Say so"} {
+		if !strings.Contains(turn, want) {
+			t.Errorf("the turn never says %q:\n%s", want, turn)
+		}
+	}
+	// And she is not told a picture is waiting on disk, because none
+	// is.
+	if strings.Contains(turn, "files on this machine") {
+		t.Errorf("the model was pointed at a picture that was never kept:\n%s", turn)
 	}
 }
 

@@ -200,14 +200,11 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	text := strings.TrimSpace(msg.Text)
 
 	// The pictures first, before a token is spent. A message whose
-	// whole point is the screenshot has to fail out loud rather than
-	// be answered as though it were prose — so a picture that could
-	// not be kept is an error frame the person sees, and the words are
-	// still answered, without it.
+	// whole point is the screenshot must not be answered as though it
+	// were prose — so one that could not be kept is put in the turn
+	// (see attach.Trouble) and she says so herself. The words are
+	// still answered.
 	shots, aerr := m.keep(msg)
-	if aerr != nil {
-		_ = reply(Frame{Error: "That image did not come through: " + aerr.Error()})
-	}
 
 	// A picture with no words is a whole message — "look at this" is
 	// what pointing means. Nothing at all still ends here.
@@ -235,7 +232,7 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 	// From here down `asked` is the turn — it is what is sent,
 	// recorded, journalled and remembered, because it is what the
 	// model read.
-	asked := text + attach.Note(shots)
+	asked := text + attach.Note(shots) + attach.Trouble(aerr)
 	// And the files themselves, down the context, for whichever tool
 	// ends up handing this work to somebody who can look.
 	ctx = withImages(ctx, attach.Paths(shots))
