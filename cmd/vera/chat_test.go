@@ -1373,3 +1373,39 @@ func TestTheWatchPushesAModelThatMovedElsewhere(t *testing.T) {
 		t.Errorf("the status line did not follow verad:\n%s", v)
 	}
 }
+
+// A backslash and then enter breaks the line in the chat's box rather
+// than sending it. It is the newline that survives a terminal which
+// reports alt+enter and shift+enter as a plain enter — the two-line
+// question is one question, and the backslash was the instruction
+// rather than part of it, so it is not in what verad is told.
+func TestBackslashEnterIsANewlineNotASend(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	dir := chatSessionDir()
+	f := newFakeVerad(t)
+	c := f.client()
+	st := &Status{Name: "vera", Mind: "echo"}
+
+	sess := openChat(t, dir, "chat-1")
+	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
+	m := tui.New(veraAgent{c}, headless(chatOptions(st, s, sess, "hello")))
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	m.Update(tea.KeyPressMsg{Code: '\\', Text: "what is on the rail,\\"})
+	if _, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
+		t.Fatal("a backslash and enter should have broken the line, not started an exchange")
+	}
+	if n := len(sess.Turns()); n != 0 {
+		t.Fatalf("nothing should have been sent yet, the session has %d turns", n)
+	}
+
+	// The second line, and the plain enter that does send.
+	m.Update(tea.KeyPressMsg{Code: 'a', Text: "and what is blocked?"})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	drive(t, m, func() bool { return len(sess.Turns()) == 1 }, m.Init(), cmd)
+
+	want := "what is on the rail,\nand what is blocked?"
+	if got := sess.Turns()[0].Said; got != want {
+		t.Errorf("verad was told %q, want %q", got, want)
+	}
+}
