@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func TestRailFramesSpeakRooksVocabulary(t *testing.T) {
 		{ID: mux.ID{Session: "main"}, Path: "/x/rook/mux/src"},
 		{ID: mux.ID{Session: "v"}, Path: "/x/vera"},
 	}
-	spaces, agents := railFrames(repos, tasks, "/x/vera", panes)
+	spaces, agents := railFrames(repos, tasks, "/x/vera", "v", panes)
 	if spaces.Op != "items.push" || spaces.Params.Surface != "spaces" || len(spaces.Params.Items) != 2 {
 		t.Fatalf("spaces: %+v", spaces)
 	}
@@ -37,7 +38,7 @@ func TestRailFramesSpeakRooksVocabulary(t *testing.T) {
 		t.Errorf("vera row (closed task does not count): %+v", vera)
 	}
 	// A repo with no workspace open is not a space.
-	none, _ := railFrames(repos, tasks, "", panes[:1])
+	none, _ := railFrames(repos, tasks, "", "", panes[:1])
 	if len(none.Params.Items) != 0 {
 		t.Errorf("a task's room does not make its repo a space: %+v", none.Params.Items)
 	}
@@ -45,8 +46,16 @@ func TestRailFramesSpeakRooksVocabulary(t *testing.T) {
 		t.Fatalf("agents newest first, closed omitted: %+v", agents.Params.Items)
 	}
 	a1 := agents.Params.Items[1]
-	if a1.Title != "Make the rail real" || a1.Subtitle != "needs you · rook" || a1.State != "blocked" || !a1.Current {
+	if a1.Title != "Make the rail real" || a1.Subtitle != "needs you · rook" || a1.State != "blocked" {
 		t.Errorf("a1 row: %+v", a1)
+	}
+	// Nobody is standing in an agent's room — the person is in `v`,
+	// which is the vera checkout's own workspace — so no agent row is
+	// current. Wanting the person is said in the state, not here.
+	for _, it := range agents.Params.Items {
+		if it.Current {
+			t.Errorf("no agent row is current when the person is not in one: %+v", it)
+		}
 	}
 	// The row claims the workspace its session runs in, in rook's
 	// vocabulary, so rook drops the pane it found there instead of
@@ -79,5 +88,134 @@ func TestRailResetPushesAgain(t *testing.T) {
 	case <-r.poke:
 	default:
 		t.Error("Reset does not poke the publisher")
+	}
+}
+
+// The click and the next push have to agree, or the panel looks inert:
+// rook sends a click to the workspace the row names and moves its
+// cursor there, and the next push puts the cursor back where the
+// producer says `current` is. So `current` is the room the person is
+// standing in — after a click, the row they clicked — and never a
+// second thing said in the same field.
+func TestAgentRowCurrentIsWhereThePersonStands(t *testing.T) {
+	now := time.Now()
+	repos := []fleet.Repo{{Root: "/x/rook", Name: "rook"}}
+	tasks := []fleet.View{
+		{Task: &fleet.Task{ID: "a1", Project: "/x/rook", Brief: "One", Spawned: now.Add(-time.Hour), Session: "rook--vera-a1"}, State: fleet.Waiting},
+		{Task: &fleet.Task{ID: "b2", Project: "/x/rook", Brief: "Two", Spawned: now, Session: "rook--vera-b2"}, State: fleet.Running},
+	}
+	panes := []mux.Pane{
+		{ID: mux.ID{Session: "rook--vera-a1"}, Path: "/x/rook--vera-a1"},
+		{ID: mux.ID{Session: "rook--vera-b2"}, Path: "/x/rook--vera-b2"},
+	}
+	// The person clicked a1's row: rook went to that room, and the
+	// push that follows has to leave the cursor there.
+	_, agents := railFrames(repos, tasks, "/x/rook", "rook--vera-a1", panes)
+	byID := map[string]railItem{}
+	for _, it := range agents.Params.Items {
+		byID[it.ID] = it
+	}
+	if !byID["a1"].Current {
+		t.Errorf("the room the person is in is the current row: %+v", agents.Params.Items)
+	}
+	// a1 is blocked — it wants the person — and that is still said in
+	// the state and the word, not by taking the cursor.
+	if byID["b2"].Current {
+		t.Errorf("only one row is current: %+v", agents.Params.Items)
+	}
+	if byID["a1"].State != "blocked" || byID["a1"].Subtitle != "needs you · rook" {
+		t.Errorf("what wants the person is on the row: %+v", byID["a1"])
+	}
+	// Standing in the vera chat's own workspace is standing in no
+	// agent's room.
+	_, none := railFrames(repos, tasks, "", "main", panes)
+	for _, it := range none.Params.Items {
+		if it.Current {
+			t.Errorf("no row is current from outside every room: %+v", it)
+		}
+	}
+}
+
+// A row names a workspace so that clicking it goes there. A room the
+// mux no longer holds is not a place to go, and claiming it would also
+// fold rook's own row for that name into a task that has left.
+func TestAgentRowClaimsOnlyARoomThatIsStillThere(t *testing.T) {
+	now := time.Now()
+	repos := []fleet.Repo{{Root: "/x/rook", Name: "rook"}}
+	tasks := []fleet.View{
+		{Task: &fleet.Task{ID: "a1", Project: "/x/rook", Brief: "Here", Spawned: now, Session: "rook--vera-a1"}, State: fleet.Running},
+		{Task: &fleet.Task{ID: "b2", Project: "/x/rook", Brief: "Gone", Spawned: now.Add(-time.Hour), Session: "rook--vera-b2"}, State: fleet.Gone},
+	}
+	panes := []mux.Pane{{ID: mux.ID{Session: "rook--vera-a1"}, Path: "/x/rook--vera-a1"}}
+	_, agents := railFrames(repos, tasks, "", "", panes)
+	byID := map[string]railItem{}
+	for _, it := range agents.Params.Items {
+		byID[it.ID] = it
+	}
+	if byID["a1"].Workspace != "rook--vera-a1" {
+		t.Errorf("a room that is there is claimed: %+v", byID["a1"])
+	}
+	if byID["b2"].Workspace != "" {
+		t.Errorf("a room that is gone is not claimed: %+v", byID["b2"])
+	}
+	if byID["b2"].Subtitle != "gone · rook" {
+		t.Errorf("the row still says what became of it: %+v", byID["b2"])
+	}
+	// A mux that did not answer is not every room being gone: the
+	// claims stand and the next push corrects them.
+	_, blind := railFrames(repos, tasks, "", "", nil)
+	for _, it := range blind.Params.Items {
+		if it.Workspace == "" {
+			t.Errorf("an empty pane table takes no claim away: %+v", it)
+		}
+	}
+}
+
+// stubMux is a mux that only does what the watcher needs: hand the
+// caller a stream of events and answer nothing else.
+type stubMux struct{ events []mux.Event }
+
+func (m *stubMux) Name() string                                   { return "stub" }
+func (m *stubMux) Focus(context.Context) (*mux.Pane, error)       { return nil, mux.ErrNoFocus }
+func (m *stubMux) Get(context.Context, mux.ID) (*mux.Pane, error) { return nil, mux.ErrNoPane }
+func (m *stubMux) List(context.Context) ([]mux.Pane, error)       { return nil, nil }
+func (m *stubMux) Spawn(context.Context, mux.Spawn) (*mux.Pane, error) {
+	return nil, mux.ErrUnavailable
+}
+func (m *stubMux) Kill(context.Context, mux.ID) error                { return nil }
+func (m *stubMux) Send(context.Context, mux.ID, string) error        { return nil }
+func (m *stubMux) Enter(context.Context, mux.ID) error               { return nil }
+func (m *stubMux) Capture(context.Context, mux.ID) ([]string, error) { return nil, nil }
+func (m *stubMux) GoTo(context.Context, mux.ID) error                { return nil }
+func (m *stubMux) Narrow(context.Context, mux.ID, int) error         { return nil }
+func (m *stubMux) Widen(context.Context, mux.ID) error               { return nil }
+func (m *stubMux) Poke()                                             {}
+func (m *stubMux) Watch(ctx context.Context, fn func(mux.Event)) error {
+	for _, ev := range m.events {
+		fn(ev)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// The current row is the room the person is standing in, so moving
+// between rooms is a reason to push. Without this the highlight a
+// click earned waits out the ten-second tick, and the panel looks
+// inert for exactly as long.
+func TestMovingBetweenRoomsPushesTheRail(t *testing.T) {
+	now := time.Now()
+	m := &stubMux{events: []mux.Event{
+		{Kind: mux.FocusChanged, Pane: &mux.Pane{ID: mux.ID{Session: "rook--vera-a1", Window: "1", Pane: "7"}, Command: "claude", Path: "/x/rook--vera-a1"}, At: now},
+	}}
+	w := newTerminal(m, "desk")
+	pokes := make(chan struct{}, 4)
+	w.onFocus = func() { pokes <- struct{}{} }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.run(ctx, func(Observation) {})
+	select {
+	case <-pokes:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a move between rooms did not reach the rail")
 	}
 }
