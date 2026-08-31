@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -298,5 +299,31 @@ func TestTheToolSaysItIsNotTheFleet(t *testing.T) {
 	var schema map[string]any
 	if err := json.Unmarshal((&TodoTool{}).Schema(), &schema); err != nil {
 		t.Fatalf("the schema is not JSON: %v", err)
+	}
+}
+
+// The list runs without asking — a permission prompt between "remind
+// me to call the bank" and the bank being on the list is a reason to
+// stop using it. Dropping is the exception, because it is the one
+// verb that takes the line out of the file.
+func TestTheListRunsWithoutAskingExceptWhenItSubtracts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "vera")
+	if _, err := home.Open(root); err != nil {
+		t.Fatal(err)
+	}
+	h, err := openHands(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Adopt(&TodoTool{List: &home.List{}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []string{"list", "add", "done", "undo"} {
+		if v := decide(t, h, "conv", "todo", map[string]any{"action": action}); v.Decision != tool.Allow {
+			t.Errorf("todo %s was %s, want allow", action, v.Decision)
+		}
+	}
+	if v := decide(t, h, "conv", "todo", map[string]any{"action": "drop"}); v.Decision != tool.Ask {
+		t.Errorf("todo drop was %s, want ask", v.Decision)
 	}
 }
