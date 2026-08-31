@@ -456,17 +456,22 @@ func main() {
 		go func() { _ = f.Supervise(ctx) }()
 		// The side rail, when the mux has one: the fleet as rows.
 		if side, ok := term.(mux.Sider); ok {
-			focus := func() string {
+			// Where the person is standing, in both vocabularies: the
+			// repository, which is what makes a space current, and the
+			// workspace, which is what makes an agent's row current.
+			focus := func() (root, workspace string) {
 				fctx, cancel := context.WithTimeout(ctx, time.Second)
 				defer cancel()
 				p, err := term.Focus(fctx)
-				if err != nil || p.Path == "" {
-					return ""
+				if err != nil {
+					return "", ""
 				}
-				if r, err := fleet.FindRepo(p.Path); err == nil {
-					return r.Root
+				if p.Path != "" {
+					if r, err := fleet.FindRepo(p.Path); err == nil {
+						root = r.Root
+					}
 				}
-				return ""
+				return root, p.ID.Session
 			}
 			panes := func(ctx context.Context) []mux.Pane {
 				pctx, cancel := context.WithTimeout(ctx, 2*time.Second)

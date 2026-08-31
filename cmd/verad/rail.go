@@ -8,6 +8,15 @@
 // them; agents are the open tasks. It is pushed when something
 // changed and never otherwise, because a producer at its own cadence
 // must not cost the glass a repaint.
+//
+// Two fields are rook's rather than ours, and both are about a click.
+// `workspace` is where the row's agent lives, and a click on the row
+// goes there — so a row names a room only while the mux still holds
+// it. `current` is where the cursor sits, which rook hands back to the
+// producer on the next push: it means the row the person is ON, so
+// that a click and the push that follows it agree. Neither is a place
+// to say a task wants attention — that is the row's state and its
+// word.
 package main
 
 import (
@@ -70,13 +79,15 @@ func railState(s fleet.State) string {
 }
 
 // railFrames builds the two frames from what the fleet believes.
-// focused is the repo root in front of the person, for `current`.
+// focused is the repo root in front of the person and here is the
+// workspace they are standing in — the two halves of `current`, which
+// on either panel means the row the person is ON and nothing else.
 // panes is the mux's pane table: a repo is a *space* only when a
 // workspace is open in it, and the row names that workspace so rook
 // folds its own row for it in rather than listing both. Rook lists
 // every workspace it holds by itself; a repo with nothing open is not
 // a space, it is something the picker could open.
-func railFrames(repos []fleet.Repo, tasks []fleet.View, focused string, panes []mux.Pane) (spaces, agents railFrame) {
+func railFrames(repos []fleet.Repo, tasks []fleet.View, focused, here string, panes []mux.Pane) (spaces, agents railFrame) {
 	// Spaces: every known repo; its state is the loudest of its open
 	// tasks' — blocked beats working beats done beats idle.
 	rank := map[string]int{"idle": 0, "done": 1, "working": 2, "blocked": 3, "failed": 3}
@@ -127,12 +138,47 @@ func railFrames(repos []fleet.Repo, tasks []fleet.View, focused string, panes []
 		}
 	}
 	sort.SliceStable(openTasks, func(i, j int) bool { return openTasks[i].Spawned.After(openTasks[j].Spawned) })
+	stood := false
 	for _, t := range openTasks {
 		title := trim(firstSentence(t.Brief), 28)
 		sub := railWord(t.State) + " · " + shortPath(t.Project)
-		agents.Params.Items = append(agents.Params.Items, railItem{ID: t.ID, Title: title, Subtitle: sub, State: railState(t.State), Current: t.State.Actionable(), Workspace: t.Session})
+		// The row is current when the person is standing in its room,
+		// and one row at most: `current` is where the cursor sits, so
+		// two of them is rook picking. It used to mark every task that
+		// wanted the person, which is a different thing said in the
+		// wrong field — and it made the panel look inert, because a
+		// click moves rook's cursor and the next push puts it back
+		// where the producer said. Now the click and the next push
+		// agree: rook goes to that agent's room, and the row for that
+		// room is the one Vera calls current. What wants the person is
+		// on the row already, in its state and its word.
+		current := false
+		if !stood && here != "" && t.Session == here {
+			current, stood = true, true
+		}
+		agents.Params.Items = append(agents.Params.Items, railItem{ID: t.ID, Title: title, Subtitle: sub, State: railState(t.State), Current: current, Workspace: claim(panes, t.Session)})
 	}
 	return spaces, agents
+}
+
+// claim is the workspace a row may name: the task's room, when the mux
+// still holds it. A click goes to the workspace the row names, so a
+// name for a room that is gone — the engine was restarted under it,
+// the person closed it — is a row that does nothing when clicked, and
+// a claim that would fold rook's own row for that name into a task
+// that is no longer there. An empty pane table is the mux not
+// answering rather than every room being gone: claim the room then,
+// and let the next push correct it.
+func claim(panes []mux.Pane, session string) string {
+	if session == "" || len(panes) == 0 {
+		return session
+	}
+	for _, p := range panes {
+		if p.ID.Session == session {
+			return session
+		}
+	}
+	return ""
 }
 
 // workspaceIn is the workspace holding a pane whose cwd is the repo's
@@ -183,15 +229,17 @@ type rail struct {
 	side     mux.Sider
 	fleet    *fleet.Fleet
 	projects *fleet.Projects
-	focus    func() string // repo root in front of the person, or ""
-	panes    func(context.Context) []mux.Pane
-	poke     chan struct{}
-	mu       sync.Mutex // guards last: Reset comes from the mux watcher
-	last     [2][]byte
-	warned   bool
+	// focus is where the person is: the repo root in front of them and
+	// the workspace they are standing in, either of which may be "".
+	focus  func() (root, workspace string)
+	panes  func(context.Context) []mux.Pane
+	poke   chan struct{}
+	mu     sync.Mutex // guards last: Reset comes from the mux watcher
+	last   [2][]byte
+	warned bool
 }
 
-func newRail(side mux.Sider, f *fleet.Fleet, p *fleet.Projects, focus func() string, panes func(context.Context) []mux.Pane) *rail {
+func newRail(side mux.Sider, f *fleet.Fleet, p *fleet.Projects, focus func() (root, workspace string), panes func(context.Context) []mux.Pane) *rail {
 	return &rail{side: side, fleet: f, projects: p, focus: focus, panes: panes, poke: make(chan struct{}, 1)}
 }
 
@@ -239,15 +287,15 @@ func (r *rail) push(ctx context.Context) {
 	if r.projects != nil {
 		repos = r.projects.Known(ctx)
 	}
-	focused := ""
+	focused, here := "", ""
 	if r.focus != nil {
-		focused = r.focus()
+		focused, here = r.focus()
 	}
 	var panes []mux.Pane
 	if r.panes != nil {
 		panes = r.panes(ctx)
 	}
-	spaces, agents := railFrames(repos, tasks, focused, panes)
+	spaces, agents := railFrames(repos, tasks, focused, here, panes)
 	for i, f := range []railFrame{spaces, agents} {
 		b, err := json.Marshal(f)
 		if err != nil {
