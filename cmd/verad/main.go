@@ -341,6 +341,10 @@ func main() {
 		}
 	}
 	lan.how = how
+	// The list, from the same home the memory came out of. It is
+	// mounted whether or not there is a model: crossing something off
+	// is not a thing that should need one.
+	lan.todo, lan.hasMind = place.Todo(), mind != nil
 	// Speech to text lives on this machine; the phone sends audio and
 	// this turns it into words.
 	lan.stt = newParakeet()
@@ -500,6 +504,14 @@ func main() {
 		}
 		if mind.Fleet != nil {
 			own = append(own, &FleetTool{Fleet: mind.Fleet})
+		}
+		// The list, so that the fluent way in and the exact way in are
+		// the same file. It goes in beside the fleet on purpose: the
+		// two are next to each other in a model's mind, and the only
+		// thing that keeps "call the dentist" out of a repository is
+		// both descriptions being read at once.
+		if mind.Home != nil {
+			own = append(own, &TodoTool{List: mind.Home.Todo()})
 		}
 		if err := mind.Hands.Adopt(own...); err != nil {
 			fmt.Fprintln(os.Stderr, "vera: cannot register her own tools ("+err.Error()+")")

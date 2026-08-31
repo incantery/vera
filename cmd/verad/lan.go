@@ -19,6 +19,7 @@ import (
 	"errors"
 	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 	"io"
 	"log/slog"
 	"net"
@@ -68,6 +69,14 @@ type lanTransport struct {
 	stt Transcriber
 	// fleet is the supervisor, when one is running.
 	fleet *fleet.Fleet
+	// todo is the person's own list, when there is a home to keep it
+	// in. Nil mounts no routes: a daemon with nowhere to write is not
+	// a daemon that pretends to remember.
+	todo *home.List
+	// hasMind says whether there is a model to talk to. Nothing about
+	// the list depends on it — it decides only whether an answer
+	// mentions that saying it in prose would have worked too.
+	hasMind bool
 	// answer carries a person's word on an ask back to the exchange
 	// parked on it. Nil when Vera has no tools of her own to gate.
 	answer func(ctx context.Context, id, choice string) error
@@ -156,6 +165,9 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	mux.HandleFunc("POST /poke/{who}", loopbackOnly(l.pokeHandler))
 	if l.fleet != nil {
 		l.fleetRoutes(mux)
+	}
+	if l.todo != nil {
+		l.todoRoutes(mux)
 	}
 	mux.HandleFunc("GET /pair.json", loopbackOnly(l.pairJSON))
 	mux.HandleFunc("GET /pair.png", loopbackOnly(l.pairPNG))
