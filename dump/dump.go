@@ -410,6 +410,11 @@ func (w *writer) copy(rel, src string) {
 // home copies Vera's home: the index, every memory file, and every
 // project file. Not notes/ or profiles/ — those are hers, and a dump
 // is something a person hands to somebody else.
+//
+// Not TODO.md either, for the same reason and more so: a to-do list is
+// the most personal file in the directory ("call the bank about the
+// mortgage") and it has never yet been the reason anything went
+// wrong. If it becomes one, it goes in redacted, not whole.
 func (w *writer) home(root string) int {
 	if root == "" {
 		return 0

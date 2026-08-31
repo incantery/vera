@@ -20,6 +20,7 @@ import (
 	"github.com/incantery/mote/tui"
 	"github.com/incantery/vera/costs"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
 	"github.com/incantery/vera/price"
 )
@@ -37,6 +38,10 @@ type fakeVerad struct {
 	model  Resolution
 	chosen *InForce // what this conversation chose, as /models reports it
 	dflt   *InForce // what PUT /model last saved
+	// told is every line POST /todo received, and todoReply is what to
+	// answer with. Nil answers an empty list.
+	told      []string
+	todoReply func(line string) TodoAnswer
 }
 
 func newFakeVerad(t *testing.T) *fakeVerad {
@@ -147,6 +152,24 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		f.chosen = &InForce{Model: body.Model, Effort: body.Effort}
 		_ = json.NewEncoder(w).Encode(f.model)
 	})
+	// The list. The daemon parses the line; a fake only has to answer
+	// like one, so a test can say "this is what verad decided" and
+	// check what the screen did with it.
+	mux.HandleFunc("POST /todo", func(w http.ResponseWriter, r *http.Request) {
+		if !authed(w, r) {
+			return
+		}
+		var body struct{ Line, From string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.told = append(f.told, body.Line)
+		fn := f.todoReply
+		f.mu.Unlock()
+		if fn == nil {
+			fn = func(string) TodoAnswer { return TodoAnswer{Verb: "list", Items: []home.Item{}} }
+		}
+		_ = json.NewEncoder(w).Encode(fn(body.Line))
+	})
 	mux.HandleFunc("POST /fleet/", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(w, r) {
 			return
@@ -185,6 +208,20 @@ func (f *fakeVerad) messages() []Message {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]Message(nil), f.said...)
+}
+
+// answerTodo makes the fake reply with fn, and returns every line it
+// was told.
+func (f *fakeVerad) answerTodo(fn func(line string) TodoAnswer) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.todoReply = fn
+}
+
+func (f *fakeVerad) todoLines() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.told...)
 }
 
 func (f *fakeVerad) posted() []string {

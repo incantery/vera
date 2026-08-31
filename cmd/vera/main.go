@@ -20,12 +20,13 @@ const usage = `vera — talk to her, and keep her running
   vera status             is verad up, where, since when
   vera log [-f]           verad's log
   vera url                the pairing page
-  vera home               where her memory lives (MEMORY.md, memory/, projects/)
+  vera home               where her memory lives (MEMORY.md, memory/, projects/, TODO.md)
   vera say [-c id] [-m model] [-e effort] [-i image] <text>
                           one exchange, reply on stdout — for scripts and other agents.
                           -i attaches a picture; she hands it to the agent she gives the work to
   vera costs [--since 7d] [--by model|conversation|day]
                           what the journal says every exchange cost
+  vera todo [<verb>...]   your own list — what is left; add, done, undo, drop, clear
   vera tasks              every task and what is believed about it
   vera task <verb> ...    start | answer | report | land | stop | resume | seen — the fleet, by hand
   vera sessions           the conversations the chat left behind
@@ -72,6 +73,8 @@ func main() {
 		err = runSay(args[1:])
 	case "costs":
 		err = runCosts(args[1:])
+	case "todo":
+		err = runTodo(args[1:])
 	case "tasks":
 		err = runFleet("tasks", nil)
 	case "task":

@@ -200,7 +200,17 @@ func policyRules(rules []tool.Rule, root string) []tool.Rule {
 		Then:   tool.Ask,
 		Reason: "stopping a task abandons the work in it — check they meant to",
 	}
-	out := make([]tool.Rule, 0, len(rules)+3)
+	// The same shape, for the same reason, on the list. Adding and
+	// crossing off are what the list is for and both are reversible;
+	// dropping takes the line out of the file, and the person cannot
+	// get back a thing they can no longer see they have lost.
+	drop := tool.Rule{
+		Tools:  []string{"todo"},
+		When:   map[string]string{"action": "drop"},
+		Then:   tool.Ask,
+		Reason: "dropping an item takes it off the list for good — crossing it off is the usual way",
+	}
+	out := make([]tool.Rule, 0, len(rules)+4)
 	out = append(out, mine)
 	at := 0
 	for at < len(rules) && rules[at].Then == tool.Deny {
@@ -209,22 +219,29 @@ func policyRules(rules []tool.Rule, root string) []tool.Rule {
 	}
 	out = append(out, ours)
 	out = append(out, rules[at:]...)
-	return append(out, stop)
+	return append(out, stop, drop)
 }
 
-// policyTools is the default for the two tools the profile did not
+// policyTools is the default for the three tools the profile did not
 // choose and cannot have listed.
 //
 // Handing work away is the thing Vera is FOR. The supervisor's own
 // sentence is "you do not do the work; you decide what work there is,
 // hand it to somebody who will" — so a delegation and a task run
-// without asking, the way reading does. A file that DOES name them
-// wins: this fills a gap, it does not overrule anybody.
+// without asking, the way reading does. The list runs without asking
+// for a plainer reason: it is a file in her own home, everything it
+// does is visible in the next sentence she says, and a permission
+// prompt between "remind me to call the bank" and the bank being on
+// the list is a reason to stop using it. Dropping is the exception,
+// and it is a rule above rather than a decision here.
+//
+// A file that DOES name them wins: this fills a gap, it does not
+// overrule anybody.
 func policyTools(tools map[string]tool.Decision) map[string]tool.Decision {
 	if tools == nil {
 		tools = map[string]tool.Decision{}
 	}
-	for _, name := range []string{"delegate", "fleet"} {
+	for _, name := range []string{"delegate", "fleet", "todo"} {
 		if _, said := tools[name]; !said {
 			tools[name] = tool.Allow
 		}
@@ -697,6 +714,14 @@ tools = ["fleet"]
 when = { action = "stop" }
 then = "ask"
 reason = "stopping a task abandons the work in it — check they meant to"
+
+# The same, on the to-do list. Adding and crossing off are what it is
+# for; dropping takes the line out of the file.
+[[rules]]
+tools = ["todo"]
+when = { action = "drop" }
+then = "ask"
+reason = "dropping an item takes it off the list for good — crossing it off is the usual way"
 `)...)
 }
 

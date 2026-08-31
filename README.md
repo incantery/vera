@@ -49,6 +49,12 @@ the phone by scanning the QR at `http://localhost:4780/`. First ride:
   keeps it and hands the file to whichever agent she gives the work
   to, and Claude Code opens it. "What is wrong with this?" is a whole
   question again.
+- **A list that is a file.** `/todo call the bank` in the chat, `vera
+  todo` in a terminal, or just tell her — it is one Markdown checklist
+  in her home (`TODO.md`) that you can open, edit and render like any
+  other. The typed commands are parsed by hand and need no model; the
+  model is what lets you say it in prose instead. Distinct from
+  `/tasks`, which is the agents working in repositories.
 - **Attention you can jump to.** The home screen is the places on the
   Mac, ranked by frecency, the one in front of you marked. Tap to go
   there — the Mac follows you, and the phone follows the Mac.

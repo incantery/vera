@@ -90,6 +90,8 @@ func fixture(t *testing.T) Options {
 	}}, "chat-new"))
 	must(place.Project("repo", filepath.Join(root, "repo"), "main", nil))
 	must(os.WriteFile(filepath.Join(place.Root, home.NotesDir, "private.md"), []byte("hers\n"), 0o600))
+	_, _, err = place.Todo().Add("call the bank about the mortgage", "chat")
+	must(err)
 
 	return Options{StateDir: state, ClaudeDir: claude, ConfigDir: config, HomeDir: place.Root, Out: filepath.Join(root, "out"), Now: now.Add(time.Minute), Version: "test"}
 }
@@ -241,6 +243,9 @@ func TestTheDumpCarriesWhatSheBelieved(t *testing.T) {
 	}
 	// notes/ are hers. A dump is something a person hands to somebody
 	// else, and that is a decision, not a default.
+	if _, err := os.Stat(filepath.Join(res.Dir, "home", home.Todo)); err == nil {
+		t.Error("the to-do list went into the dump")
+	}
 	if _, err := os.Stat(filepath.Join(res.Dir, "home", "notes")); err == nil {
 		t.Error("her notes went into the dump")
 	}
