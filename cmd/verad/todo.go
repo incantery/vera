@@ -288,7 +288,16 @@ func doTodo(l *home.List, req TodoRequest, mind bool) (TodoAnswer, error) {
 		// worse than none here: the person cannot see which half.
 		ans.Items = nonNil(items)
 		if len(found) == 0 {
-			ans.Question = fmt.Sprintf("nothing to %s matches %q — did you mean one of these?", in.Verb, ref)
+			// It may not be missing so much as on the wrong side of
+			// the line: `done 2` where 2 is already crossed off is a
+			// person who has lost track, not a person who mistyped,
+			// and telling them that is the answer rather than a
+			// question with the whole list attached.
+			if elsewhere := home.Match(items, ref); len(elsewhere) == 1 {
+				ans.Said = alreadySaid(in.Verb, elsewhere[0])
+				return ans, nil
+			}
+			ans.Question = fmt.Sprintf("nothing to %s matches %q — did you mean one of these?", todoAct(in.Verb), ref)
 			ans.Choices = todoChoices(in.Verb, pool)
 		} else {
 			ans.Question = fmt.Sprintf("%q matches %d of them — which?", ref, len(found))
@@ -324,6 +333,29 @@ func todoPool(verb string, items []home.Item) ([]home.Item, string) {
 		return home.Crossed(items), "nothing has been crossed off"
 	}
 	return items, "the list is empty"
+}
+
+// todoAct is the verb as a sentence uses it. "nothing to done
+// matches" is not English, and the person reading it is mid-task.
+func todoAct(verb string) string {
+	switch verb {
+	case "done":
+		return "cross off"
+	case "undo":
+		return "put back"
+	}
+	return "drop"
+}
+
+// alreadySaid is for a reference that names a real item the verb
+// cannot touch, which is almost always one already in the state being
+// asked for.
+func alreadySaid(verb string, it home.Item) string {
+	was := "already crossed off"
+	if verb == "undo" {
+		was = "not crossed off"
+	}
+	return fmt.Sprintf("%d. %s is %s", it.N, it.Text, was)
 }
 
 func todoVerbHelp(verb string) string {

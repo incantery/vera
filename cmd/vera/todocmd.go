@@ -102,7 +102,7 @@ func openCount(items []home.Item) string {
 
 // --- without a screen -----------------------------------------------------
 
-const todoUsage = `vera todo                       what is left, and the last few crossed off
+const todoUsage = `vera todo                       what is left, one item a line
 vera todo <something>           put it on the list
 vera todo done <n|words>        cross one off (also: did, x)
 vera todo undo <n|words>        put one back

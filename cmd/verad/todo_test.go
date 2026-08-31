@@ -85,10 +85,12 @@ func TestAddingListingAndCrossingOff(t *testing.T) {
 		t.Errorf("after done: %q", got)
 	}
 
-	// And it will not cross off something already crossed off, which
-	// is why the pool a verb looks in is half the list.
-	if got := say(t, l, "done passport"); got.Question == "" {
-		t.Errorf("a done item was offered to done again: %+v", got)
+	// And it will not cross off something already crossed off. A
+	// reference that names a real item the verb cannot touch is
+	// somebody who has lost track, not somebody who mistyped, so it
+	// gets an answer rather than a question with the list attached.
+	if got := say(t, l, "done passport"); got.Said != "2. Renew the passport is already crossed off" {
+		t.Errorf("crossing off a crossed-off item said %q (question %q)", got.Said, got.Question)
 	}
 	if got := say(t, l, "undo passport").Said; !strings.Contains(got, "put back") {
 		t.Errorf("undo said %q", got)
@@ -161,6 +163,19 @@ func TestProseIsOfferedOnlyWhenThereIsAMindToSayItTo(t *testing.T) {
 	}
 	if loud.Prose == "" {
 		t.Error("a Vera with a model did not mention it")
+	}
+}
+
+// The question has to read like English — the person is mid-task.
+func TestTheQuestionReadsLikeASentence(t *testing.T) {
+	l := newList(t)
+	say(t, l, "Book the dentist")
+	got := say(t, l, "done aardvark").Question
+	if !strings.Contains(got, "nothing to cross off matches") {
+		t.Errorf("the question says %q", got)
+	}
+	if got := say(t, l, "drop aardvark").Question; !strings.Contains(got, "nothing to drop matches") {
+		t.Errorf("drop says %q", got)
 	}
 }
 

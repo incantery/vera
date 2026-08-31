@@ -20,7 +20,7 @@ const usage = `vera — talk to her, and keep her running
   vera status             is verad up, where, since when
   vera log [-f]           verad's log
   vera url                the pairing page
-  vera home               where her memory lives (MEMORY.md, memory/, projects/)
+  vera home               where her memory lives (MEMORY.md, memory/, projects/, TODO.md)
   vera say [-c id] [-m model] [-e effort] [-i image] <text>
                           one exchange, reply on stdout — for scripts and other agents.
                           -i attaches a picture; she hands it to the agent she gives the work to

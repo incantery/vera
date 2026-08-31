@@ -97,6 +97,37 @@ exchanges, tokens, dollars at list prices, how long until anything
 reached the screen, and what the agents you started spent —
 `--since 24h`, `--by model|conversation|day`.
 
+## The list
+
+`/todo` in the chat — or `vera todo` in any terminal — is *your* list,
+as distinct from `/tasks`, which is the agents Vera has working in
+repositories. It is one Markdown file, `TODO.md` in her home beside
+`MEMORY.md`, so it opens in any editor and renders anywhere:
+
+```
+/todo Call the bank about the mortgage    put it on the list
+/todo                                     what is left
+/todo done bank                           cross one off — a number or a word from it
+/todo undo 2 · /todo drop 2               put one back · take it off entirely
+/todo all · /todo clear                   show the crossed off · sweep them
+```
+
+Nothing about it needs a model: the words above are parsed by hand, and
+they work the same on a laptop with no key. When a reference matches
+more than one item — or none — nothing is guessed; the candidates come
+up as a card and you pick one.
+
+With a model, the same list is one of Vera's tools, so *"remind me to
+book the dentist"* and *"I've done the passport one"* reach the same
+file — in the chat, on the phone, or out loud. Editing `TODO.md` by
+hand is the third way in, and it is not second class: lines you wrote
+yourself count as items, and anything in the file that is not an item
+is never rewritten.
+
+The list stays out of `vera dump`, deliberately. It is the most
+personal file in her home, and it has never been the reason anything
+went wrong.
+
 ## Troubleshooting
 
 - **Apps missing from the home list / taps don't switch the Mac.**
@@ -116,6 +147,9 @@ reached the screen, and what the agents you started spent —
   believed about you at the time (`home/MEMORY.md` and the memory
   files), and verad's log for those minutes — secrets redacted. Send
   the tarball.
+- **She put the wrong thing on the list.** `vera todo drop <n>`, or
+  open `TODO.md` in `vera home` and delete the line. Either is the
+  same edit; she re-reads the file on every call.
 - **She has a fact about you wrong.** Her memory is files: `vera home`
   prints the directory, `MEMORY.md` lists what she knows, and each
   memory is one Markdown file under `memory/`. Edit one, or delete it —

@@ -103,7 +103,14 @@ func (l *List) read() ([]string, []Item, error) {
 		}
 		return nil, nil, err
 	}
-	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	if strings.TrimSpace(string(b)) == "" {
+		return nil, nil, nil
+	}
+	// One trailing newline, not every trailing blank line: a blank
+	// line somebody left between the words at the top and the list is
+	// theirs, and swallowing it moves the list up the file a little
+	// further on every write.
+	lines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
 	var items []Item
 	for i, line := range lines {
 		it, ok := parseItem(line)
