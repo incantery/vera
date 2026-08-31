@@ -14,6 +14,7 @@
 //	~/vera/                  ($VERA_HOME overrides)
 //	  MEMORY.md              the index — one line per memory, and the
 //	                         part that goes into every prompt
+//	  TODO.md                the list: what is not done yet, as boxes
 //	  memory/<slug>.md       one fact per file, front matter then prose
 //	  projects/<name>.md     what she knows about a repository
 //	  notes/                 hers, to write in later
@@ -121,6 +122,12 @@ func (h *Home) ensure() error {
 	// that nothing read it. It is read now, so an old home gets the
 	// new words rather than a stale note beside a live profile.
 	if err := writeIfStale(h.path(filepath.FromSlash(ProfileDir), "README.md"), supervisorReadme, "Empty on purpose."); err != nil {
+		return err
+	}
+	// The list is seeded with its own explanation, unlike the index:
+	// nothing reads TODO.md into a prompt, so words at the top of it
+	// are words for the person and cost nothing.
+	if err := writeIfMissing(h.path(Todo), todoPreamble); err != nil {
 		return err
 	}
 	return writeIfMissing(h.path(NotesDir, "README.md"), notesReadme)
