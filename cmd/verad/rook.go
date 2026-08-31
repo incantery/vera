@@ -114,6 +114,12 @@ type terminal struct {
 	// producer that pushes into it (the rail) needs to hear, because
 	// a restarted engine remembers nothing it was told.
 	onBack func()
+
+	// onFocus runs when the person moves to another pane. The rail's
+	// current row is the room they are standing in, so a move is a
+	// reason to push — otherwise the highlight a click earned waits
+	// out the slow tick before it arrives.
+	onFocus func()
 }
 
 func newTerminal(m mux.Mux, device string) *terminal {
@@ -336,6 +342,9 @@ func (w *terminal) run(ctx context.Context, observe func(Observation)) {
 				w.mu.Unlock()
 				if had {
 					observe(Observation{Type: "terminal.unfocused", Device: w.device, Source: "rook", At: ev.At})
+					if w.onFocus != nil {
+						w.onFocus()
+					}
 				}
 				return
 			}
@@ -346,6 +355,9 @@ func (w *terminal) run(ctx context.Context, observe func(Observation)) {
 			w.mu.Unlock()
 			if changed {
 				observe(Observation{Type: "terminal.focus", Device: w.device, Source: "rook", At: ev.At, Terminal: &f})
+				if w.onFocus != nil {
+					w.onFocus()
+				}
 			}
 		}
 	})

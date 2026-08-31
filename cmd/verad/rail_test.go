@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -167,5 +168,54 @@ func TestAgentRowClaimsOnlyARoomThatIsStillThere(t *testing.T) {
 		if it.Workspace == "" {
 			t.Errorf("an empty pane table takes no claim away: %+v", it)
 		}
+	}
+}
+
+// stubMux is a mux that only does what the watcher needs: hand the
+// caller a stream of events and answer nothing else.
+type stubMux struct{ events []mux.Event }
+
+func (m *stubMux) Name() string                                   { return "stub" }
+func (m *stubMux) Focus(context.Context) (*mux.Pane, error)       { return nil, mux.ErrNoFocus }
+func (m *stubMux) Get(context.Context, mux.ID) (*mux.Pane, error) { return nil, mux.ErrNoPane }
+func (m *stubMux) List(context.Context) ([]mux.Pane, error)       { return nil, nil }
+func (m *stubMux) Spawn(context.Context, mux.Spawn) (*mux.Pane, error) {
+	return nil, mux.ErrUnavailable
+}
+func (m *stubMux) Kill(context.Context, mux.ID) error                { return nil }
+func (m *stubMux) Send(context.Context, mux.ID, string) error        { return nil }
+func (m *stubMux) Enter(context.Context, mux.ID) error               { return nil }
+func (m *stubMux) Capture(context.Context, mux.ID) ([]string, error) { return nil, nil }
+func (m *stubMux) GoTo(context.Context, mux.ID) error                { return nil }
+func (m *stubMux) Narrow(context.Context, mux.ID, int) error         { return nil }
+func (m *stubMux) Widen(context.Context, mux.ID) error               { return nil }
+func (m *stubMux) Poke()                                             {}
+func (m *stubMux) Watch(ctx context.Context, fn func(mux.Event)) error {
+	for _, ev := range m.events {
+		fn(ev)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// The current row is the room the person is standing in, so moving
+// between rooms is a reason to push. Without this the highlight a
+// click earned waits out the ten-second tick, and the panel looks
+// inert for exactly as long.
+func TestMovingBetweenRoomsPushesTheRail(t *testing.T) {
+	now := time.Now()
+	m := &stubMux{events: []mux.Event{
+		{Kind: mux.FocusChanged, Pane: &mux.Pane{ID: mux.ID{Session: "rook--vera-a1", Window: "1", Pane: "7"}, Command: "claude", Path: "/x/rook--vera-a1"}, At: now},
+	}}
+	w := newTerminal(m, "desk")
+	pokes := make(chan struct{}, 4)
+	w.onFocus = func() { pokes <- struct{}{} }
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go w.run(ctx, func(Observation) {})
+	select {
+	case <-pokes:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a move between rooms did not reach the rail")
 	}
 }

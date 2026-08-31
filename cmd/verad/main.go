@@ -484,8 +484,10 @@ func main() {
 			}
 			rl := newRail(side, f, f.Projects, focus, panes)
 			// An engine that comes back has an empty rail: push it
-			// again, changed or not.
+			// again, changed or not. A person moving between rooms
+			// moves the rail's current row, so that is a push too.
 			t.onBack = rl.Reset
+			t.onFocus = rl.Poke
 			prev := f.Observe
 			f.Observe = func(ev fleet.Event) {
 				if prev != nil {
