@@ -56,6 +56,11 @@ type TodoRequest struct {
 // what that was. Said and Question are never both set: either it was
 // done, or it is being asked about.
 type TodoAnswer struct {
+	// Verb is what the line turned out to mean — list, all, add,
+	// done, undo, drop, clear. The client renders a list differently
+	// from a change, and verad is the one that parsed the line, so it
+	// is the one that says which happened.
+	Verb     string       `json:"verb,omitempty"`
 	Said     string       `json:"said,omitempty"`
 	Items    []home.Item  `json:"items"`
 	Path     string       `json:"path,omitempty"`
@@ -93,7 +98,7 @@ func (l *lanTransport) todoList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, TodoAnswer{Items: nonNil(items), Path: l.todo.Path()})
+	writeJSON(w, TodoAnswer{Verb: "list", Items: nonNil(items), Path: l.todo.Path()})
 }
 
 func (l *lanTransport) todoDo(w http.ResponseWriter, r *http.Request) {
@@ -230,7 +235,7 @@ func doTodo(l *home.List, req TodoRequest, mind bool) (TodoAnswer, error) {
 	if err != nil {
 		return TodoAnswer{}, err
 	}
-	ans := TodoAnswer{Path: l.Path()}
+	ans := TodoAnswer{Verb: in.Verb, Path: l.Path()}
 
 	switch in.Verb {
 	case "list", "all":
@@ -377,39 +382,6 @@ func countSaid(items []home.Item) string {
 		return "all done"
 	}
 	return fmt.Sprintf("%d %s to do", open, plural(open, "thing"))
-}
-
-// TodoMarkdown is the list as a person reads it: what is left first,
-// because that is what a list is for, then what was crossed off, which
-// is there to be seen and then cleared. The numbers are the file's, so
-// a number read here is a number that can be typed back.
-func TodoMarkdown(items []home.Item, path string, all bool) string {
-	open, done := home.Remaining(items), home.Crossed(items)
-	var b strings.Builder
-	if len(items) == 0 {
-		return "Nothing on the list. `/todo <something>` puts it there.\n\n`" + path + "`"
-	}
-	for _, it := range open {
-		fmt.Fprintf(&b, "%d. %s\n", it.N, it.Text)
-	}
-	if len(open) == 0 {
-		b.WriteString("Nothing left to do.\n")
-	}
-	if len(done) > 0 {
-		shown := done
-		if !all && len(shown) > 3 {
-			shown = shown[len(shown)-3:]
-		}
-		b.WriteString("\n")
-		for _, it := range shown {
-			fmt.Fprintf(&b, "%d. ~~%s~~\n", it.N, it.Text)
-		}
-		if n := len(done) - len(shown); n > 0 {
-			fmt.Fprintf(&b, "\n%d more crossed off — `/todo all` shows them, `/todo clear` sweeps them.\n", n)
-		}
-	}
-	fmt.Fprintf(&b, "\n`%s`", path)
-	return b.String()
 }
 
 // --- her hands ------------------------------------------------------------

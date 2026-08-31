@@ -195,7 +195,7 @@ func renderReadme(o Options, c *collected, res Result) string {
 - ` + "`conversations/<id>.md`" + ` — the transcript with every tool round; ` + "`.jsonl`" + ` is the journal verbatim (system prompt per exchange, tokens, timings, trace ids); ` + "`.system.md`" + ` the last system prompt
 - ` + "`fleet/<task>/`" + ` — task.json, brief.md, status.log (the agent's own status verbs), report.md, claude.json (harness settings), run (the launch), env.keys, and ` + "`sessions/*.jsonl`" + `: the agent's Claude Code sessions verbatim, summarized in sessions.md
 - ` + "`delegate/`" + ` — Claude Code sessions of quick delegations
-- ` + "`home/`" + ` — Vera's home as it stands now: ` + "`MEMORY.md`" + ` (the index, verbatim as the prompt carried it), ` + "`memory/<slug>.md`" + ` one fact per file, ` + "`projects/<name>.md`" + ` what she knows about each repository. Her ` + "`notes/`" + ` are not included
+- ` + "`home/`" + ` — Vera's home as it stands now: ` + "`MEMORY.md`" + ` (the index, verbatim as the prompt carried it), ` + "`memory/<slug>.md`" + ` one fact per file, ` + "`projects/<name>.md`" + ` what she knows about each repository. Her ` + "`notes/`" + `, and the to-do list in ` + "`TODO.md`" + `, are not included
 - ` + "`verad/`" + ` — the runfile, known projects, and the log for this window (±10 min)
 - ` + "`claude/settings.json`" + ` — the person's global Claude Code settings
 - ` + "`config.keys`, `versions.txt`, `costs.md`" + `

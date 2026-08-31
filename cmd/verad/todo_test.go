@@ -183,14 +183,14 @@ func TestTheMarkdownPutsWhatIsLeftFirst(t *testing.T) {
 	say(t, l, "one")
 	say(t, l, "two")
 	ans := say(t, l, "done 1")
-	md := TodoMarkdown(ans.Items, l.Path(), false)
+	md := home.TodoMarkdown(ans.Items, l.Path(), false)
 	if i, j := strings.Index(md, "two"), strings.Index(md, "~~one~~"); i < 0 || j < 0 || i > j {
 		t.Errorf("what is left is not first:\n%s", md)
 	}
 	if !strings.Contains(md, l.Path()) {
 		t.Errorf("the markdown does not say where the file is:\n%s", md)
 	}
-	if empty := TodoMarkdown(nil, l.Path(), false); !strings.Contains(empty, "Nothing on the list") {
+	if empty := home.TodoMarkdown(nil, l.Path(), false); !strings.Contains(empty, "Nothing on the list") {
 		t.Errorf("empty: %s", empty)
 	}
 }

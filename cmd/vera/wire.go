@@ -16,6 +16,7 @@ import (
 
 	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/fleet"
+	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/price"
 )
 
@@ -353,6 +354,39 @@ func (c *chatClient) status(ctx context.Context) (*Status, error) {
 func (c *chatClient) tasks(ctx context.Context) ([]fleet.View, error) {
 	var v []fleet.View
 	return v, c.getJSON(ctx, "/fleet", &v)
+}
+
+// TodoAnswer mirrors verad's, decoding only what a screen renders.
+// The items are home.Item because the list is one type wherever it is
+// read — a to-do item has no client half and no server half.
+type TodoAnswer struct {
+	Verb     string       `json:"verb,omitempty"`
+	Said     string       `json:"said,omitempty"`
+	Items    []home.Item  `json:"items"`
+	Path     string       `json:"path,omitempty"`
+	Question string       `json:"question,omitempty"`
+	Choices  []TodoChoice `json:"choices,omitempty"`
+	Prose    string       `json:"prose,omitempty"`
+}
+
+// TodoChoice is one candidate and the exact line that picks it.
+type TodoChoice struct {
+	Label  string `json:"label"`
+	Detail string `json:"detail,omitempty"`
+	Line   string `json:"line"`
+}
+
+// todo hands one typed line to verad and takes back the list. The
+// line is parsed there rather than here so the terminal, the CLI and
+// the phone cannot disagree about what `done` means.
+func (c *chatClient) todo(ctx context.Context, line string) (*TodoAnswer, error) {
+	resp, err := c.do(ctx, "POST", "/todo", map[string]string{"line": line, "from": c.device})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var a TodoAnswer
+	return &a, json.NewDecoder(resp.Body).Decode(&a)
 }
 
 func (c *chatClient) post(ctx context.Context, path string, body any) error {

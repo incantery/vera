@@ -561,6 +561,7 @@ var chatCommands = []tui.Command{
 	{Name: "costs", Help: "/costs [7d] [by model|conversation|day] — what the journal says every exchange cost"},
 	{Name: "rail", Help: "show or hide the fleet rail (ctrl+t, F2) — it starts hidden inside rook"},
 	{Name: "tasks", Help: "every task and what is believed about it"},
+	{Name: "todo", Help: "/todo — your own list; /todo <something> adds it, /todo done <n|words> crosses it off"},
 	{Name: "start", Help: "/start [@repo] <brief> — put a task on the rail"},
 	{Name: "scout", Help: "/scout [@repo] <brief> — a task that reports instead of landing"},
 	{Name: "resume", Help: "/resume <id> — pick a task back up"},
@@ -683,6 +684,11 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 			}
 			return tui.Show(rep.Markdown())
 		})
+
+	case "todo", "td":
+		// Yours, not the fleet's. Everything about what the line means
+		// is decided in verad; this only draws the answer.
+		return s.todoCommand(rest)
 
 	case "tasks", "t":
 		w := s.w

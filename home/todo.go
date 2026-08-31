@@ -431,3 +431,38 @@ func filterDone(items []Item, done bool) []Item {
 	}
 	return out
 }
+
+// --- as a person reads it -------------------------------------------------
+
+// TodoMarkdown is the list as a person reads it: what is left first,
+// because that is what a list is for, then what was crossed off, which
+// is there to be seen and then cleared. The numbers are the file's, so
+// a number read here is a number that can be typed back.
+func TodoMarkdown(items []Item, path string, all bool) string {
+	open, done := Remaining(items), Crossed(items)
+	var b strings.Builder
+	if len(items) == 0 {
+		return "Nothing on the list. `/todo <something>` puts it there.\n\n`" + path + "`"
+	}
+	for _, it := range open {
+		fmt.Fprintf(&b, "%d. %s\n", it.N, it.Text)
+	}
+	if len(open) == 0 {
+		b.WriteString("Nothing left to do.\n")
+	}
+	if len(done) > 0 {
+		shown := done
+		if !all && len(shown) > 3 {
+			shown = shown[len(shown)-3:]
+		}
+		b.WriteString("\n")
+		for _, it := range shown {
+			fmt.Fprintf(&b, "%d. ~~%s~~\n", it.N, it.Text)
+		}
+		if n := len(done) - len(shown); n > 0 {
+			fmt.Fprintf(&b, "\n%d more crossed off — `/todo all` shows them, `/todo clear` sweeps them.\n", n)
+		}
+	}
+	fmt.Fprintf(&b, "\n`%s`", path)
+	return b.String()
+}
