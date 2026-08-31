@@ -119,19 +119,19 @@ func TestAHandWrittenLineCounts(t *testing.T) {
 
 func TestBookkeepingRidesInACommentAndIsNotTheItem(t *testing.T) {
 	l := fresh(t).Todo()
-	if _, _, err := l.Add("Renew the passport", "seths phone"); err != nil {
+	if _, _, err := l.Add("Renew the passport", "seths phone (cli)"); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(l.Path())
 	line := string(b)
-	if !strings.Contains(line, "<!-- added=") || !strings.Contains(line, "from=seths-phone") {
+	if !strings.Contains(line, "<!-- added=") || !strings.Contains(line, "from=seths-phone-cli") {
 		t.Errorf("no bookkeeping on the line:\n%s", line)
 	}
 	items, _ := l.All()
 	if items[0].Text != "Renew the passport" {
 		t.Errorf("the comment leaked into the item: %q", items[0].Text)
 	}
-	if items[0].From != "seths-phone" || items[0].Added.IsZero() {
+	if items[0].From != "seths-phone-cli" || items[0].Added.IsZero() {
 		t.Errorf("bookkeeping did not come back: %+v", items[0])
 	}
 	// An item that IS a comment is not bookkeeping.

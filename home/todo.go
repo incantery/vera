@@ -186,6 +186,27 @@ func splitNote(text string) (rest string, added, did time.Time, from string) {
 
 const dayFormat = "2006-01-02"
 
+// tag makes a device name safe to sit in `from=`. The note is read
+// back with Fields and Cut, so a space would lose the rest of it —
+// and "Seths-MacBook-Pro (cli)" should read as a name, not as debris.
+func tag(s string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.TrimSpace(s) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '.' || r == '_':
+			b.WriteRune(r)
+			dash = false
+		default:
+			if !dash && b.Len() > 0 {
+				b.WriteByte('-')
+				dash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
 // render writes one item back as a line, keeping whatever indent and
 // bullet the file already used for it.
 func renderItem(it Item, was string) string {
@@ -216,8 +237,8 @@ func renderNote(it Item) string {
 	if it.Done && !it.Did.IsZero() {
 		parts = append(parts, "did="+it.Did.Format(dayFormat))
 	}
-	if it.From != "" {
-		parts = append(parts, "from="+strings.Join(strings.Fields(it.From), "-"))
+	if from := tag(it.From); from != "" {
+		parts = append(parts, "from="+from)
 	}
 	return strings.Join(parts, " ")
 }

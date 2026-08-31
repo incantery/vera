@@ -154,7 +154,10 @@ func nonNil(items []home.Item) []home.Item {
 // speaking English.
 var todoVerbs = map[string]string{
 	"done": "done", "did": "done", "x": "done", "finish": "done", "finished": "done", "complete": "done",
-	"undo": "undo", "open": "undo", "reopen": "undo", "undone": "undo",
+	// Not "open": a person who types it means "show me what is open"
+	// far more often than "put that one back", and a verb that guesses
+	// wrong here un-crosses something they had finished.
+	"undo": "undo", "reopen": "undo", "undone": "undo",
 	"drop": "drop", "rm": "drop", "remove": "drop", "delete": "drop", "forget": "drop",
 	"clear": "clear", "tidy": "clear",
 	"all": "all", "list": "list", "ls": "list",
