@@ -160,11 +160,21 @@ it rather than in the engine (`docs/surfaces.md`, "Not hooks"). So a
 publisher is a loop, not a patch:
 
 ```sh
-rook watch | while read -r snapshot; do
-  # …decide what in this snapshot is worth remembering, then:
-  curl -s -X POST http://127.0.0.1:4780/events -d "$line"
+# One line in the stream every time rook moves to another workspace.
+rook watch | jq -rc --unbuffered 'first(.workspaces[] | select(.current) | .name)' |
+while read -r ws; do
+  [ "$ws" = "$prev" ] && continue
+  prev=$ws
+  curl -s -o /dev/null -X POST http://127.0.0.1:4780/events \
+    -d "{\"source\":\"rook\",\"kind\":\"rook.workspace\",\"text\":\"moved to the workspace $ws\"}"
 done
 ```
+
+(That exact one is not run by default, and on purpose: a workspace the
+fleet opened for a task is already three events in the stream, and the
+loop above cannot tell those from the ones a person opened. Anything
+published from rook is worth checking against what the fleet already
+says.)
 
 The one thing worth agreeing on across the two repositories is the
 `source` name — `rook` — and the `rook.` prefix on kinds, so that
