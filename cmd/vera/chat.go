@@ -557,7 +557,8 @@ func sideSubtitle(v fleet.View) string {
 // mind's fleet tool makes, for when you know exactly what you want
 // and do not need to say it in prose. /help is mote's.
 var chatCommands = []tui.Command{
-	{Name: "model", Help: "/model — pick from the models verad can reach; /model <name> [effort] moves this conversation straight there"},
+	{Name: "model", Help: "/model — pick from the models verad can reach; /model <name> moves this conversation straight there"},
+	{Name: "effort", Help: "/effort — how hard it thinks: low, medium, high; /effort <level> moves this conversation straight there"},
 	{Name: "costs", Help: "/costs [7d] [by model|conversation|day] — what the journal says every exchange cost"},
 	{Name: "rail", Help: "show or hide the fleet rail (ctrl+t, F2) — it starts hidden inside rook"},
 	{Name: "tasks", Help: "every task and what is believed about it"},
@@ -662,6 +663,43 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 			res, err := c.chooseModel(ctx, conv, want, effort)
 			if err != nil {
 				return tui.Fail("model: %s", err)
+			}
+			w.pollModel(ctx)
+			return tea.Batch(tui.SetModel(res.Line()),
+				tui.Note("%s — %s", res.Line(), res.Says()), tui.Refresh())
+		})
+
+	case "effort":
+		// The other half of the same question, and a separate toggle
+		// because it is a separate question: which model answers is a
+		// list that changes with the keys on the machine, how hard it
+		// thinks is the same three words on whichever model you are on.
+		// verad merges the halves, so this sends no model at all.
+		c, conv := s.c, s.conversation()
+		w := s.w
+		if rest == "" {
+			return off(func(ctx context.Context) tea.Cmd {
+				ans, err := c.models(ctx, conv)
+				if err != nil {
+					return tui.Fail("effort: %s", err)
+				}
+				dial := effortsFor(ans)
+				if len(dial) == 0 {
+					// Not an error and not an empty card: a model with
+					// no dial is a fact about that model, and saying it
+					// is more use than three options verad would refuse.
+					using := ans.using()
+					row, _ := rowFor(ans.Models, using.Model)
+					return tui.Note("%s has no reasoning dial — it takes effort %s. /model moves to one that does.",
+						using.Model, strings.Join(row.Efforts, ", "))
+				}
+				return tui.Choose(s.effortPick(ans, dial))
+			})
+		}
+		return off(func(ctx context.Context) tea.Cmd {
+			res, err := c.chooseEffort(ctx, conv, rest)
+			if err != nil {
+				return tui.Fail("effort: %s", err)
 			}
 			w.pollModel(ctx)
 			return tea.Batch(tui.SetModel(res.Line()),

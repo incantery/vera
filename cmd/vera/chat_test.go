@@ -36,8 +36,9 @@ type fakeVerad struct {
 	posts  []string
 	said   []Message // every /say, whole, for a test that cares what rode on one
 	model  Resolution
-	chosen *InForce // what this conversation chose, as /models reports it
-	dflt   *InForce // what PUT /model last saved
+	saved  Resolution // what PUT /model has been told, merged
+	chosen *InForce   // what this conversation chose, as /models reports it
+	dflt   *InForce   // what PUT /model last saved
 	// told is every line POST /todo received, and todoReply is what to
 	// answer with. Nil answers an empty list.
 	told      []string
@@ -49,6 +50,8 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 	f := &fakeVerad{
 		id: Identity{Peer: "peer-under-test", Secret: "s3cret", Name: "test-mac"},
 		model: Resolution{Model: "gpt-5.6-luna", Effort: "none", Provider: "openai",
+			ModelFrom: "the built-in default", EffortFrom: "the built-in default"},
+		saved: Resolution{Model: "gpt-5.6-luna", Effort: "none", Provider: "openai",
 			ModelFrom: "the built-in default", EffortFrom: "the built-in default"},
 	}
 	mux := http.NewServeMux()
@@ -111,10 +114,15 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 			Models: []ModelRow{
 				{Name: "gpt-5.6-luna", Provider: "openai", Efforts: []string{"none"},
 					Note: "effort none only (chat completions)", Priced: true},
+				{Name: "gpt-5.6-terra", Provider: "openai", Efforts: []string{"none"},
+					Note: "effort none only (chat completions)", Priced: true},
 				{Name: "gpt-5", Provider: "openai", Efforts: []string{"none", "low", "medium", "high"}, Priced: true},
 				{Name: "claude-opus-5", Provider: "anthropic", Efforts: []string{"low", "medium", "high", "max"}, Priced: true},
 				{Name: "my-local-7b", Provider: "openai", Efforts: []string{"none"}},
 			},
+		}
+		if f.dflt != nil {
+			ans.Default = *f.dflt
 		}
 		if f.chosen != nil {
 			ans.Conversation = f.chosen
@@ -130,9 +138,17 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.posts = append(f.posts, r.URL.Path)
-		f.dflt = &InForce{Model: body.Model, Effort: body.Effort, From: "the saved default"}
-		_ = json.NewEncoder(w).Encode(Resolution{Model: body.Model, Effort: body.Effort,
-			Provider: "anthropic", ModelFrom: "the saved default", EffortFrom: "the saved default"})
+		// The two halves merge, the way verad's do: a half left empty
+		// is one nobody said anything about, not one being cleared.
+		if body.Model != "" {
+			f.saved.Model, f.saved.ModelFrom = body.Model, "the saved default"
+		}
+		if body.Effort != "" {
+			f.saved.Effort, f.saved.EffortFrom = body.Effort, "the saved default"
+		}
+		f.saved.Provider = "anthropic"
+		f.dflt = &InForce{Model: f.saved.Model, Effort: f.saved.Effort, From: "the saved default"}
+		_ = json.NewEncoder(w).Encode(f.saved)
 	})
 	mux.HandleFunc("POST /conversations/{id}/model", func(w http.ResponseWriter, r *http.Request) {
 		if !authed(w, r) {
@@ -147,9 +163,14 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 			http.Error(w, "cannot reach no-such-model", http.StatusBadRequest)
 			return
 		}
-		f.model = Resolution{Model: body.Model, Effort: body.Effort, Provider: "anthropic",
-			ModelFrom: "this conversation", EffortFrom: "this conversation"}
-		f.chosen = &InForce{Model: body.Model, Effort: body.Effort}
+		if body.Model != "" {
+			f.model.Model, f.model.ModelFrom = body.Model, "this conversation"
+		}
+		if body.Effort != "" {
+			f.model.Effort, f.model.EffortFrom = body.Effort, "this conversation"
+		}
+		f.model.Provider = "anthropic"
+		f.chosen = &InForce{Model: f.model.Model, Effort: f.model.Effort}
 		_ = json.NewEncoder(w).Encode(f.model)
 	})
 	// The list. The daemon parses the line; a fake only has to answer
@@ -1241,7 +1262,7 @@ func pickSession(t *testing.T) (*fakeVerad, *chatSession, *tui.Model) {
 
 // /model with no argument is the card: every model verad can reach,
 // what each is reached by, what it will take, and a tick on the one
-// this conversation is on.
+// this conversation is on. The effort is not on it — that is /effort.
 func TestModelWithNoArgumentOpensTheCard(t *testing.T) {
 	_, s, m := pickSession(t)
 	deliver(m, s.handle("model", ""))
@@ -1250,9 +1271,10 @@ func TestModelWithNoArgumentOpensTheCard(t *testing.T) {
 	for _, want := range []string{
 		"Select model",
 		"gpt-5.6-luna", "effort none only", // the note the table exists for
+		"gpt-5.6-terra", // the other half of the 5.6 family
 		"claude-opus-5", "via anthropic",
 		"my-local-7b", "unpriced", // no price is said out loud
-		"effort: none",                         // the dial, on what is in force
+		"/effort sets how hard it thinks",      // the other toggle, named
 		"Enter to make it Vera's default",      // the two scopes,
 		"s this conversation", "Esc to cancel", // and the way out
 	} {
@@ -1263,6 +1285,12 @@ func TestModelWithNoArgumentOpensTheCard(t *testing.T) {
 	// The tick is on the model in use, not on the first row.
 	if !strings.Contains(v, "gpt-5.6-luna ✓") {
 		t.Errorf("no tick on the model in use:\n%s", v)
+	}
+	// The effort dial used to live here. It does not any more: a model
+	// card that restates the effort is a card that changes it by
+	// accident every time you change model.
+	if strings.Contains(v, "effort:") {
+		t.Errorf("the model card still carries an effort dial:\n%s", v)
 	}
 }
 
@@ -1275,24 +1303,23 @@ func TestThePickerPostsToTheRightEndpointForEachAction(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := s.modelPick(ans)
-	dial := effortUnion(ans.Models)
-	opus, high := indexRow(t, ans.Models, "claude-opus-5"), indexDial(t, dial, "high")
+	opus := indexRow(t, ans.Models, "claude-opus-5")
 
 	// `s` is this conversation and nothing else.
-	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Dial: high, Action: "s"}))
+	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Action: "s"}))
 	if got := f.posted(); len(got) == 0 || got[len(got)-1] != "/conversations/chat-1/model" {
 		t.Fatalf("s should move this conversation: %v", got)
 	}
-	if v := screen(m); !strings.Contains(v, "for this conversation") || !strings.Contains(v, "claude-opus-5 · high") {
+	if v := screen(m); !strings.Contains(v, "for this conversation") || !strings.Contains(v, "claude-opus-5") {
 		t.Errorf("the note should say what changed and for what scope:\n%s", v)
 	}
 	// And the status line follows immediately, without waiting for a poll.
-	if v := screen(m); !strings.Contains(v, "vera · claude-opus-5 · high") {
+	if v := screen(m); !strings.Contains(v, "vera · claude-opus-5") {
 		t.Errorf("the status line did not follow:\n%s", v)
 	}
 
 	// Enter is Vera herself, which is a different endpoint.
-	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Dial: high, Action: "enter"}))
+	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Action: "enter"}))
 	if got := f.posted(); len(got) == 0 || got[len(got)-1] != "/model" {
 		t.Fatalf("Enter should move the daemon's own: %v", got)
 	}
@@ -1302,36 +1329,140 @@ func TestThePickerPostsToTheRightEndpointForEachAction(t *testing.T) {
 
 	// Esc changes nothing and says nothing.
 	before := len(f.posted())
-	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Dial: high, Cancelled: true}))
+	deliver(m, p.OnPick(tui.PickChoice{Item: opus, Cancelled: true}))
 	if len(f.posted()) != before {
 		t.Error("cancelling sent something")
 	}
 }
 
-// The dial is the union of every row's efforts, because mote builds one
-// dial per card. So a combination no model takes is refused here, by
-// name, with what that model does take.
-func TestAnEffortAModelWillNotTakeIsRefusedByName(t *testing.T) {
+// Choosing a model says nothing about the effort: the request carries
+// an empty one, which is verad's word for "leave it where it is".
+func TestTheModelCardSendsNoEffort(t *testing.T) {
 	f, s, m := pickSession(t)
 	ans, err := f.client().models(context.Background(), "chat-1")
 	if err != nil {
 		t.Fatal(err)
 	}
+	res, err := f.client().chooseModel(context.Background(), "chat-1", "claude-opus-5", "high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Effort != "high" {
+		t.Fatalf("setting both should set both: %+v", res)
+	}
+	// Now the card, which names a model and nothing else.
 	p := s.modelPick(ans)
-	dial := effortUnion(ans.Models)
-	if strings.Join(dial, ",") != "none,low,medium,high,max" {
-		t.Fatalf("the dial should be the union of what the rows take: %v", dial)
+	deliver(m, p.OnPick(tui.PickChoice{Item: indexRow(t, ans.Models, "gpt-5"), Action: "s"}))
+	again, err := f.client().model(context.Background(), "chat-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Model != "gpt-5" || again.Effort != "high" {
+		t.Errorf("the model card moved the effort as well: %+v", again)
+	}
+}
+
+// /effort is the toggle: three positions, whatever model is answering,
+// with a tick on the one in force.
+func TestEffortWithNoArgumentOpensTheToggle(t *testing.T) {
+	_, s, m := pickSession(t)
+	// The built-in default has no dial at all, so move onto one that
+	// does first — the card is about the model in force.
+	deliver(m, s.handle("model", "claude-opus-5 medium"))
+	deliver(m, s.handle("effort", ""))
+
+	v := screen(m)
+	for _, want := range []string{
+		"Reasoning effort", "claude-opus-5",
+		"low", "medium", "high",
+		"answers soonest", "thinks longest before answering",
+		"Enter to make it Vera's default", "s this conversation", "Esc to cancel",
+	} {
+		if !strings.Contains(v, want) {
+			t.Errorf("the toggle is missing %q:\n%s", want, v)
+		}
+	}
+	if !strings.Contains(v, "medium ✓") {
+		t.Errorf("no tick on the effort in force:\n%s", v)
+	}
+	// Three positions, like Claude Code. opus takes max as well, and
+	// the card says how to reach it rather than growing a fourth.
+	if !strings.Contains(v, "/effort max") {
+		t.Errorf("the way to an effort off the toggle is not said:\n%s", v)
+	}
+	if strings.Count(v, "max") != 1 {
+		t.Errorf("the toggle grew a fourth position:\n%s", v)
+	}
+}
+
+// A model with no dial gets the fact, not an empty card and not three
+// options verad would refuse one at a time.
+func TestEffortSaysSoWhenTheModelHasNoDial(t *testing.T) {
+	_, s, m := pickSession(t)
+	deliver(m, s.handle("effort", ""))
+
+	v := screen(m)
+	if strings.Contains(v, "Reasoning effort") {
+		t.Errorf("a card was drawn for a model with no dial:\n%s", v)
+	}
+	if !strings.Contains(v, "gpt-5.6-luna has no reasoning dial") || !strings.Contains(v, "it takes effort none") {
+		t.Errorf("it should say what that model does take:\n%s", v)
+	}
+}
+
+// The toggle is the two scopes the model card has, and it moves the
+// effort without touching the model.
+func TestTheEffortToggleMovesOnlyTheEffort(t *testing.T) {
+	f, s, m := pickSession(t)
+	deliver(m, s.handle("model", "claude-opus-5 low"))
+
+	ans, err := f.client().models(context.Background(), "chat-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dial := effortsFor(ans)
+	if strings.Join(dial, ",") != "low,medium,high" {
+		t.Fatalf("the toggle should be the three: %v", dial)
+	}
+	p := s.effortPick(ans, dial)
+
+	deliver(m, p.OnPick(tui.PickChoice{Item: indexDial(t, dial, "high"), Action: "s"}))
+	if got := f.posted(); len(got) == 0 || got[len(got)-1] != "/conversations/chat-1/model" {
+		t.Fatalf("s should move this conversation: %v", got)
+	}
+	now, err := f.client().model(context.Background(), "chat-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if now.Model != "claude-opus-5" || now.Effort != "high" {
+		t.Errorf("the toggle should move the effort and nothing else: %+v", now)
+	}
+	if v := screen(m); !strings.Contains(v, "claude-opus-5 · high") {
+		t.Errorf("the status line did not follow:\n%s", v)
 	}
 
-	luna, max := indexRow(t, ans.Models, "gpt-5.6-luna"), indexDial(t, dial, "max")
-	before := len(f.posted())
-	deliver(m, p.OnPick(tui.PickChoice{Item: luna, Dial: max, Action: "s"}))
-	if len(f.posted()) != before {
-		t.Error("a combination verad would refuse was sent anyway")
+	// Enter is the daemon's own, and a different endpoint.
+	deliver(m, p.OnPick(tui.PickChoice{Item: indexDial(t, dial, "low"), Action: "enter"}))
+	if got := f.posted(); len(got) == 0 || got[len(got)-1] != "/model" {
+		t.Fatalf("Enter should move the daemon's own: %v", got)
 	}
-	v := screen(m)
-	if !strings.Contains(v, "gpt-5.6-luna does not take effort max") || !strings.Contains(v, "it takes none") {
-		t.Errorf("the refusal should name what that model does take:\n%s", v)
+	if v := screen(m); !strings.Contains(v, "as Vera's default") {
+		t.Errorf("the note should say the scope was the daemon:\n%s", v)
+	}
+}
+
+// /effort <level> is the typed form, and it moves this conversation the
+// way /model <name> does.
+func TestEffortTypedMovesThisConversation(t *testing.T) {
+	f, s, m := pickSession(t)
+	deliver(m, s.handle("model", "claude-opus-5"))
+	deliver(m, s.handle("effort", "high"))
+
+	if got := f.posted(); len(got) == 0 || got[len(got)-1] != "/conversations/chat-1/model" {
+		t.Fatalf("verad was not asked to change it: %v", got)
+	}
+	if v := screen(m); !strings.Contains(v, "claude-opus-5 · high") || !strings.Contains(v, "this conversation") {
+		t.Errorf("/effort <level> should move the conversation:\n%s", v)
 	}
 }
 

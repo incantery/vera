@@ -21,6 +21,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -66,6 +67,8 @@ type ModelsAnswer struct {
 // fast one got it wrong last.
 var modelTable = []ModelRow{
 	{Name: "gpt-5.6-luna", Provider: "openai", Efforts: []string{"none"},
+		Note: "effort none only (chat completions)"},
+	{Name: "gpt-5.6-terra", Provider: "openai", Efforts: []string{"none"},
 		Note: "effort none only (chat completions)"},
 	{Name: "gpt-5.6", Provider: "openai", Efforts: []string{"none"}},
 	{Name: "gpt-5", Provider: "openai", Efforts: []string{"none", "low", "medium", "high"}},
@@ -208,4 +211,46 @@ func (m *Mind) Models(conversation string) ModelsAnswer {
 		ans.Models = []ModelRow{}
 	}
 	return ans
+}
+
+// rowFor is what the table says about one model, whether or not this
+// machine has a wire for it. Reach is deliberately not consulted: "does
+// gpt-5.6-terra take a reasoning effort" is a fact about the model, not
+// about the keys on this laptop.
+func rowFor(name string) (ModelRow, bool) {
+	rows := append([]ModelRow(nil), modelTable...)
+	extra, _ := parseModels(os.Getenv(EnvModels))
+	for _, row := range extra {
+		if i := indexModel(rows, row.Name); i >= 0 {
+			rows[i] = row
+			continue
+		}
+		rows = append(rows, row)
+	}
+	if i := indexModel(rows, name); i >= 0 {
+		return rows[i], true
+	}
+	return ModelRow{}, false
+}
+
+// takesEffort says whether a model will accept a dial setting, and
+// names what it does take when it will not. Two things are not
+// refusals: an empty effort, which is "leave it alone", and a model the
+// table has never heard of, about which nothing is known and so nothing
+// may be claimed.
+func takesEffort(model, effort string) error {
+	if effort == "" {
+		return nil
+	}
+	row, ok := rowFor(model)
+	if !ok {
+		return nil
+	}
+	for _, e := range row.Efforts {
+		if strings.EqualFold(e, effort) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s does not take effort %s — it takes %s",
+		model, effort, strings.Join(row.Efforts, ", "))
 }

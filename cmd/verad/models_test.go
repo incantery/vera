@@ -76,8 +76,17 @@ func TestTheTableSaysWhatEachModelTakes(t *testing.T) {
 	for _, r := range rows {
 		by[r.Name] = r
 	}
-	if got := by["gpt-5.6-luna"]; len(got.Efforts) != 1 || got.Efforts[0] != "none" || got.Note == "" {
-		t.Errorf("gpt-5.6-luna: %+v — it takes effort none only, and should say why", got)
+	// Both halves of the 5.6 family are there to be tried against each
+	// other, and both refuse a dial.
+	for _, name := range []string{"gpt-5.6-luna", "gpt-5.6-terra"} {
+		got, ok := by[name]
+		if !ok {
+			t.Errorf("%s is not on the table", name)
+			continue
+		}
+		if len(got.Efforts) != 1 || got.Efforts[0] != "none" || got.Note == "" {
+			t.Errorf("%s: %+v — it takes effort none only, and should say why", name, got)
+		}
 	}
 	if got := by["gpt-5"]; strings.Join(got.Efforts, ",") != "none,low,medium,high" {
 		t.Errorf("gpt-5 efforts: %v", got.Efforts)
@@ -252,5 +261,35 @@ func TestASavedDefaultIsCheckedBeforeItIsKept(t *testing.T) {
 	}
 	if _, ok := m.Default.Get(); ok {
 		t.Fatal("it was written down anyway")
+	}
+}
+
+// takesEffort is the one place the two toggles are considered together,
+// and it answers about the model rather than about this laptop's keys.
+func TestTakesEffortAnswersFromTheTableNotTheKeys(t *testing.T) {
+	noKeys(t)
+
+	if err := takesEffort("claude-opus-5", "max"); err != nil {
+		t.Errorf("opus takes max: %v", err)
+	}
+	err := takesEffort("gpt-5.6-terra", "high")
+	if err == nil {
+		t.Fatal("gpt-5.6-terra was said to take a reasoning effort")
+	}
+	if !strings.Contains(err.Error(), "it takes none") {
+		t.Errorf("the refusal should name what it does take: %v", err)
+	}
+	// An empty effort is "leave it alone", not a refusal, and a model
+	// nobody has written down is one nothing may be claimed about.
+	if err := takesEffort("gpt-5.6-terra", ""); err != nil {
+		t.Errorf("an empty effort is not a claim: %v", err)
+	}
+	if err := takesEffort("somebody-elses-model", "high"); err != nil {
+		t.Errorf("a model off the table: %v", err)
+	}
+	// $VERA_MODELS corrects the table here as well as in the picker.
+	t.Setenv(EnvModels, "gpt-5.6-terra=openai:none|high")
+	if err := takesEffort("gpt-5.6-terra", "high"); err != nil {
+		t.Errorf("the environment did not reach the check: %v", err)
 	}
 }

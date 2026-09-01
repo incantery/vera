@@ -311,9 +311,13 @@ func (l *lanTransport) listModels(w http.ResponseWriter, r *http.Request) {
 }
 
 // setDefaultModel moves the daemon's own model and keeps it — Enter in
-// the picker. It outranks the profile and not --model, so the answer
+// either picker. It outranks the profile and not --model, so the answer
 // is what is actually in force rather than what was asked for: a
 // daemon started with --model says so by answering with the flag's.
+//
+// The two fields are two toggles: a field left empty is one nobody said
+// anything about, so the effort card sends a model of "" and moves
+// nothing else. Both empty forgets the saved choice.
 func (l *lanTransport) setDefaultModel(w http.ResponseWriter, r *http.Request) {
 	if !l.authed(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -361,8 +365,10 @@ func (l *lanTransport) conversationModel(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, res)
 }
 
-// setConversationModel is `/model opus high`. An empty model and an
-// empty effort puts the conversation back on the daemon's own.
+// setConversationModel is `/model opus` and `/effort high` — the same
+// route, because they are the same choice seen from two ends. Each
+// field named replaces its own and leaves the other alone; both empty
+// puts the conversation back on the daemon's own.
 func (l *lanTransport) setConversationModel(w http.ResponseWriter, r *http.Request) {
 	if !l.authed(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)

@@ -211,7 +211,7 @@ you say next, `/dump [note]` for a folder of everything, `/debug` for
 what Vera currently believes about where you are — devices, focus,
 terminal, integrations — from the same facts the model's preface is built from, and `/quit`. Two more are
 about the model itself: `/model` — a card of everything verad can
-reach, see below — and `/costs`. `/help` is
+reach, see below — `/effort`, the reasoning toggle, and `/costs`. `/help` is
 mote's: it lists these and the keys. `esc` stops a reply in flight,
 `ctrl+c` leaves, `ctrl+t` or `F2` (or `/rail`) hides the rail,
 `tab`/`ctrl+o` walk and open tool cards. It exists so iterating on the
@@ -236,7 +236,7 @@ things can say what it should be, and the most specific wins:
 
 | | |
 | --- | --- |
-| this conversation | `/model claude-opus-5 high`, or `s` in the picker — remembered, and it sticks |
+| this conversation | `/model claude-opus-5`, `/effort high`, or `s` in either picker — remembered, and it sticks |
 | this message | `vera say -m claude-opus-5 -e high` — one exchange |
 | `--model` / `--effort` | what this daemon was started with |
 | the saved default | Enter in the picker — `~/.local/state/vera/model.json` |
@@ -262,6 +262,16 @@ PUT  /model                     {"model":"…","effort":"…"}   the daemon's ow
 GET  /conversations/{id}/model                        what is in force, and who said so
 POST /conversations/{id}/model  {"model":"…","effort":"…"}   set it; both empty clears it
 ```
+
+The two fields on the two setting routes are **two toggles**, not one
+setting in two halves. A field left empty is one nobody said anything
+about, so `{"effort":"high"}` turns the dial and leaves the model where
+it is, and `{"model":"gpt-5"}` moves the model and leaves the dial.
+Both empty is the one exception and means "forget this choice". An
+effort the named model will not take is refused by name, with what it
+does take; an effort merely *carried* onto a model with no dial is
+dropped instead, because moving onto `gpt-5.6-terra` is not a mistake
+to be refused.
 
 The two per-conversation routes and `PUT /model` answer the same shape:
 
@@ -289,6 +299,8 @@ that hands you an error three keystrokes later.
  "conversation":{"model":"gpt-5","effort":"medium"},
  "models":[{"name":"gpt-5.6-luna","provider":"openai","efforts":["none"],
             "note":"effort none only (chat completions)","priced":true},
+           {"name":"gpt-5.6-terra","provider":"openai","efforts":["none"],
+            "note":"effort none only (chat completions)","priced":true},
            {"name":"claude-opus-5","provider":"anthropic",
             "efforts":["low","medium","high","max"],"priced":true}]}
 ```
@@ -309,13 +321,25 @@ dropped; it does not take the good ones with it, the same courtesy
 `/model` in the chat draws that list as a card (mote's `tui.Pick`):
 one row per model, `via <provider> · <note>`, `unpriced` said out loud
 when nobody has a price, and a tick on the one this conversation is
-using. `←/→` sets the effort; the dial is the **union** of every row's
-efforts, because a `Pick` builds one dial and the selection moves under
-it, so a combination a model will not take is refused by name with what
-it does take. Enter makes it Vera's own default, `s` moves this
-conversation only, Esc leaves nothing behind. `/model <name> [effort]`
-is still the typed form, and still the fastest way when you know the
-answer.
+using. Enter makes it Vera's own default, `s` moves this conversation
+only, Esc leaves nothing behind. `/model <name>` is still the typed
+form, and still the fastest way when you know the answer.
+
+`/effort` is a second card, and deliberately not a dial on the first.
+They are two questions: which model answers is a list that comes and
+goes with the keys on the machine, and how hard it thinks is the same
+three words — **low, medium, high**, as in Claude Code — on whichever
+model you are already on. A dial inside the model card restated the
+effort on every model change and only caught an impossible combination
+on the way out. Anthropic's `max` and the OpenAI reasoning models'
+`minimal` are still reachable by typing `/effort max`; a toggle with
+seven positions is a menu. A model whose row is `["none"]` has no dial
+at all, and `/effort` says that rather than drawing three options verad
+would refuse one at a time:
+
+```
+gpt-5.6-luna has no reasoning dial — it takes effort none. /model moves to one that does.
+```
 
 Which wire a model reaches is mote's decision, from the name and the
 keys on this machine, and it is made per exchange through one cached
