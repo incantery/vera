@@ -55,6 +55,14 @@ the phone by scanning the QR at `http://localhost:4780/`. First ride:
   other. The typed commands are parsed by hand and need no model; the
   model is what lets you say it in prose instead. Distinct from
   `/tasks`, which is the agents working in repositories.
+- **A week you can read.** Everything significant that happens on this
+  machine — the tasks that ran and what they said in their own words,
+  what was committed in rook and in vera, what you asked her, the
+  nights the Mac was asleep — lands in one append-only stream. `vera
+  events` prints it grouped by repository, `/events` shows it in the
+  chat, and Vera reads it herself to answer "what have we been doing".
+  It reads files and asks nobody, so a fresh agent in a checkout can
+  catch up on a week with one command. See `docs/events.md`.
 - **Attention you can jump to.** The home screen is the places on the
   Mac, ranked by frecency, the one in front of you marked. Tap to go
   there — the Mac follows you, and the phone follows the Mac.
@@ -96,6 +104,7 @@ cmd/vera/     Vera Core — the loop, attention, capabilities, rook adapter
 macos/        Vera.app — senses (app focus, STT) and hands (AppDriver)
 ios/          the phone app (SwiftUI)
 cmd/ladder/   a drive-loop benchmark corpus (research tooling)
+docs/         the contracts other programs write against (events)
 drive/ route/ shared libraries
 ```
 

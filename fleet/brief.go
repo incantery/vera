@@ -37,6 +37,15 @@ func scaffold(t *Task, statusURL, reportPath string) string {
 	case Scout:
 		fmt.Fprintf(&b, "You are in %s to investigate and report. Do not modify files, do not commit, do not run anything with side effects.\n\n", t.Worktree)
 	}
+	// The context nobody thought to hand over. An agent opened in a
+	// repository it has never seen has no idea what has been going on
+	// in it, and until there was a stream to read there was nothing to
+	// point it at — so the brief either carried a paragraph of history
+	// that went stale, or it carried none. One command, which the
+	// agent runs only if it needs to.
+	if name := baseName(t.Project); name != "" {
+		fmt.Fprintf(&b, "You can catch up on what has been happening here without asking: `vera events --repo %s --since 7d` prints the recent record — the tasks that ran and what they said, what landed, what the person asked for. It reads files, so it works whether or not anything is running. The same record is `~/.local/state/vera/events/*.jsonl` if the command is not on your PATH.\n\n", name)
+	}
 	if reportPath != "" {
 		switch t.Kind {
 		case Scout:

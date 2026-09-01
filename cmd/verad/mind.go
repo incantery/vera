@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/incantery/vera/attach"
+	"github.com/incantery/vera/events"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
@@ -103,6 +104,10 @@ type Mind struct {
 	Gen      *agento11y.Client
 	// Journal is the record on disk, every exchange; nil keeps none.
 	Journal *journal.Writer
+	// Events is the stream of what has been going on. The journal is
+	// the whole exchange and this is one line about it; nil records
+	// nothing.
+	Events *events.Recorder
 	// Attention is what the devices have reported about where the
 	// person is looking. Nil is fine: a mind with no senses.
 	Attention *Attention
@@ -362,6 +367,17 @@ func (m *Mind) think(ctx context.Context, msg Message, reply func(Frame) error) 
 		if jerr := m.Journal.Write(x.entry(msg, choice, system, asked, answer.String(), used, err)); jerr != nil {
 			slog.Error("journal", "error", jerr.Error())
 		}
+	}
+	// And one line in the stream. The question, not the answer: the
+	// journal beside it has the whole exchange, and a copy of every
+	// reply here would make the stream too big to grep and too private
+	// to paste into a prompt, which are the only two things it is for.
+	if m.Events != nil {
+		failure := ""
+		if err != nil {
+			failure = err.Error()
+		}
+		m.Events.Record(events.Exchange(msg.Conversation, msg.Device, choice.Model, asked, delegations, failure, time.Now()))
 	}
 
 	// One line per exchange regardless of what else is watching. Both

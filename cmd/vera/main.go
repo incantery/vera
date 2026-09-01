@@ -26,6 +26,9 @@ const usage = `vera — talk to her, and keep her running
                           -i attaches a picture; she hands it to the agent she gives the work to
   vera costs [--since 7d] [--by model|conversation|day]
                           what the journal says every exchange cost
+  vera events [--since 24h] [--repo rook] [-q words]
+                          what has been going on — tasks, commits, questions,
+                          across every repository she watches
   vera todo [<verb>...]   your own list — what is left; add, done, undo, drop, clear
   vera tasks              every task and what is believed about it
   vera task <verb> ...    start | answer | report | land | stop | resume | seen — the fleet, by hand
@@ -73,6 +76,8 @@ func main() {
 		err = runSay(args[1:])
 	case "costs":
 		err = runCosts(args[1:])
+	case "events":
+		err = runEvents(args[1:])
 	case "todo":
 		err = runTodo(args[1:])
 	case "tasks":

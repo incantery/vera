@@ -133,7 +133,13 @@ func TestFleetLifecycle(t *testing.T) {
 	f.Env = func(t *Task) []string {
 		return []string{"OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic s3cret", "TOK=it's"}
 	}
-	f.Observe = func(e Event) { events = append(events, e) }
+	// Only changes of belief: Observe carries spawns, landings and the
+	// agent's own status lines too, and this test is about states.
+	f.Observe = func(ev Event) {
+		if ev.Kind == StateChanged {
+			events = append(events, ev)
+		}
+	}
 	f.Thresholds = Thresholds{Quiet: time.Minute, Stale: 10 * time.Minute}
 	ctx := context.Background()
 
@@ -492,7 +498,13 @@ func TestAutoLand(t *testing.T) {
 	f.Harness = []string{"fake-agent"}
 	f.Trust = nil
 	var events []Event
-	f.Observe = func(ev Event) { events = append(events, ev) }
+	// Only changes of belief: Observe carries spawns, landings and the
+	// agent's own status lines too, and this test is about states.
+	f.Observe = func(ev Event) {
+		if ev.Kind == StateChanged {
+			events = append(events, ev)
+		}
+	}
 	ctx := context.Background()
 	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "ship it", Kind: Ship})
 	if err != nil {
@@ -860,7 +872,13 @@ func TestTheMachineGoingAwayIsNotTheAgentStalling(t *testing.T) {
 	f.Trust = nil
 	f.Thresholds = Thresholds{Quiet: time.Minute, Stale: 10 * time.Minute}
 	var events []Event
-	f.Observe = func(ev Event) { events = append(events, ev) }
+	// Only changes of belief: Observe carries spawns, landings and the
+	// agent's own status lines too, and this test is about states.
+	f.Observe = func(ev Event) {
+		if ev.Kind == StateChanged {
+			events = append(events, ev)
+		}
+	}
 	ctx := context.Background()
 	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "work on it", Kind: Ship})
 	if err != nil {
@@ -960,4 +978,80 @@ func backdate(t *testing.T, dir string, at time.Time) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Observe carries more than changes of belief, because a change of
+// belief is not the only thing worth telling somebody about: a room
+// being opened, a branch going home or failing to, and the agent's own
+// words all ride the one hook.
+func TestObserveCarriesSpawnsSayingsAndLandings(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	var seen []Event
+	f.Observe = func(ev Event) { seen = append(seen, ev) }
+	ctx := context.Background()
+
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "ship it", Kind: Ship})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 1 || seen[0].Kind != TaskSpawned || seen[0].Task.ID != task.ID {
+		t.Fatalf("want the spawn reported, got %+v", seen)
+	}
+	if seen[0].At.IsZero() {
+		t.Fatal("want the spawn stamped")
+	}
+
+	if err := f.Report(task.ID, Status{Verb: Blocked, Text: "which database?", By: "agent"}); err != nil {
+		t.Fatal(err)
+	}
+	said := seen[len(seen)-1]
+	if said.Kind != TaskSaid || said.Said == nil || said.Said.Text != "which database?" {
+		t.Fatalf("want the agent's own words reported, got %+v", said)
+	}
+
+	os.WriteFile(filepath.Join(task.Worktree, "README"), []byte("hi\nfrom the branch\n"), 0o644)
+	gitRun(t, task.Worktree, "add", "README")
+	gitRun(t, task.Worktree, "commit", "-q", "-m", "the thing")
+
+	// A landing that cannot happen is reported as one that failed: the
+	// main checkout has uncommitted work on the same file.
+	os.WriteFile(filepath.Join(r.Root, "README"), []byte("hi\nlocal edit\n"), 0o644)
+	if err := f.Land(ctx, task.ID); err == nil {
+		t.Fatal("want the landing to fail against a dirty checkout")
+	}
+	failed := seen[len(seen)-1]
+	if failed.Kind != LandFailed || failed.Err == "" {
+		t.Fatalf("want a failed landing with its reason, got %+v", failed)
+	}
+
+	// And one that can.
+	gitRun(t, r.Root, "checkout", "--", "README")
+	if err := f.Land(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	landed := seen[len(seen)-1]
+	if landed.Kind != TaskLanded || landed.Task.ID != task.ID {
+		t.Fatalf("want the landing reported, got %+v", landed)
+	}
+}
+
+// A fleet nobody is listening to must not panic on any of them.
+func TestObserveIsOptional(t *testing.T) {
+	r := newRepo(t)
+	f := New(newFakeMux(), NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	ctx := context.Background()
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "ship it", Kind: Ship})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Report(task.ID, Status{Verb: Working, Text: "on it", By: "agent"}); err != nil {
+		t.Fatal(err)
+	}
+	f.sweep(ctx)
 }

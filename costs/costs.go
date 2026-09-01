@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/incantery/vera/dump"
+	"github.com/incantery/vera/events"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/journal"
 	"github.com/incantery/vera/price"
@@ -480,26 +481,7 @@ func Duration(d time.Duration) string {
 }
 
 // ParseSince reads "7d", "2h", "90m", "30s". Go's own parser has no
-// day, and a day is the unit people ask in.
-func ParseSince(s string) (time.Duration, error) {
-	s = strings.TrimSpace(s)
-	if s == "" || s == "all" {
-		return 0, nil
-	}
-	if strings.HasSuffix(s, "d") || strings.HasSuffix(s, "w") {
-		unit := 24 * time.Hour
-		if strings.HasSuffix(s, "w") {
-			unit = 7 * 24 * time.Hour
-		}
-		n, err := strconv.ParseFloat(strings.TrimRight(s, "dw"), 64)
-		if err != nil || n < 0 {
-			return 0, fmt.Errorf("--since %q: a number and d, h, m or s", s)
-		}
-		return time.Duration(n * float64(unit)), nil
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil || d < 0 {
-		return 0, fmt.Errorf("--since %q: a number and d, h, m or s", s)
-	}
-	return d, nil
-}
+// day, and a day is the unit people ask in. It lives in events/ now,
+// because `vera events` asks the same question of the same person and
+// two spellings of "7d" in one CLI is one too many.
+func ParseSince(s string) (time.Duration, error) { return events.ParseSince(s) }

@@ -14,7 +14,8 @@ func TestScaffold(t *testing.T) {
 	if !strings.HasPrefix(s, "Add dark mode.") {
 		t.Error("the person's words come first")
 	}
-	for _, want := range []string{"/w/repo--dm", "never cd into /w/repo", "gh pr create", "Do not merge", "summary of what you changed", "/state/fleet/x/report.md", "do not restart or kill services", "curl -s -X POST http://127.0.0.1:4780/fleet/x/status", "blocked", "done"} {
+	for _, want := range []string{"/w/repo--dm", "never cd into /w/repo", "gh pr create", "Do not merge", "summary of what you changed", "/state/fleet/x/report.md", "do not restart or kill services", "curl -s -X POST http://127.0.0.1:4780/fleet/x/status", "blocked", "done",
+		"vera events --repo repo --since 7d", "~/.local/state/vera/events"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q", want)
 		}
