@@ -27,6 +27,7 @@ import (
 	"github.com/incantery/vera/attach"
 	"github.com/incantery/vera/costs"
 	"github.com/incantery/vera/dump"
+	"github.com/incantery/vera/events"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 )
@@ -692,6 +693,7 @@ var chatCommands = []tui.Command{
 	{Name: "model", Help: "/model — pick from the models verad can reach; /model <name> moves this conversation straight there"},
 	{Name: "effort", Help: "/effort — how hard it thinks: low, medium, high; /effort <level> moves this conversation straight there"},
 	{Name: "costs", Help: "/costs [7d] [by model|conversation|day] — what the journal says every exchange cost"},
+	{Name: "events", Help: "/events [7d] [@repo] [words] — what has been going on: tasks, commits, questions"},
 	{Name: "rail", Help: "show or hide the fleet rail (ctrl+t, F2) — it starts hidden inside rook"},
 	{Name: "tasks", Help: "every task and what is believed about it"},
 	{Name: "todo", Help: "/todo — your own list; /todo <something> adds it, /todo done <n|words> crosses it off"},
@@ -853,6 +855,23 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 				return tui.Fail("costs: %s", err)
 			}
 			return tui.Show(rep.Markdown())
+		})
+
+	case "events", "ev":
+		// The same stream `vera events` prints, on the screen that is
+		// already open. `/events 7d @rook blocked` is the whole
+		// grammar: a window, a repository, and words to look for.
+		spec := rest
+		return off(func(context.Context) tea.Cmd {
+			q, err := eventQueryFrom(spec)
+			if err != nil {
+				return tui.Fail("events: %s", err)
+			}
+			evs, err := events.Read(eventsDir(), q)
+			if err != nil {
+				return tui.Fail("events: %s", err)
+			}
+			return tui.Show(events.Summarize(evs, q.Since, time.Now()).Markdown())
 		})
 
 	case "todo", "td":
