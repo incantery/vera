@@ -119,10 +119,49 @@ type Notes interface {
 
 // Event is one change of what Vera believes about a task.
 type Event struct {
-	Task  *Task
+	// Kind says which sort of moment this is. StateChanged is the
+	// original and the common one; the others exist because a change
+	// of belief is not the only thing worth telling somebody about,
+	// and a second Observe-shaped hook per event type would be three
+	// hooks nobody remembers to wire.
+	Kind EventKind
+	Task *Task
+	// State and Prev are set on StateChanged.
 	State State
 	Prev  State
-	At    time.Time
+	// Said is the status line, on TaskSaid: the agent's own words.
+	Said *Status
+	// Err is why, on LandFailed.
+	Err string
+	At  time.Time
+}
+
+// EventKind is which sort of moment an Event carries.
+type EventKind string
+
+const (
+	// StateChanged: Vera believes something different about a task.
+	StateChanged EventKind = "state"
+	// TaskSpawned: a room was opened.
+	TaskSpawned EventKind = "spawned"
+	// TaskSaid: a line was appended to a task's status log, by the
+	// agent, by Vera, or by the person answering.
+	TaskSaid EventKind = "said"
+	// TaskLanded / LandFailed: the branch went home, or would not.
+	TaskLanded EventKind = "landed"
+	LandFailed EventKind = "land-failed"
+)
+
+// tell hands an event to whoever is listening. Nobody listening is the
+// normal case in a test and half the reason this is one line.
+func (f *Fleet) tell(ev Event) {
+	if f.Observe == nil {
+		return
+	}
+	if ev.At.IsZero() {
+		ev.At = time.Now()
+	}
+	f.Observe(ev)
 }
 
 // Request is what a person or the mind asks for.
@@ -276,6 +315,7 @@ func (f *Fleet) Spawn(ctx context.Context, req Request) (*Task, error) {
 	}
 	_ = f.Store.Append(id, Status{Verb: Working, Text: "spawned in " + t.Session, By: "vera"})
 	slog.Info("fleet: spawned", "task", id, "kind", t.Kind, "session", t.Session, "pane", t.Pane.String())
+	f.tell(Event{Kind: TaskSpawned, Task: t})
 	f.Poke()
 	return t, nil
 }
@@ -449,12 +489,18 @@ func DefaultModel(t *Task) string {
 
 // Report appends a status line — the agent's own word, or a person's.
 func (f *Fleet) Report(id string, st Status) error {
-	if _, err := f.Store.Load(id); err != nil {
+	t, err := f.Store.Load(id)
+	if err != nil {
 		return err
 	}
 	if err := f.Store.Append(id, st); err != nil {
 		return err
 	}
+	// The agent's own sentence, passed on before it is boiled down to
+	// a state. "blocked on which database to use" is the most useful
+	// line anything in here produces, and classification throws the
+	// words away.
+	f.tell(Event{Kind: TaskSaid, Task: t, Said: &st, At: st.At})
 	f.Poke()
 	return nil
 }
@@ -509,7 +555,17 @@ func (f *Fleet) Land(ctx context.Context, id string) error {
 // land does what the mode says, then closes the room. Nothing is
 // killed until the landing has succeeded: a merge that fails leaves
 // the agent where it is, so it can be told what went wrong.
-func (f *Fleet) land(ctx context.Context, t *Task) error {
+func (f *Fleet) land(ctx context.Context, t *Task) (err error) {
+	// Every path out of here is worth a line, and there are six of
+	// them: a deferred report is the only way to be sure none is
+	// missed the next time a seventh is added.
+	defer func() {
+		if err != nil {
+			f.tell(Event{Kind: LandFailed, Task: t, Err: err.Error()})
+			return
+		}
+		f.tell(Event{Kind: TaskLanded, Task: t})
+	}()
 	switch {
 	case t.Kind == Ship && t.Mode == DirectPR:
 		url, err := f.openPR(ctx, t)
@@ -881,9 +937,7 @@ func (f *Fleet) sweep(ctx context.Context) {
 			continue // history, not news
 		}
 		slog.Info("fleet: state", "task", t.ID, "state", state, "prev", prev)
-		if f.Observe != nil {
-			f.Observe(Event{Task: t, State: state, Prev: prev, At: time.Now()})
-		}
+		f.tell(Event{Kind: StateChanged, Task: t, State: state, Prev: prev, At: time.Now()})
 	}
 }
 

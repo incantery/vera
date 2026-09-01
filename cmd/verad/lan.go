@@ -75,6 +75,10 @@ type lanTransport struct {
 	// reach it: a phone in a tunnel is not a reason to pause work
 	// running on the desk. Nil ignores them.
 	machine func(cause string, away bool, at time.Time)
+	// events is the durable record of what has been going on, across
+	// both this machine's repositories. Nil mounts no routes and
+	// records nothing.
+	events *eventStream
 	// todo is the person's own list, when there is a home to keep it
 	// in. Nil mounts no routes: a daemon with nowhere to write is not
 	// a daemon that pretends to remember.
@@ -174,6 +178,9 @@ func (l *lanTransport) Serve(ctx context.Context, h Handler) error {
 	}
 	if l.todo != nil {
 		l.todoRoutes(mux)
+	}
+	if l.events != nil {
+		l.eventRoutes(mux)
 	}
 	mux.HandleFunc("GET /pair.json", loopbackOnly(l.pairJSON))
 	mux.HandleFunc("GET /pair.png", loopbackOnly(l.pairPNG))

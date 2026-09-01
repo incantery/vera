@@ -115,6 +115,14 @@ type terminal struct {
 	// a restarted engine remembers nothing it was told.
 	onBack func()
 
+	// onEngine runs when the multiplexer goes away and when it comes
+	// back. It is separate from onBack because the two listeners want
+	// different halves: the rail only cares about the return, and the
+	// record cares about the outage — every pane Vera watches vanishes
+	// at once, and a reader a week later has to be able to tell that
+	// from nine agents dying.
+	onEngine func(gone bool)
+
 	// onFocus runs when the person moves to another pane. The rail's
 	// current row is the room they are standing in, so a move is a
 	// reason to push — otherwise the highlight a click earned waits
@@ -329,8 +337,14 @@ func (w *terminal) run(ctx context.Context, observe func(Observation)) {
 		switch ev.Kind {
 		case mux.Gone:
 			slog.Info("terminal: mux unavailable", "mux", w.m.Name())
+			if w.onEngine != nil {
+				w.onEngine(true)
+			}
 		case mux.Back:
 			slog.Info("terminal: mux back", "mux", w.m.Name())
+			if w.onEngine != nil {
+				w.onEngine(false)
+			}
 			if w.onBack != nil {
 				w.onBack()
 			}

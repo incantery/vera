@@ -22,6 +22,7 @@ import (
 	"github.com/incantery/mote/provider"
 	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/attach"
+	"github.com/incantery/vera/events"
 	"github.com/incantery/vera/fleet"
 	"github.com/incantery/vera/home"
 	"github.com/incantery/vera/journal"
@@ -317,10 +318,22 @@ func main() {
 		Memory:       memory,
 		Delegate:     hands,
 	})
+	// The stream: what has been going on, across both this machine's
+	// repositories, in one file a person or a fresh agent can read.
+	// It is opened before everything that reports into it, and it is
+	// never a reason for any of them to fail — see eventStream.
+	stream := newEventStream(filepath.Join(stateDir(), "vera", "events"))
+	lan.events = stream
+
 	if mind != nil {
 		// Every exchange, on disk, whatever else is watching: what
 		// `vera dump` hands to whoever is asked why Vera did that.
 		mind.Journal = &journal.Writer{Dir: filepath.Join(stateDir(), "vera", "conversations")}
+		// And one line per exchange in the stream: the journal answers
+		// "why did she say that" and this answers "what did I ask her
+		// on Tuesday", which is a different question and a much
+		// commoner one.
+		mind.Events = stream.Rec
 		// Which model each conversation is on, kept where the journal
 		// is: verad is the single writer of both, and a `/model` typed
 		// this morning outlives this process.
@@ -414,6 +427,17 @@ func main() {
 		lan.screener = t.Capture
 		lan.narrower = t.Mobile
 		lan.agenter = t.Agent
+		// The engine's own outages, in the record: rook restarting is
+		// not nine agents dying, and only the stream will say so a
+		// week later.
+		t.onEngine = func(gone bool) {
+			name := term.Name()
+			if gone {
+				stream.Rec.Record(events.Rook("rook.gone", "the "+name+" engine stopped answering", name, time.Now()))
+				return
+			}
+			stream.Rec.Record(events.Rook("rook.back", "the "+name+" engine answered again", name, time.Now()))
+		}
 		go t.run(ctx, lan.attention.Observe)
 	}
 
@@ -443,12 +467,28 @@ func main() {
 		// What the fleet learns about a repository goes in her home,
 		// beside what she knows about the person.
 		f.Notes = place
-		f.Observe = func(ev fleet.Event) { lan.attention.Observe(fleetObservation(id.Name, ev)) }
+		f.Observe = func(ev fleet.Event) {
+			// The attention model hears only changes of belief, which
+			// is all it ever heard: it is a picture of the present,
+			// and "a branch merged an hour ago" is not in it.
+			if ev.Kind == fleet.StateChanged {
+				lan.attention.Observe(fleetObservation(id.Name, ev))
+			}
+			stream.Rec.Record(fleetEvents(ev)...)
+		}
+		// The commits half: every repository Vera knows, swept for
+		// what landed in it — which is how a week in rook is in here
+		// as well as a week in vera.
+		stream.Repos = projectRepos(f.Projects)
+		go stream.run(ctx)
 		// This machine's own lifecycle, from the Mac app: a lid that
 		// shuts is not an agent that stopped answering. Without the
 		// app the supervisor still notices sleep by counting its own
 		// heartbeats — less precisely, and blind to the network.
 		lan.machine = func(cause string, away bool, at time.Time) {
+			// In the stream too: without it, a silent night reads as
+			// eight hours in which every agent stalled.
+			stream.Rec.Record(events.Machine(cause, away, at))
 			if away {
 				slog.Info("fleet: the machine went away", "cause", cause, "at", at)
 				f.Lifecycle.Went(cause, at)
