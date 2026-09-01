@@ -67,9 +67,6 @@ func New(base, key string) *Wire {
 	return &Wire{base: strings.TrimRight(base, "/"), key: key}
 }
 
-// Base is where this wire sends, for a caller that wants to say so.
-func (w *Wire) Base() string { return w.base }
-
 // request is the body.
 type request struct {
 	Model           string       `json:"model"`
