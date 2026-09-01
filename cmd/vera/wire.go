@@ -457,6 +457,14 @@ func (c *chatClient) chooseModel(ctx context.Context, conversation, model, effor
 	return &r, json.NewDecoder(resp.Body).Decode(&r)
 }
 
+// chooseEffort turns this conversation's dial and leaves its model
+// where it is. The empty model is the whole point: verad reads an empty
+// half as "nobody said anything about this one", so the two toggles do
+// not overwrite each other.
+func (c *chatClient) chooseEffort(ctx context.Context, conversation, effort string) (*Resolution, error) {
+	return c.chooseModel(ctx, conversation, "", effort)
+}
+
 // streamFrames hands each ndjson frame to fn until the terminal one.
 func streamFrames(r io.Reader, fn func(Frame)) error {
 	sc := bufio.NewScanner(r)

@@ -1,20 +1,27 @@
-// `/model` as a card rather than a name you had to know.
+// `/model` and `/effort` as cards rather than names you had to know.
 //
-// Typing `/model claude-opus-5 high` still works and is still the
-// fastest way when you know the answer. The card is for the other
-// case, which is most of them: you want to see what this machine can
-// actually reach, what each one will take, and which of them anybody
-// has a price for — and then move onto one without spelling it.
+// Typing `/model claude-opus-5` or `/effort high` still works and is
+// still the fastest way when you know the answer. The cards are for the
+// other case, which is most of them: you want to see what this machine
+// can actually reach, what each one will take, and which of them
+// anybody has a price for — and then move onto one without spelling it.
 //
-// Everything on it comes from verad's GET /models. The terminal knows
+// They are two cards because they are two questions. Which model
+// answers is a choice among a dozen names that come and go with the
+// keys on the machine; how hard it thinks is the same three words every
+// time, on whichever model you are already on. Putting the second on a
+// dial inside the first meant every model change restated the effort,
+// and a combination no model would take was only caught on the way out.
+//
+// Everything on both comes from verad's GET /models. The terminal knows
 // no models of its own, on purpose: which models exist is a property
 // of the keys on the machine verad runs on, and a list compiled into
 // the client would be out of date on somebody else's laptop.
 //
-// The two ways out are the two scopes a choice can have, and the card
-// says which is which: Enter moves the daemon — every conversation
-// that has not chosen for itself, dictation, the next chat — and `s`
-// moves this conversation and nothing else.
+// The two ways out are the two scopes a choice can have, and both cards
+// say which is which: Enter moves the daemon — every conversation that
+// has not chosen for itself, dictation, the next chat — and `s` moves
+// this conversation and nothing else.
 package main
 
 import (
@@ -25,36 +32,23 @@ import (
 	"github.com/incantery/mote/tui"
 )
 
-// effortOrder is the dial, from off to hardest. Rows name a subset of
-// it and the card offers the union, because mote's Pick builds its
-// dial once and the selection moves under it.
-var effortOrder = []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+// effortDial is the toggle: low, medium, high, the three Claude Code
+// offers and the three that mean the same thing on every vendor that
+// has a dial at all.
+//
+// It is deliberately not every effort a model will accept. Anthropic
+// takes max, the OpenAI reasoning models take minimal, and both are
+// still reachable by typing `/effort max` — but a toggle with seven
+// positions is a menu, and the point of a toggle is that you turn it
+// without reading it.
+var effortDial = []string{"low", "medium", "high"}
 
-// effortUnion is every effort any listed model will take, in the order
-// a dial turns them.
-func effortUnion(rows []ModelRow) []string {
-	seen := map[string]bool{}
-	for _, r := range rows {
-		for _, e := range r.Efforts {
-			seen[e] = true
-		}
-	}
-	var out []string
-	for _, e := range effortOrder {
-		if seen[e] {
-			out = append(out, e)
-		}
-	}
-	// An effort nobody in effortOrder has heard of still belongs on the
-	// dial: $VERA_MODELS is allowed to know things this binary does not.
-	for _, r := range rows {
-		for _, e := range r.Efforts {
-			if !indexOf(effortOrder, e) && !indexOf(out, e) {
-				out = append(out, e)
-			}
-		}
-	}
-	return out
+// effortMeans is the one line under each: what turning it there costs
+// you and what it buys.
+var effortMeans = map[string]string{
+	"low":    "answers soonest, thinks least",
+	"medium": "the middle setting",
+	"high":   "thinks longest before answering",
 }
 
 func indexOf(list []string, want string) bool {
@@ -64,6 +58,38 @@ func indexOf(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// rowFor is what verad said about one model by name.
+func rowFor(rows []ModelRow, name string) (ModelRow, bool) {
+	for _, r := range rows {
+		if strings.EqualFold(r.Name, name) {
+			return r, true
+		}
+	}
+	return ModelRow{}, false
+}
+
+// effortsFor is which positions of the toggle the model in force will
+// actually take.
+//
+// A model whose row says "none" and nothing else — the whole gpt-5.6
+// family — has no dial, and gets an empty list rather than three
+// options verad would refuse one at a time. A model verad listed no row
+// for is not one this terminal may make claims about, so it gets all
+// three and verad decides.
+func effortsFor(ans *ModelsAnswer) []string {
+	row, ok := rowFor(ans.Models, ans.using().Model)
+	if !ok {
+		return effortDial
+	}
+	var out []string
+	for _, e := range effortDial {
+		if indexOf(row.Efforts, e) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // modelDetail is the right-hand half of a row: how it is reached, what
@@ -81,15 +107,17 @@ func modelDetail(r ModelRow) string {
 	return strings.Join(parts, " · ")
 }
 
-// modelPick is the card, built from what verad said.
+// modelPick is the model card, built from what verad said. It says
+// nothing about effort beyond leaving it alone: verad keeps the two
+// halves apart, so moving onto another model keeps the effort you were
+// thinking at, or drops it if the new one has no dial.
 func (s *chatSession) modelPick(ans *ModelsAnswer) tui.Pick {
 	using := ans.using()
-	dial := effortUnion(ans.Models)
 
 	p := tui.Pick{
 		Title: "Select model",
 		Text: "Enter moves Vera herself; s moves this conversation only. " +
-			"←/→ sets the effort — a model that will not take the one you set says what it does take.",
+			"/effort sets how hard it thinks.",
 		Actions: []tui.PickAction{
 			{Key: "enter", Label: "make it Vera's default"},
 			{Key: "s", Label: "this conversation"},
@@ -105,46 +133,65 @@ func (s *chatSession) modelPick(ans *ModelsAnswer) tui.Pick {
 			p.Current = i
 		}
 	}
-	if len(dial) > 0 {
-		d := tui.PickDial{Label: "effort", Options: dial}
-		for i, e := range dial {
-			if e == using.Effort {
-				d.Current = i
-			}
+	p.OnPick = s.applyPick("model", func(choice tui.PickChoice) (string, string, bool) {
+		if choice.Item < 0 || choice.Item >= len(ans.Models) {
+			return "", "", false
 		}
-		p.Dial = &d
-	}
-	p.OnPick = s.chooseFromPick(ans, dial)
+		return ans.Models[choice.Item].Name, "", true
+	})
 	return p
 }
 
-// chooseFromPick is what the card does when it closes: nothing at all
-// if it was cancelled, an error if the effort is one the chosen model
-// will not take, and otherwise a request to verad in the scope the key
-// asked for.
+// effortPick is the effort card: the same three words whatever model is
+// answering, with the model named so it is clear what is being turned.
+func (s *chatSession) effortPick(ans *ModelsAnswer, dial []string) tui.Pick {
+	using := ans.using()
+
+	p := tui.Pick{
+		Title: "Reasoning effort",
+		Text: using.Model + " · Enter moves Vera herself; s moves this conversation only. " +
+			"An effort that is not one of these three can still be typed: /effort max.",
+		Actions: []tui.PickAction{
+			{Key: "enter", Label: "make it Vera's default"},
+			{Key: "s", Label: "this conversation"},
+		},
+	}
+	for i, e := range dial {
+		p.Items = append(p.Items, tui.PickItem{
+			Label:   e,
+			Detail:  effortMeans[e],
+			Current: e == using.Effort,
+		})
+		if e == using.Effort {
+			p.Current = i
+		}
+	}
+	p.OnPick = s.applyPick("effort", func(choice tui.PickChoice) (string, string, bool) {
+		if choice.Item < 0 || choice.Item >= len(dial) {
+			return "", "", false
+		}
+		return "", dial[choice.Item], true
+	})
+	return p
+}
+
+// applyPick is what either card does when it closes: nothing at all if
+// it was cancelled, and otherwise a request to verad in the scope the
+// key asked for.
 //
-// The dial is the union of every row's efforts because mote builds one
-// dial per card and it does not move as the selection does. So the
-// combination is checked here, by name, rather than being made
-// impossible — and the refusal says what that model does take, which
-// is the thing the person needs in order to try again.
-func (s *chatSession) chooseFromPick(ans *ModelsAnswer, dial []string) func(tui.PickChoice) tea.Cmd {
+// half turns the choice into the one thing that card sets, and sends
+// the other empty — which is verad's word for "leave it where it is".
+// noun is what an error is about, since the two cards fail differently
+// and "model:" on a refused effort would be a lie.
+func (s *chatSession) applyPick(noun string, half func(tui.PickChoice) (model, effort string, ok bool)) func(tui.PickChoice) tea.Cmd {
 	c, w, conv := s.c, s.w, s.conversation()
 	return func(choice tui.PickChoice) tea.Cmd {
 		if choice.Cancelled {
 			return nil // a card that was closed leaves nothing behind
 		}
-		if choice.Item < 0 || choice.Item >= len(ans.Models) {
+		model, effort, ok := half(choice)
+		if !ok {
 			return nil
-		}
-		row := ans.Models[choice.Item]
-		effort := ""
-		if choice.Dial >= 0 && choice.Dial < len(dial) {
-			effort = dial[choice.Dial]
-		}
-		if effort != "" && !indexOf(row.Efforts, effort) {
-			return tui.Fail("%s does not take effort %s — it takes %s",
-				row.Name, effort, strings.Join(row.Efforts, ", "))
 		}
 
 		conversationOnly := choice.Action == "s"
@@ -154,12 +201,12 @@ func (s *chatSession) chooseFromPick(ans *ModelsAnswer, dial []string) func(tui.
 			scope := "as Vera's default"
 			if conversationOnly {
 				scope = "for this conversation"
-				res, err = c.chooseModel(ctx, conv, row.Name, effort)
+				res, err = c.chooseModel(ctx, conv, model, effort)
 			} else {
-				res, err = c.setDefaultModel(ctx, row.Name, effort)
+				res, err = c.setDefaultModel(ctx, model, effort)
 			}
 			if err != nil {
-				return tui.Fail("model: %s", err)
+				return tui.Fail("%s: %s", noun, err)
 			}
 			// verad is the authority on what this conversation is now
 			// on, and setting the daemon's default does not move a

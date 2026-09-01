@@ -86,11 +86,19 @@ output, reading state) graduate to a Go provider.
 
 ## Trying another model
 
-`/model` in the chat says which model is answering, how hard it is
-thinking, and where that was decided. `/model claude-opus-5 high` moves
-**this conversation** onto another one, sticks across `vera chat -c`,
-and is undone by `/model` with nothing after it. `vera say -m
-claude-opus-5 "…"` does it for one exchange only. No restart either way.
+`/model` in the chat is a card of every model verad can reach, with a
+tick on the one answering; `/model claude-opus-5` moves **this
+conversation** onto another one, sticks across `vera chat -c`, and is
+undone by `/model` with nothing after it. `vera say -m claude-opus-5
+"…"` does it for one exchange only. No restart either way.
+
+How hard it thinks is a separate toggle: `/effort` offers low, medium
+and high, and `/effort <level>` sets one straight. It moves the effort
+and leaves the model alone, and the other way round — so switching
+model does not silently restate the effort. A model with no dial says
+so: the gpt-5.6 family (`gpt-5.6-luna`, `gpt-5.6-terra`) takes effort
+`none` and nothing else, and moving onto one drops the effort rather
+than sending one it would refuse.
 
 `vera costs` (or `/costs` in the chat) then says what that was worth:
 exchanges, tokens, dollars at list prices, how long until anything

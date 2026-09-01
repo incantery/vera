@@ -174,13 +174,64 @@ func (w *Wires) For(model string) (provider.Provider, string, error) {
 }
 
 // Pick is what a conversation was told to use. Either half may be
-// empty: `/model opus` with no effort leaves the effort where it was.
+// empty, and an empty half is one nobody has said anything about:
+// `/model opus` with no effort leaves the effort exactly where it was,
+// and `/effort high` with no model leaves the model.
 type Pick struct {
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
 }
 
 func (p Pick) empty() bool { return p.Model == "" && p.Effort == "" }
+
+// settle folds a named half into what was already chosen. The model and
+// the effort are two separate toggles — the card that moves one of them
+// says nothing about the other — so a half left empty is left where it
+// was rather than cleared. Both empty is the one exception, and it is
+// how a choice is given back: it means "forget this, follow the
+// daemon".
+func settle(now Pick, model, effort string) Pick {
+	if model == "" && effort == "" {
+		return Pick{}
+	}
+	want := now
+	if model != "" {
+		want.Model = model
+	}
+	if effort != "" {
+		want.Effort = effort
+	}
+	return want
+}
+
+// agree checks a settled choice before it is written down, and is the
+// one place the two toggles have to be considered together.
+//
+// A model with no wire on this machine is refused here rather than on
+// the next thing said. So is an effort the model will not take — but
+// only when somebody just asked for that effort. An effort carried over
+// from a previous choice onto a model with no dial at all is dropped
+// instead, because moving onto gpt-5.6-luna is not a mistake to be
+// refused: it is a model where the dial does not apply, and the honest
+// answer is to stop applying it.
+func (m *Mind) agree(want Pick, saidEffort bool) (Pick, error) {
+	if want.empty() {
+		return want, nil
+	}
+	// Resolve against a clean slate so the model named is the one
+	// checked, not whatever the conversation was already on.
+	c, err := m.choose("", Pick{Model: want.Model, Effort: want.Effort})
+	if err != nil {
+		return Pick{}, err
+	}
+	if err := takesEffort(c.Model, want.Effort); err != nil {
+		if saidEffort {
+			return Pick{}, err
+		}
+		want.Effort = ""
+	}
+	return want, nil
+}
 
 // choose resolves one exchange's model, most specific statement first.
 //
@@ -280,14 +331,16 @@ func (m *Mind) Pick(conversation string) (Resolution, error) {
 	return c.Resolution(), nil
 }
 
-// Choose sets a conversation's model, effort or both, and says what is
-// now in force. An empty model and an empty effort clears the
-// conversation's own choice and puts it back on the daemon's.
+// Choose sets a conversation's model, its effort, or both, and says
+// what is now in force. Each half named replaces its own and leaves the
+// other alone — they are two toggles, not one setting in two fields —
+// and both empty clears the conversation's choice and puts it back on
+// the daemon's.
 //
 // A wire for the model is built before anything is written down, so a
 // machine that cannot reach it at all says so now rather than on the
 // next thing said. That is as far as checking can go without a request
-// to the provider — see choose.
+// to the provider — see choose and agree.
 func (m *Mind) Choose(conversation, model, effort string) (Resolution, error) {
 	if conversation == "" {
 		return Resolution{}, errors.New("a model is chosen for a conversation; this request named none")
@@ -299,13 +352,10 @@ func (m *Mind) Choose(conversation, model, effort string) (Resolution, error) {
 	if effort != "" && !validEffort(effort) {
 		return Resolution{}, fmt.Errorf("effort %q: it is none, minimal, low, medium, high, xhigh or max", effort)
 	}
-	want := Pick{Model: model, Effort: effort}
-	if !want.empty() {
-		// Resolve against a clean slate so the model named is the one
-		// checked, not whatever the conversation was already on.
-		if _, err := m.choose("", Pick{Model: model, Effort: effort}); err != nil {
-			return Resolution{}, err
-		}
+	now, _ := m.Picks.Get(conversation)
+	want, err := m.agree(settle(now, model, effort), effort != "")
+	if err != nil {
+		return Resolution{}, err
 	}
 	if err := m.Picks.Set(conversation, want); err != nil {
 		return Resolution{}, err
@@ -314,9 +364,10 @@ func (m *Mind) Choose(conversation, model, effort string) (Resolution, error) {
 }
 
 // SetDefault moves the daemon's own model — what everything with no
-// conversation of its own runs on — and keeps it. An empty model and
-// an empty effort forgets the saved choice and puts the daemon back on
-// the flag, the profile or the built-in default.
+// conversation of its own runs on — and keeps it. It reads the two
+// halves the way Choose does: each one named replaces its own, and both
+// empty forgets the saved choice and puts the daemon back on the flag,
+// the profile or the built-in default.
 //
 // It does not outrank --model: a daemon started with one says so, and
 // this is written down for the next one rather than ignored. The
@@ -330,14 +381,10 @@ func (m *Mind) SetDefault(model, effort string) (Resolution, error) {
 	if effort != "" && !validEffort(effort) {
 		return Resolution{}, fmt.Errorf("effort %q: it is none, minimal, low, medium, high, xhigh or max", effort)
 	}
-	want := Pick{Model: model, Effort: effort}
-	if !want.empty() {
-		// The same check Choose makes, and for the same reason: a model
-		// with no wire on this machine is refused before it is written
-		// down, not on the next thing said.
-		if _, err := m.choose("", Pick{Model: model, Effort: effort}); err != nil {
-			return Resolution{}, err
-		}
+	now, _ := m.Default.Get()
+	want, err := m.agree(settle(now, model, effort), effort != "")
+	if err != nil {
+		return Resolution{}, err
 	}
 	if err := m.Default.Set(want); err != nil {
 		return Resolution{}, err

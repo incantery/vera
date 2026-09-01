@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/incantery/mote/provider"
@@ -206,5 +207,97 @@ func TestOneMessageCanNameItsOwnModel(t *testing.T) {
 	}
 	if entries[0].Answered != "from opus" {
 		t.Fatalf("the wrong model answered: %q", entries[0].Answered)
+	}
+}
+
+// The two halves are two toggles: each one named replaces its own and
+// leaves the other where it was. This is what makes a separate `/effort`
+// card possible at all — it names no model, and it must not clear one.
+func TestTheModelAndTheEffortAreSeparateToggles(t *testing.T) {
+	noKeys(t)
+	m := mindFor(t)
+	m.Default = &Default{Path: filepath.Join(t.TempDir(), "model.json")}
+
+	if _, err := m.Choose("c1", "claude-opus-5", "low"); err != nil {
+		t.Fatal(err)
+	}
+	// The effort alone. The model stays.
+	got, err := m.Choose("c1", "", "high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "claude-opus-5" || got.Effort != "high" {
+		t.Fatalf("turning the effort moved the model: %+v", got)
+	}
+	// The model alone. The effort stays.
+	if got, err = m.Choose("c1", "gpt-5-mini", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "gpt-5-mini" || got.Effort != "high" {
+		t.Fatalf("choosing a model dropped the effort: %+v", got)
+	}
+	// Both empty is still the way to give the choice back.
+	if got, err = m.Choose("c1", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "gpt-5.6-luna" || got.ModelFrom != fromBuiltin {
+		t.Fatalf("clearing left %+v", got)
+	}
+
+	// The daemon's own default reads them the same way.
+	if _, err := m.SetDefault("claude-opus-5", "max"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = m.SetDefault("", "medium"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Model != "claude-opus-5" || got.Effort != "medium" {
+		t.Fatalf("the saved default's halves are not separate: %+v", got)
+	}
+}
+
+// An effort somebody just asked for is refused by name when the model
+// will not take it; one merely carried over onto a model with no dial
+// is dropped, because moving onto gpt-5.6-terra is not a mistake.
+func TestAnEffortIsRefusedWhenAskedForAndDroppedWhenCarried(t *testing.T) {
+	noKeys(t)
+	m := mindFor(t)
+	m.Wires = wiredTo(map[string]string{
+		"claude-opus-5": "anthropic",
+		"gpt-5-mini":    "openai",
+		"gpt-5.6-terra": "openai",
+	})
+
+	if _, err := m.Choose("c1", "claude-opus-5", "high"); err != nil {
+		t.Fatal(err)
+	}
+	// Asked for, and refused with what that model does take.
+	_, err := m.Choose("c1", "", "max")
+	if err != nil {
+		t.Fatalf("opus takes max: %v", err)
+	}
+	if _, err := m.Choose("c1", "gpt-5-mini", "max"); err == nil {
+		t.Fatal("gpt-5-mini was given an effort it does not take")
+	} else if !strings.Contains(err.Error(), "it takes none, low, medium, high") {
+		t.Errorf("the refusal should name what it does take: %v", err)
+	}
+	// And nothing was written down: the conversation is where it was.
+	if got, _ := m.Pick("c1"); got.Model != "claude-opus-5" || got.Effort != "max" {
+		t.Fatalf("a refused change was written down anyway: %+v", got)
+	}
+
+	// Carried over onto a model with no dial at all, and dropped
+	// rather than refused — otherwise you could not move onto the 5.6
+	// family without clearing the effort first.
+	got, err := m.Choose("c1", "gpt-5.6-terra", "")
+	if err != nil {
+		t.Fatalf("moving onto a model with no dial was refused: %v", err)
+	}
+	if got.Model != "gpt-5.6-terra" || got.Effort != "none" {
+		t.Fatalf("the carried effort was not dropped: %+v", got)
+	}
+	// Asking for it outright on that model is still refused.
+	if _, err := m.Choose("c1", "", "high"); err == nil {
+		t.Fatal("gpt-5.6-terra was given a reasoning effort")
 	}
 }
