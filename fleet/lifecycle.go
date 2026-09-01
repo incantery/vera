@@ -115,7 +115,12 @@ func (l *Lifecycle) Went(cause string, at time.Time) {
 		l.causes = map[string]bool{}
 	}
 	l.causes[cause] = true
-	if s := l.open(); s != nil {
+	// An absence already under way, or one the heartbeat detector
+	// already noticed on its own: the app's report is the same
+	// absence, said better. The two must not become two spans, or the
+	// same eight hours are discounted twice and a task that really did
+	// stall reads as busy forever.
+	if s := l.reopen(at); s != nil {
 		if cause == CauseSleep {
 			s.Cause = CauseSleep
 		}
@@ -126,6 +131,25 @@ func (l *Lifecycle) Went(cause string, at time.Time) {
 	}
 	l.spans = append(l.spans, Away{Cause: cause, From: at})
 	l.trim()
+}
+
+// reopen is the span this absence belongs to: the one in progress, or
+// the last one if it has not ended before this absence began. Called
+// with the lock.
+func (l *Lifecycle) reopen(at time.Time) *Away {
+	n := len(l.spans)
+	if n == 0 {
+		return nil
+	}
+	s := &l.spans[n-1]
+	if s.Open() {
+		return s
+	}
+	if s.To.Before(at) {
+		return nil
+	}
+	s.To = time.Time{}
+	return s
 }
 
 // Came records one reason ending. The absence ends when the last of
@@ -149,8 +173,12 @@ func (l *Lifecycle) Came(cause string, at time.Time) {
 	}
 	s.To = at
 	// The clock the heartbeat counts against restarts here: this gap
-	// is now on the record, and must not be found a second time.
-	l.beat = at
+	// is now on the record, and must not be found a second time. It
+	// only ever moves forward — a report stamped before the last beat
+	// describes time that beat already accounted for.
+	if at.After(l.beat) {
+		l.beat = at
+	}
 	back := l.back
 	l.mu.Unlock()
 	if back != nil {

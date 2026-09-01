@@ -176,3 +176,40 @@ func TestMachineCut(t *testing.T) {
 		}
 	}
 }
+
+// The heartbeat notices the sleep first and the Mac app's report of the
+// same sleep arrives a second later, once its streams are back. One
+// absence, not two — two would discount the same eight hours twice, and
+// a task that really did stall would read as busy for ever.
+func TestLifecycleTheBeatAndTheAppAgreeOnOneAbsence(t *testing.T) {
+	l := Lifecycle{Tolerance: time.Minute}
+	l.Beat(at(0))
+	// Nothing runs for eight hours; the first sweep back finds the gap.
+	l.Beat(at(8 * time.Hour))
+	// Then the app says what it was, with the moment it began.
+	l.Went(CauseSleep, at(time.Minute))
+	l.Came(CauseSleep, at(8*time.Hour+time.Second))
+
+	spans := l.Spans()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1: %+v", len(spans), spans)
+	}
+	// The span keeps the earlier of the two starts. The beat can only
+	// say "nothing has run since the last one", which in the running
+	// daemon is fifteen seconds before the lid shut — generous by a
+	// cadence, and generous is the safe direction.
+	if !spans[0].From.Equal(at(0)) || !spans[0].To.Equal(at(8*time.Hour+time.Second)) {
+		t.Errorf("span %+v", spans[0])
+	}
+	m := l.Since(at(0), at(8*time.Hour+time.Minute))
+	if m.Down != 8*time.Hour+time.Second {
+		t.Fatalf("down = %v, want the one span — twice that is the same absence counted twice", m.Down)
+	}
+	if m.Away {
+		t.Error("still away after the app said it came back")
+	}
+	// The minute since it came back is still the agent's own silence.
+	if !m.Back.Equal(at(8*time.Hour + time.Second)) {
+		t.Errorf("back = %v", m.Back)
+	}
+}
