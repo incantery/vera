@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -454,6 +455,13 @@ func noticeFor(prev fleet.State, seen bool, v fleet.View, now time.Time) (string
 		if v.Last != nil && v.Last.Text != "" {
 			line += ": " + trim(v.Last.Text, 200)
 		}
+		// A ship task writes a summary of what it changed and why, and
+		// with the supervisor landing on its own this line is the last
+		// the person hears of it. Without the pointer the summary is
+		// written for nobody.
+		if v.Report != "" {
+			line += "  (/report " + v.ID + ")"
+		}
 		return line, true
 	}
 	if !v.State.Actionable() {
@@ -551,6 +559,130 @@ func sideSubtitle(v fleet.View) string {
 	return sub
 }
 
+// --- reading a report -----------------------------------------------------
+
+// pickReport finds the task a /report meant. An id may be a prefix —
+// eight hex characters is more than anyone wants to retype, and the
+// command line has always taken a prefix, so the chat does too.
+//
+// With no id at all it is the report that is waiting: the person just
+// read "a1b2c3d4 reported" on the screen and reached for the obvious
+// next thing. When more than one is waiting, nothing is guessed —
+// picking one at random is worse than naming them.
+func pickReport(views []fleet.View, id string) (fleet.View, error) {
+	if id == "" {
+		var waiting []fleet.View
+		for _, v := range views {
+			// Not waitingReport: that one is the rail's question, and
+			// it is only ever asked of a scout. A ship task's report
+			// is the summary of what it changed, and an unread one is
+			// just as much a thing the person came here to read.
+			if v.Task != nil && !v.Closed && v.Report != "" && len(v.Unread) > 0 {
+				waiting = append(waiting, v)
+			}
+		}
+		switch len(waiting) {
+		case 0:
+			return fleet.View{}, errors.New("no report is waiting — name a task to re-read one")
+		case 1:
+			return waiting[0], nil
+		}
+		return fleet.View{}, fmt.Errorf("reports waiting from %s — name one", idsOf(waiting))
+	}
+	var hits []fleet.View
+	for _, v := range views {
+		if v.Task == nil {
+			continue
+		}
+		if v.ID == id {
+			return v, nil
+		}
+		if strings.HasPrefix(v.ID, id) {
+			hits = append(hits, v)
+		}
+	}
+	switch len(hits) {
+	case 0:
+		return fleet.View{}, fmt.Errorf("no task %s", id)
+	case 1:
+		return hits[0], nil
+	}
+	return fleet.View{}, fmt.Errorf("%s matches %s — say more of it", id, idsOf(hits))
+}
+
+func idsOf(views []fleet.View) string {
+	ids := make([]string, 0, len(views))
+	for _, v := range views {
+		ids = append(ids, v.ID)
+	}
+	return strings.Join(ids, ", ")
+}
+
+// reportMarkdown is the report as a person reviews it: a line saying
+// whose it is and where it worked, the report itself, and the one
+// thing to do about it now. A report on its own is a wall of markdown
+// with no name on it — after two of them nobody remembers which task
+// wrote which, and the next verb is a guess.
+func reportMarkdown(v fleet.View) string {
+	where := shortPath(v.Project)
+	if v.Branch != "" {
+		where += " · " + v.Branch
+	}
+	var b strings.Builder
+	// Each line is its own paragraph: a markdown renderer folds two
+	// lines into one, and the header would come out wearing the brief.
+	fmt.Fprintf(&b, "**%s** · %s · %s · %s\n", v.ID, v.Kind, v.State, where)
+	if brief := firstSentence(v.Brief); brief != "" {
+		fmt.Fprintf(&b, "\n*%s*\n", trim(oneLine(brief), 100))
+	}
+	b.WriteString("\n" + strings.TrimSpace(v.Report) + "\n")
+	if next := reportNext(v); next != "" {
+		b.WriteString("\n---\n" + next + "\n")
+	}
+	return b.String()
+}
+
+// reportNext is the verb that fits what the task is actually in the
+// middle of. Every line is a claim about what happens next, so a task
+// the supervisor is already landing says so rather than asking the
+// person to land it again, and a task still working is not offered a
+// landing it has not earned.
+func reportNext(v fleet.View) string {
+	switch v.State {
+	case fleet.Decision:
+		return "It is blocked on you — `/answer " + v.ID + " <text>`."
+	case fleet.Waiting:
+		return "It ended its turn and nobody has answered — `/answer " + v.ID + " <text>`."
+	case fleet.Held:
+		return "It is paused on something outside — `/answer " + v.ID + " <text>` when it can go on."
+	case fleet.Broken:
+		return "It failed — `/resume " + v.ID + "` to pick it up, `/stop " + v.ID + "` to tear the room down."
+	case fleet.Gone:
+		return "Its room is gone — `/resume " + v.ID + "` reopens it."
+	case fleet.Closed:
+		return ""
+	case fleet.Finished:
+		if v.Kind == fleet.Scout {
+			if v.AutoLand {
+				return "Nothing to land. Vera closes it now that you have read it."
+			}
+			return "Nothing to land — `/land " + v.ID + "` closes it."
+		}
+		if v.AutoLand {
+			return "Vera is landing it; nothing to do."
+		}
+		branch := v.Branch
+		if branch == "" {
+			branch = "its branch"
+		}
+		return "`/land " + v.ID + "` merges " + branch + ", `/stop " + v.ID + "` throws it away."
+	}
+	return "It is still going — `/answer " + v.ID + " <text>` to say something to it."
+}
+
+// plainText drops the markdown a screen renders and a pipe does not.
+func plainText(s string) string { return strings.ReplaceAll(s, "`", "") }
+
 // --- the commands ---------------------------------------------------------
 
 // chatCommands are the fleet verbs by hand — the same calls the
@@ -566,7 +698,7 @@ var chatCommands = []tui.Command{
 	{Name: "start", Help: "/start [@repo] <brief> — put a task on the rail"},
 	{Name: "scout", Help: "/scout [@repo] <brief> — a task that reports instead of landing"},
 	{Name: "resume", Help: "/resume <id> — pick a task back up"},
-	{Name: "report", Help: "/report <id> — what a task wrote (and mark it seen)"},
+	{Name: "report", Help: "/report [id] — what a task wrote, with what to do about it (and mark it seen); no id takes the one that is waiting"},
 	{Name: "answer", Help: "/answer <id> <text> — reply to a task that asked"},
 	{Name: "land", Help: "/land <id> — merge its branch and close it"},
 	{Name: "stop", Help: "/stop <id> [force] — tear a task down"},
@@ -872,20 +1004,23 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 		return s.post("/fleet/"+id+"/seen", nil, "marked "+id+" seen")
 
 	case "report", "r":
-		if id == "" {
-			return tui.Fail("/report <id>")
-		}
-		for _, v := range s.w.snapshot() {
-			if v.Task == nil || v.ID != id {
-				continue
+		// Read the fleet first. A report is asked for seconds after the
+		// notice that it exists, and the cache behind the rail can be a
+		// poll behind — "it has written no report yet" about a report
+		// sitting on disk is the one answer this must never give.
+		w := s.w
+		return off(func(ctx context.Context) tea.Cmd {
+			w.poll(ctx)
+			v, err := pickReport(w.snapshot(), id)
+			if err != nil {
+				return tui.Fail("%s", err)
 			}
 			if v.Report == "" {
-				return tui.Note("%s has written no report yet", id)
+				return tui.Note("%s has written no report yet", v.ID)
 			}
 			// Read is seen: a scout whose report was read is done.
-			return tea.Batch(tui.Show(v.Report), s.post("/fleet/"+id+"/seen", nil, ""))
-		}
-		return tui.Fail("no task %s", id)
+			return tea.Batch(tui.Show(reportMarkdown(v)), s.post("/fleet/"+v.ID+"/seen", nil, ""))
+		})
 	}
 	return tui.Fail("unknown command /%s — /help", name)
 }

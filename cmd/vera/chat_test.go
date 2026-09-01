@@ -523,9 +523,16 @@ func TestNoticesWhenATaskNeedsYou(t *testing.T) {
 
 	landed := done
 	landed.State = fleet.Closed
+	landed.Report = "# What changed\n\nThe panel reads the cache now."
 	evs = w.absorb([]fleet.View{landed}, now)
 	if len(evs) != 1 || !strings.HasPrefix(evs[0].Text, "landed a1") || !strings.Contains(evs[0].Text, "merged") {
 		t.Fatalf("a landing says so: %+v", evs)
+	}
+	// It landed itself and closed itself; the summary it wrote on the
+	// way out is the last thing the person can still read, so the line
+	// that ends the task says where it is.
+	if !strings.Contains(evs[0].Text, "(/report a1)") {
+		t.Errorf("a landing with a report should point at it: %q", evs[0].Text)
 	}
 
 	// The rail agrees: what closed is off it.
@@ -592,6 +599,106 @@ func TestAScoutReportsRatherThanLands(t *testing.T) {
 	v.State = fleet.Closed
 	if evs := w.absorb([]fleet.View{v}, now); len(evs) != 0 {
 		t.Fatalf("closing a scout that already reported is not news: %+v", evs)
+	}
+}
+
+// Reading a report is the review, and the review is read -> decide.
+// The pick has to survive a person who saw the id on screen and typed
+// three characters of it, or none at all; and what comes back has to
+// say whose report it is and what the next verb is.
+func TestReadingAReport(t *testing.T) {
+	scout := fleet.View{
+		Task:   &fleet.Task{ID: "1ea6a4b5", Kind: fleet.Scout, Project: "/w/vera", Brief: "Find out why it is slow. It has been for weeks."},
+		State:  fleet.Finished,
+		Report: "# Findings\n\nThe cache prefix changes every turn.",
+		Unread: []fleet.Status{{Verb: fleet.Done, Text: "report written"}}, AutoLand: true,
+	}
+	ship := fleet.View{
+		Task:  &fleet.Task{ID: "1e00ffff", Kind: fleet.Ship, Project: "/w/vera", Branch: "vera-1e00", Brief: "Port the chat"},
+		State: fleet.Running,
+	}
+	views := []fleet.View{ship, scout}
+
+	// Nothing named: the one report that is waiting.
+	if v, err := pickReport(views, ""); err != nil || v.ID != scout.ID {
+		t.Errorf("bare /report picked %q (%v), want the waiting report", v.ID, err)
+	}
+	// A prefix is enough — the command line has always taken one.
+	if v, err := pickReport(views, "1ea"); err != nil || v.ID != scout.ID {
+		t.Errorf("prefix: %q (%v)", v.ID, err)
+	}
+	// A prefix that fits two names them instead of guessing.
+	_, err := pickReport(views, "1e")
+	if err == nil || !strings.Contains(err.Error(), "1e00ffff") || !strings.Contains(err.Error(), "1ea6a4b5") {
+		t.Errorf("an ambiguous prefix should name the candidates: %v", err)
+	}
+	if _, err := pickReport(views, "zz"); err == nil || err.Error() != "no task zz" {
+		t.Errorf("unknown id: %v", err)
+	}
+	// An exact id beats a prefix: a task whose id is another's prefix
+	// is still reachable by typing all of it.
+	short := fleet.View{Task: &fleet.Task{ID: "1e", Kind: fleet.Scout}, Report: "x"}
+	if v, err := pickReport([]fleet.View{ship, short}, "1e"); err != nil || v.ID != "1e" {
+		t.Errorf("exact id: %q (%v)", v.ID, err)
+	}
+	// Two waiting: named, not guessed between.
+	ship.Report, ship.Unread, ship.State = "# Done\n\nmerged", []fleet.Status{{Verb: fleet.Done}}, fleet.Finished
+	if _, err := pickReport([]fleet.View{ship, scout}, ""); err == nil || !strings.Contains(err.Error(), "1e00ffff") || !strings.Contains(err.Error(), "1ea6a4b5") {
+		t.Errorf("two waiting: %v", err)
+	}
+	// A closed task is not waiting on anybody, but it is still there
+	// to be re-read by name.
+	closed := scout
+	closed.Task = &fleet.Task{ID: "0ldc0de", Kind: fleet.Scout, Closed: true}
+	closed.State = fleet.Closed
+	if _, err := pickReport([]fleet.View{closed}, ""); err == nil || !strings.Contains(err.Error(), "no report is waiting") {
+		t.Errorf("closed is not waiting: %v", err)
+	}
+	if v, err := pickReport([]fleet.View{closed}, "0ld"); err != nil || v.ID != "0ldc0de" {
+		t.Errorf("re-reading a closed task: %q (%v)", v.ID, err)
+	}
+
+	// What is shown: whose it is, where it worked, the report, and the
+	// one thing to do about it now.
+	md := reportMarkdown(scout)
+	for _, want := range []string{"1ea6a4b5", "scout", "finished", "vera", "Find out why it is slow", "cache prefix changes", "Nothing to land"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("the report as shown is missing %q:\n%s", want, md)
+		}
+	}
+	if strings.Contains(md, "/land 1ea6a4b5") {
+		t.Errorf("a scout has nothing to land:\n%s", md)
+	}
+}
+
+// The next verb is a claim about what happens now, so it says what is
+// true of THIS task rather than one line for every report.
+func TestWhatToDoAboutAReport(t *testing.T) {
+	task := func(kind fleet.Kind) *fleet.Task {
+		return &fleet.Task{ID: "a1", Kind: kind, Branch: "vera-a1"}
+	}
+	for _, tc := range []struct {
+		name string
+		v    fleet.View
+		want string
+	}{
+		{"blocked", fleet.View{Task: task(fleet.Ship), State: fleet.Decision}, "blocked on you"},
+		{"turn over", fleet.View{Task: task(fleet.Ship), State: fleet.Waiting}, "nobody has answered"},
+		{"paused", fleet.View{Task: task(fleet.Ship), State: fleet.Held}, "paused on something outside"},
+		{"failed", fleet.View{Task: task(fleet.Ship), State: fleet.Broken}, "/resume a1"},
+		{"landing itself", fleet.View{Task: task(fleet.Ship), State: fleet.Finished, AutoLand: true}, "Vera is landing it"},
+		{"waiting to land", fleet.View{Task: task(fleet.Ship), State: fleet.Finished}, "/land a1"},
+		{"scout, closed for them", fleet.View{Task: task(fleet.Scout), State: fleet.Finished, AutoLand: true}, "Vera closes it"},
+		{"scout, theirs to close", fleet.View{Task: task(fleet.Scout), State: fleet.Finished}, "/land a1"},
+		{"still going", fleet.View{Task: task(fleet.Ship), State: fleet.Running}, "still going"},
+	} {
+		if got := reportNext(tc.v); !strings.Contains(got, tc.want) {
+			t.Errorf("%s: %q, want %q in it", tc.name, got, tc.want)
+		}
+	}
+	// A closed task has no next verb; the work is over.
+	if got := reportNext(fleet.View{Task: task(fleet.Ship), State: fleet.Closed}); got != "" {
+		t.Errorf("closed: %q", got)
 	}
 }
 
@@ -702,7 +809,7 @@ func TestCommandsSayWhatTheyNeed(t *testing.T) {
 		{"stop", "/stop <id> [force]"},
 		{"seen", "/seen <id>"},
 		{"resume", "/resume <id>"},
-		{"report", "/report <id>"},
+		{"report", "no report is waiting"},
 		{"start", "/start [@repo] <brief>"},
 		{"scout", "/scout [@repo] <brief>"},
 		{"nonsense", "unknown command /nonsense"},
@@ -733,9 +840,10 @@ func TestCommandsSayWhatTheyNeed(t *testing.T) {
 func TestCommandsReachVerad(t *testing.T) {
 	f := newFakeVerad(t)
 	f.setFleet(fleet.View{
-		Task:   &fleet.Task{ID: "a1", Brief: "Port the chat"},
+		Task:   &fleet.Task{ID: "a1", Kind: fleet.Ship, Brief: "Port the chat"},
 		State:  fleet.Finished,
 		Report: "# Findings\n\nIt works.",
+		Unread: []fleet.Status{{Verb: fleet.Done, Text: "shipped"}},
 	})
 	c := f.client()
 	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
@@ -744,8 +852,12 @@ func TestCommandsReachVerad(t *testing.T) {
 		t.Errorf("/tasks: %q", got)
 	}
 
-	// Reading a report shows it, and marks it seen.
-	if got := joined(s.handle("report", "a1")); !strings.Contains(got, "# Findings") {
+	// Reading a report shows it — with whose it is and what to do
+	// about it — and marks it seen. A bare /report takes the one that
+	// is waiting, which is why the notice can say "reported" and the
+	// person can answer it with six characters.
+	got := joined(s.handle("report", ""))
+	if !strings.Contains(got, "# Findings") || !strings.Contains(got, "a1") || !strings.Contains(got, "/land a1") {
 		t.Errorf("/report: %q", got)
 	}
 	if got := joined(s.handle("report", "zz")); !strings.Contains(got, "no task zz") {
