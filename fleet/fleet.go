@@ -61,6 +61,11 @@ type Fleet struct {
 	// keeps no notes.
 	Notes      Notes
 	Thresholds Thresholds
+	// Lifecycle is the machine's own record of when it was not here to
+	// work — asleep, or off the network. Nil is a machine that never
+	// goes away, which is the right belief for a test and the wrong
+	// one for a laptop.
+	Lifecycle *Lifecycle
 	// Every is the supervision cadence. Default 15s; pokes cut it short.
 	Every time.Duration
 
@@ -141,6 +146,10 @@ type View struct {
 	Unread []Status `json:"unread,omitempty"`
 	// Report is what the task wrote to its report file, if anything.
 	Report string `json:"report,omitempty"`
+	// Machine is what the machine was doing over the window this task
+	// was judged across — set only when it went away in it. It is what
+	// makes "interrupted" sayable: which absence, and how long.
+	Machine Machine `json:"machine,omitzero"`
 	// AutoLand says whether the supervisor lands this itself. It is on
 	// the view because it changes what is TRUE to say about a finished
 	// task: with it on, "ready to land" is wrong — nobody is waiting
@@ -163,6 +172,7 @@ func New(m mux.Mux, store *Store) *Fleet {
 		HasSession: claudeHasSession,
 		Trust:      inheritTrust,
 		Thresholds: DefaultThresholds,
+		Lifecycle:  &Lifecycle{},
 		Every:      15 * time.Second,
 		AutoResume: true,
 		poke:       make(chan struct{}, 1),
@@ -785,7 +795,7 @@ func (f *Fleet) Tasks(ctx context.Context) ([]View, error) {
 		v.Last, _ = f.Store.Last(t.ID)
 		v.Unread, _ = f.Store.Unread(t.ID)
 		v.Report = f.Store.Report(t.ID)
-		v.State = f.classify(t, v.Last, panes)
+		v.State, v.Machine = f.classify(t, v.Last, panes)
 		if t.Closed {
 			closed = append(closed, v)
 		} else {
@@ -805,6 +815,10 @@ func (f *Fleet) Supervise(ctx context.Context) error {
 	tick := time.NewTicker(every)
 	defer tick.Stop()
 	for {
+		// The heartbeat is also the fallback sleep detector: a sweep
+		// that comes an hour after the last one is an hour this
+		// machine was not running, whether or not anything told us.
+		f.Lifecycle.Beat(time.Now())
 		f.sweep(ctx)
 		select {
 		case <-ctx.Done():
@@ -823,6 +837,11 @@ func (f *Fleet) sweep(ctx context.Context) {
 		return
 	}
 	panes := f.panes(ctx)
+	// While the machine is away, the supervisor watches and says
+	// nothing else. Landing needs a network and a person's repository
+	// to be reachable; resuming a room needs a machine that will still
+	// be there in a second. Both wait for the machine to come back.
+	away := f.Lifecycle != nil && !f.Lifecycle.Awake()
 	for _, t := range tasks {
 		if f.Projects != nil && !t.Closed {
 			// A task's repository is a known one for as long as the
@@ -830,8 +849,8 @@ func (f *Fleet) sweep(ctx context.Context) {
 			f.Projects.Remember(Repo{Root: t.Project, Name: baseName(t.Project)})
 		}
 		last, _ := f.Store.Last(t.ID)
-		state := f.classify(t, last, panes)
-		if state == Finished && f.AutoLand && last != nil {
+		state, _ := f.classify(t, last, panes)
+		if state == Finished && f.AutoLand && last != nil && !away {
 			switch t.Kind {
 			case Ship:
 				state = f.autoLand(ctx, t, last)
@@ -842,7 +861,7 @@ func (f *Fleet) sweep(ctx context.Context) {
 				}
 			}
 		}
-		if state == Gone && panes != nil && f.AutoResume && f.mayResume(t.ID) {
+		if state == Gone && panes != nil && f.AutoResume && !away && f.mayResume(t.ID) {
 			// The mux is reachable and this task's pane is not in it:
 			// the mux was restarted under it. Reopen the room.
 			if _, err := f.Resume(ctx, t.ID); err == nil {
@@ -895,7 +914,7 @@ func (f *Fleet) panes(ctx context.Context) map[mux.ID]mux.Pane {
 	return m
 }
 
-func (f *Fleet) classify(t *Task, last *Status, panes map[mux.ID]mux.Pane) State {
+func (f *Fleet) classify(t *Task, last *Status, panes map[mux.ID]mux.Pane) (State, Machine) {
 	e := Evidence{Now: time.Now(), TurnEnded: t.TurnEnded, Last: last, Closed: t.Closed}
 	if p, ok := panes[t.Pane]; ok && !p.Dead {
 		e.PaneAlive = true
@@ -908,7 +927,14 @@ func (f *Fleet) classify(t *Task, last *Status, panes map[mux.ID]mux.Pane) State
 		// Bounded: a poll must never cost more than a glance.
 		e.LastWrite = NewestWrite(t.Worktree, e.PaneActive, 6, 300*time.Millisecond)
 	}
-	return Classify(e, f.Thresholds)
+	// The window this task is judged over runs from its last sign of
+	// life — or, before it has shown one, from when it was opened.
+	from := e.Latest()
+	if from.IsZero() {
+		from = t.Spawned
+	}
+	e.Machine = f.Lifecycle.Since(from, e.Now)
+	return Classify(e, f.Thresholds), e.Machine
 }
 
 func newID() string {

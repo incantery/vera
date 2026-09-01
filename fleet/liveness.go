@@ -26,6 +26,10 @@ const (
 	Held State = "held"
 	// Decision: the agent said it is blocked on a decision.
 	Decision State = "decision"
+	// Interrupted: the machine went out from under the task — it
+	// slept, or it lost the network. The silence is the machine's,
+	// not the agent's, and it is not a question for anybody.
+	Interrupted State = "interrupted"
 	// Finished / Broken: the agent's own last word.
 	Finished State = "finished"
 	Broken   State = "broken"
@@ -36,6 +40,8 @@ const (
 )
 
 // Actionable says whether a state is a reason to wake a person.
+// Interrupted deliberately is not: nothing has been asked, and the
+// machine coming back is Vera's problem before it is theirs.
 func (s State) Actionable() bool {
 	switch s {
 	case Waiting, Stale, Decision, Finished, Broken, Gone:
@@ -63,6 +69,11 @@ type Evidence struct {
 	LastWrite time.Time
 	// TurnEnded: the harness's own word that the agent stopped.
 	TurnEnded time.Time
+	// Machine is what this machine was doing across the same window —
+	// awake and connected, or not. Its zero value is a machine that
+	// never went away, which is what every caller believed before
+	// lifecycle.go existed.
+	Machine Machine
 	// Last is the newest status line, nil if none.
 	Last   *Status
 	Closed bool
@@ -105,20 +116,41 @@ func Classify(e Evidence, th Thresholds) State {
 			return Held
 		}
 	}
-	latest := e.PaneActive
-	if e.LastWrite.After(latest) {
-		latest = e.LastWrite
-	}
+	latest := e.Latest()
 	// The harness said the turn ended and nothing has happened since:
 	// the agent is waiting on somebody. A later pulse means a person
-	// (or Vera) already answered and it is running again.
-	if !e.TurnEnded.IsZero() && !latest.After(e.TurnEnded) {
+	// (or Vera) already answered and it is running again — and a turn
+	// the machine itself ended is not a question at all, so it falls
+	// through to be judged as silence rather than as an ask.
+	if !e.TurnEnded.IsZero() && !latest.After(e.TurnEnded) && !e.Machine.Cut(e.TurnEnded) {
 		return Waiting
 	}
 	if latest.IsZero() {
+		if e.Machine.Interrupted(latest, e.Now, th.Quiet) {
+			return Interrupted
+		}
 		return Quiet
 	}
-	idle := e.Now.Sub(latest)
+	// Something happened within living memory: the agent is alive
+	// whatever the machine has been doing.
+	raw := e.Now.Sub(latest)
+	if raw < th.Quiet {
+		return Running
+	}
+	// The machine is away, or has only just come back: its absence is
+	// the whole of the silence, and there has been no time since for
+	// anything else to be true. After that the ladder below takes over
+	// on the time the machine was actually running — an interruption
+	// nobody picks up does eventually deserve a look, and saying so is
+	// the honest end of it.
+	if e.Machine.Interrupted(latest, e.Now, th.Quiet) {
+		return Interrupted
+	}
+	// Time the machine spent away is not time the agent spent idle.
+	idle := raw - e.Machine.Down
+	if idle < 0 {
+		idle = 0
+	}
 	switch {
 	case idle < th.Quiet:
 		return Running
@@ -127,6 +159,16 @@ func Classify(e Evidence, th Thresholds) State {
 	default:
 		return Stale
 	}
+}
+
+// Latest is the newest sign of life: the window a task is judged over
+// starts here. Exported because the fleet needs the same instant to ask
+// the machine what it was doing over that window.
+func (e Evidence) Latest() time.Time {
+	if e.LastWrite.After(e.PaneActive) {
+		return e.LastWrite
+	}
+	return e.PaneActive
 }
 
 // pruned are directories no agent's work lands in and every repo has

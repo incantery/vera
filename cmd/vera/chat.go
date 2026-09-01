@@ -492,7 +492,7 @@ func sideState(v fleet.View) (tui.State, bool) {
 	switch v.State {
 	case fleet.Running, fleet.Quiet:
 		return tui.Working, true
-	case fleet.Waiting, fleet.Stale, fleet.Held:
+	case fleet.Waiting, fleet.Stale, fleet.Held, fleet.Interrupted:
 		return tui.Idle, true
 	case fleet.Decision, fleet.Broken:
 		return tui.Blocked, true
@@ -979,6 +979,11 @@ func fleetPhrase(v fleet.View, now time.Time) string {
 		return "blocked on a decision from you"
 	case fleet.Held:
 		return "paused on something external"
+	case fleet.Interrupted:
+		// Not a question, and not a stall: the machine went out from
+		// under it. Saying which is the whole point — "quiet for 8
+		// hours" would send them looking for a problem that is a lid.
+		return "interrupted — " + v.Machine.Why()
 	case fleet.Finished:
 		switch {
 		case v.Kind == fleet.Scout:

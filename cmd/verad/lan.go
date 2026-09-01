@@ -69,6 +69,12 @@ type lanTransport struct {
 	stt Transcriber
 	// fleet is the supervisor, when one is running.
 	fleet *fleet.Fleet
+	// machine hears THIS machine's own lifecycle — it slept, it woke,
+	// the network came or went — so the fleet can stop reading eight
+	// quiet hours as agents that stalled. Only this device's events
+	// reach it: a phone in a tunnel is not a reason to pause work
+	// running on the desk. Nil ignores them.
+	machine func(cause string, away bool, at time.Time)
 	// todo is the person's own list, when there is a home to keep it
 	// in. Nil mounts no routes: a daemon with nowhere to write is not
 	// a daemon that pretends to remember.
@@ -460,7 +466,35 @@ func (l *lanTransport) observe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	l.attention.Observe(o)
+	l.noteLifecycle(o)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// noteLifecycle passes this machine's own sleep and network events on
+// to whoever supervises the work running on it.
+//
+// The sleep event itself rarely arrives at the moment it happened —
+// the machine is on its way out and there is no time to be heard — so
+// the Mac app sends it again on the way back, stamped with when the lid
+// actually shut. Both orders end with the same span on the record.
+func (l *lanTransport) noteLifecycle(o Observation) {
+	if l.machine == nil || o.Device != l.id.Name {
+		return
+	}
+	at := o.At
+	if at.IsZero() {
+		at = time.Now()
+	}
+	switch o.Type {
+	case "device.slept":
+		l.machine(fleet.CauseSleep, true, at)
+	case "device.woke":
+		l.machine(fleet.CauseSleep, false, at)
+	case "device.offline":
+		l.machine(fleet.CauseOffline, true, at)
+	case "device.online":
+		l.machine(fleet.CauseOffline, false, at)
+	}
 }
 
 func (l *lanTransport) pokeHandler(w http.ResponseWriter, r *http.Request) {

@@ -34,6 +34,54 @@ func TestClassify(t *testing.T) {
 		{"turn ended but active since", Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(10 * time.Second), TurnEnded: ago(time.Minute)}, Running},
 		{"turn ended, writes since", Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(5 * time.Minute), LastWrite: ago(10 * time.Second), TurnEnded: ago(time.Minute)}, Running},
 		{"nothing known yet", Evidence{Now: now, PaneAlive: true, AgentAlive: true}, Quiet},
+
+		// The machine, not the agent. A lid shut at midnight leaves
+		// every task in the fleet perfectly silent, and none of that
+		// silence is about the agents.
+		{"just woke, nothing since: interrupted, not stale",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(8 * time.Hour),
+				Machine: Machine{Cause: CauseSleep, Went: ago(8 * time.Hour), Back: ago(30 * time.Second), Down: 8*time.Hour - 30*time.Second}},
+			Interrupted},
+		{"awake five minutes after eight hours asleep: five minutes of silence, not eight hours",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(8 * time.Hour),
+				Machine: Machine{Cause: CauseSleep, Went: ago(8 * time.Hour), Back: ago(5 * time.Minute), Down: 8*time.Hour - 5*time.Minute}},
+			Quiet},
+		{"awake half an hour and still nothing: worth a look after all",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(8 * time.Hour),
+				Machine: Machine{Cause: CauseSleep, Went: ago(8 * time.Hour), Back: ago(30 * time.Minute), Down: 7*time.Hour + 30*time.Minute}},
+			Stale},
+		{"still asleep",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(2 * time.Hour),
+				Machine: Machine{Away: true, Cause: CauseSleep, Went: ago(2 * time.Hour), Down: 2 * time.Hour}},
+			Interrupted},
+		{"offline right now",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(20 * time.Minute),
+				Machine: Machine{Away: true, Cause: CauseOffline, Went: ago(20 * time.Minute), Down: 20 * time.Minute}},
+			Interrupted},
+		{"back, and it stirred since: running",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(10 * time.Second),
+				Machine: Machine{Cause: CauseSleep, Went: ago(time.Hour), Back: ago(time.Minute), Down: 59 * time.Minute}},
+			Running},
+		{"the machine ended the turn: interrupted, not waiting on a person",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(2 * time.Hour), TurnEnded: ago(2 * time.Hour),
+				Machine: Machine{Cause: CauseSleep, Went: ago(2*time.Hour + time.Minute), Back: ago(30 * time.Second), Down: 2 * time.Hour}},
+			Interrupted},
+		{"a turn the machine ended, long since back: quiet, and never a question",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(2 * time.Hour), TurnEnded: ago(2 * time.Hour),
+				Machine: Machine{Cause: CauseSleep, Went: ago(2*time.Hour + time.Minute), Back: ago(5 * time.Minute), Down: 1*time.Hour + 55*time.Minute}},
+			Quiet},
+		{"the agent ended its turn before the machine left: still waiting on a person",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(3 * time.Hour), TurnEnded: ago(3 * time.Hour),
+				Machine: Machine{Cause: CauseSleep, Went: ago(2 * time.Hour), Back: ago(time.Minute), Down: 2 * time.Hour}},
+			Waiting},
+		{"the agent's own word outranks the machine",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, Last: &Status{Verb: Blocked}, PaneActive: ago(2 * time.Hour),
+				Machine: Machine{Away: true, Cause: CauseSleep, Went: ago(2 * time.Hour)}},
+			Decision},
+		{"an absence long since over changes nothing",
+			Evidence{Now: now, PaneAlive: true, AgentAlive: true, PaneActive: ago(30 * time.Minute),
+				Machine: Machine{Cause: CauseSleep, Went: ago(20 * time.Hour), Back: ago(12 * time.Hour)}},
+			Stale},
 	}
 	for _, c := range cases {
 		if got := Classify(c.e, th); got != c.want {
@@ -48,7 +96,7 @@ func TestActionable(t *testing.T) {
 			t.Errorf("%s should be actionable", s)
 		}
 	}
-	for _, s := range []State{Running, Quiet, Held, Closed} {
+	for _, s := range []State{Running, Quiet, Held, Closed, Interrupted} {
 		if s.Actionable() {
 			t.Errorf("%s should not be actionable", s)
 		}

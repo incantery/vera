@@ -338,6 +338,11 @@ func fleetPhrase(v fleet.View, now time.Time) string {
 		return "BLOCKED on a decision from them"
 	case fleet.Held:
 		return "paused, waiting on something external"
+	case fleet.Interrupted:
+		// The model must not turn this into "it needs you". Nothing
+		// was asked; the machine was not there, and the agent picks
+		// up when it is nudged or resumed.
+		return "interrupted — " + v.Machine.Why() + ", so nothing has happened since; it asked them nothing"
 	case fleet.Finished:
 		// Only one of these is ever true, and saying the wrong one
 		// sends the person to do a job nobody is waiting for. A scout

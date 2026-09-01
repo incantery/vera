@@ -69,6 +69,10 @@ func railState(s fleet.State) string {
 		return "working"
 	case fleet.Waiting, fleet.Decision, fleet.Stale:
 		return "blocked"
+	case fleet.Interrupted:
+		// Deliberately not "blocked": the row must not read as
+		// something the person has to answer.
+		return "idle"
 	case fleet.Finished:
 		return "done"
 	case fleet.Broken:
@@ -209,6 +213,8 @@ func railWord(s fleet.State) string {
 		return "quiet"
 	case fleet.Held:
 		return "paused"
+	case fleet.Interrupted:
+		return "interrupted"
 	case fleet.Finished:
 		return "done"
 	case fleet.Broken:
