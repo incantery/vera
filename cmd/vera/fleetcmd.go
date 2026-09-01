@@ -18,7 +18,7 @@ import (
 const fleetUsage = `vera tasks                                 every task and what is believed about it
 vera task start [-scout] [-p repo] <brief|->   start a task (brief on stdin with -)
 vera task answer <id> <text>               pass a reply to a task
-vera task report <id>                      print its report (and mark it seen)
+vera task report [id]                      print its report (and mark it seen); no id takes the one waiting
 vera task land <id> | stop <id> [-f] | resume <id> | seen <id>
 `
 
@@ -102,24 +102,34 @@ func runFleet(verb string, args []string) error {
 		}
 		return c.post(ctx, "/fleet/"+args[0]+"/answer", map[string]string{"text": strings.Join(args[1:], " ")})
 	case "report":
-		if len(args) < 1 {
-			return errors.New("vera task report <id>")
-		}
 		views, err := c.tasks(ctx)
 		if err != nil {
 			return err
 		}
-		for _, v := range views {
-			if strings.HasPrefix(v.ID, args[0]) {
-				if v.Report == "" {
-					fmt.Println("no report yet")
-				} else {
-					fmt.Println(v.Report)
-				}
-				return c.post(ctx, "/fleet/"+v.ID+"/seen", nil)
-			}
+		// The same pick the chat makes: a prefix, or nothing at all
+		// when one report is waiting. An ambiguous prefix used to take
+		// whichever task came first, which is a coin toss dressed up
+		// as an answer.
+		want := ""
+		if len(args) > 0 {
+			want = args[0]
 		}
-		return errors.New("no task " + args[0])
+		v, err := pickReport(views, want)
+		if err != nil {
+			return err
+		}
+		if v.Report == "" {
+			return errors.New(v.ID + " has written no report yet")
+		}
+		// The report itself is stdout and nothing else, so it can be
+		// piped into a file or a reader. Whose it is and what to do
+		// about it go to stderr, where they are read and not saved.
+		fmt.Fprintf(os.Stderr, "%s · %s · %s · %s\n", v.ID, v.Kind, v.State, shortPath(v.Project))
+		fmt.Println(v.Report)
+		if next := reportNext(v); next != "" {
+			fmt.Fprintln(os.Stderr, plainText(next))
+		}
+		return c.post(ctx, "/fleet/"+v.ID+"/seen", nil)
 	case "land", "resume", "seen":
 		if len(args) < 1 {
 			return fmt.Errorf("vera task %s <id>", verb)
