@@ -53,6 +53,12 @@ POST /observe   {"type":"app.focused","device":"work-mac","app":{"name":"Ghostty
 GET  /status    what Vera knows: devices, their focus, providers, integrations
 ```
 
+A device also reports its own lifecycle — `device.slept`, `device.woke`,
+`device.offline`, `device.online` — which is kept per device and said in
+the paragraph ("It woke 2 minutes ago, after 8 hours asleep", "It has no
+network"). For *this* machine those four go on to the fleet as well; a
+phone in a tunnel does not pause work running on the desk.
+
 The model reads it as a paragraph appended after the system prompt —
 "On work-mac: Ghostty has had focus for 2 minutes. Before that: Chrome."
 — with an explicit note that this names the application in front of
@@ -104,11 +110,25 @@ evidence every look:
 | newest write under the worktree | a bounded scan — a quiet pane while files change is an agent working, not a stall |
 | turn ended | Claude Code's Stop hook, `POST /fleet/{id}/turn-ended` (loopback, carries only the incarnation) |
 | the agent's own word | `POST /fleet/{id}/status` with one of `working paused blocked resolved done failed` |
+| the machine's own absences | `fleet/lifecycle.go`: the Mac app's `device.slept` / `device.woke` / `device.offline` / `device.online`, and failing that the supervisor's own late heartbeat |
 
 which yields `running · quiet · stale · waiting · held · decision ·
-finished · broken · gone · closed`. A change of belief is one
-observation (`task.waiting`, source `fleet`) through the same door the
-Mac app uses, so the mind's preface and `/status` carry it.
+interrupted · finished · broken · gone · closed`. A change of belief is
+one observation (`task.waiting`, source `fleet`) through the same door
+the Mac app uses, so the mind's preface and `/status` carry it.
+
+**Interrupted** is the state that keeps the rest honest. Every other one
+is read from silence, and silence means nothing while the lid is shut: a
+Mac that slept at midnight leaves eight hours of it on every task. So
+absences are recorded and discounted, and the distinction that matters
+is a turn that ended — an agent that ends its turn asked something and
+is *waiting* on a person; a turn the machine ended asked nothing and is
+*interrupted*. Interrupted is deliberately not actionable, so it never
+wakes anybody; it joins the ordinary quiet-then-stale ladder once the
+machine has been back long enough for the silence to be the agent's
+again. While the machine is away the supervisor watches and does nothing
+else — no landing, no reopening rooms — and coming back pokes it to look
+at once.
 
 ```
 GET  /fleet                    every task with state, last word, unread lines

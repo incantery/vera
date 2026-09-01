@@ -434,3 +434,76 @@ func TestDescribeMentionsTheTerminalWithoutAMacApp(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// The machine's own lifecycle, over the wire and into the fleet's
+// record — and only this machine's. A phone in a tunnel is not a
+// reason to stop supervising agents running on the desk.
+func TestTheMachinesOwnSleepReachesTheFleetAndAPhonesDoesNot(t *testing.T) {
+	type note struct {
+		cause string
+		away  bool
+	}
+	var notes []note
+	base, id := serveLANWith(t, echo, func(l *lanTransport) {
+		l.machine = func(cause string, away bool, _ time.Time) {
+			notes = append(notes, note{cause, away})
+		}
+	})
+	post := func(body string) {
+		t.Helper()
+		req, _ := http.NewRequest("POST", base+"/observe", bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer "+id.Secret)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNoContent {
+			t.Fatalf("observe %s got %d", body, res.StatusCode)
+		}
+	}
+	post(`{"type":"device.slept","device":"test-mac","at":"2026-09-01T01:00:00Z"}`)
+	post(`{"type":"device.slept","device":"the-phone","at":"2026-09-01T01:00:00Z"}`)
+	post(`{"type":"device.woke","device":"test-mac","at":"2026-09-01T09:00:00Z"}`)
+	post(`{"type":"device.offline","device":"test-mac"}`)
+	post(`{"type":"device.online","device":"test-mac"}`)
+	post(`{"type":"app.focused","device":"test-mac","app":{"name":"Ghostty"}}`)
+
+	want := []note{{"sleep", true}, {"sleep", false}, {"offline", true}, {"offline", false}}
+	if len(notes) != len(want) {
+		t.Fatalf("got %+v, want %+v", notes, want)
+	}
+	for i, w := range want {
+		if notes[i] != w {
+			t.Errorf("note %d = %+v, want %+v", i, notes[i], w)
+		}
+	}
+}
+
+func TestDescribeSaysWhatTheMachineItselfIsDoing(t *testing.T) {
+	a := newAttention()
+	now := time.Now()
+	at := func(d time.Duration) time.Time { return now.Add(-d) }
+	say := func(kind string, when time.Duration) {
+		a.Observe(Observation{Type: kind, Device: "mac", At: at(when)})
+	}
+	a.Observe(focused("mac", "Ghostty", "com.mitchellh.ghostty", at(9*time.Hour)))
+	say("device.slept", 8*time.Hour)
+	say("device.woke", 2*time.Minute)
+	if got := a.Describe(now, ""); !strings.Contains(got, "It woke 2 minutes ago, after 7 hours") {
+		t.Errorf("a machine fresh from sleep should say so: %q", got)
+	}
+	say("device.offline", time.Minute)
+	if got := a.Describe(now, ""); !strings.Contains(got, "It has no network.") {
+		t.Errorf("no network is a fact worth telling the model: %q", got)
+	}
+	say("device.online", 30*time.Second)
+	if got := a.Describe(now, ""); strings.Contains(got, "no network") {
+		t.Errorf("the network came back: %q", got)
+	}
+	// And it is on /status, where the phone and the Health view read it.
+	devices, _ := a.Snapshot(now, 10)
+	if len(devices) != 1 || devices[0].Offline || devices[0].Asleep || devices[0].Woke == nil {
+		t.Errorf("device status %+v", devices)
+	}
+}

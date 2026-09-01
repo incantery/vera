@@ -33,6 +33,7 @@ final class Station {
     let log = EventLog()
     let core: Core
     let focus = FocusTracker()
+    let lifecycle = LifecycleTracker()
     let hotkey = Hotkey()
     let keys = KeyTap()
     let panel = AskPanel()
@@ -88,6 +89,39 @@ final class Station {
         focus.onUnfocus = { [weak self] app in self?.send(.unfocused(app, device: self?.core.device ?? "")) }
         focus.start()
 
+        // The machine itself, as a thing that comes and goes. Vera Core
+        // supervises coding agents on this Mac, and every belief it has
+        // about them is read from silence — so an absence it does not
+        // know about becomes a fleet of agents that all appear to have
+        // stalled at once, in the middle of the night.
+        lifecycle.onSleep = { [weak self] at in
+            guard let self else { return }
+            // A hot microphone must not go into the sleep with us.
+            if voice == .listening { cancelListening() }
+            // Best effort: there is about no time here, and the report
+            // that counts is the one on the way back.
+            send(.plain("device.slept", device: core.device, at: at))
+        }
+        lifecycle.onWake = { [weak self] at, went, slept in
+            guard let self else { return }
+            if let went {
+                // Said again, with the moment it happened: this is the
+                // one that arrives, and the span is only a span with it.
+                send(.plain("device.slept", device: core.device, at: went))
+            }
+            send(.plain("device.woke", device: core.device, at: at,
+                        text: slept > 0 ? "asleep for " + LifecycleTracker.roughly(slept) : nil))
+            core.wake()
+            // No activation notification was delivered while it slept,
+            // so what has focus now is anybody's guess until it is asked.
+            focus.restate()
+        }
+        lifecycle.onNetwork = { [weak self] up, at in
+            guard let self else { return }
+            send(.plain(up ? "device.online" : "device.offline", device: core.device, at: at))
+        }
+        lifecycle.start()
+
         overlay.edge = settings.overlayEdge
         overlay.onPresented = { [weak self] in self?.send(.plain("surface.presented", device: self?.core.device ?? "")) }
         overlay.onDismissed = { [weak self] in self?.send(.plain("surface.dismissed", device: self?.core.device ?? "")) }
@@ -107,6 +141,7 @@ final class Station {
     func stop() {
         keys.stop()
         hotkey.unregister()
+        lifecycle.stop()
         focus.stop()
         core.stop()
         listener.stop()

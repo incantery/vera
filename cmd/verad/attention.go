@@ -87,6 +87,17 @@ type device struct {
 	termHost *ObservedApp
 	// Recent is newest-last, bounded.
 	Recent []Observation
+	// Asleep / Offline: the machine's own lifecycle, as it reported it.
+	// A device that has never said is neither — silence is not sleep,
+	// and guessing which it is would be exactly the elaboration this
+	// file exists to refuse.
+	Asleep  bool
+	Offline bool
+	// Since is when the current absence began; Woke and Slept are the
+	// last one that ended.
+	Since time.Time
+	Woke  time.Time
+	Slept time.Duration
 	// Integrations maps a source ("neovim") to the last time it spoke.
 	Integrations map[string]time.Time
 	// places is the frecency table: every app and pane the person has
@@ -238,6 +249,23 @@ func (a *Attention) Observe(o Observation) {
 		}
 	case "terminal.unfocused":
 		d.Terminal = nil
+	// The machine's own lifecycle. It matters twice: the model should
+	// not describe a lid that has been shut for eight hours as a
+	// person who has gone quiet, and the fleet must not read the same
+	// eight hours as agents that stalled.
+	case "device.slept":
+		d.Asleep, d.Since = true, o.At
+	case "device.woke":
+		if d.Asleep && !d.Since.IsZero() && o.At.After(d.Since) {
+			d.Slept = o.At.Sub(d.Since)
+		}
+		d.Asleep, d.Since, d.Woke = false, time.Time{}, o.At
+	case "device.offline":
+		if !d.Offline {
+			d.Offline, d.Since = true, o.At
+		}
+	case "device.online":
+		d.Offline = false
 	}
 	if o.Source != "" {
 		d.Integrations[o.Source] = o.At
@@ -322,9 +350,31 @@ func (a *Attention) Describe(now time.Time, speaking string) string {
 		if before := a.before(d); len(before) > 0 {
 			b.WriteString(" Before that: " + strings.Join(before, ", ") + ".")
 		}
+		if s := lifecycleLine(d, now); s != "" {
+			b.WriteString(" " + s)
+		}
 		b.WriteString("\n")
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// lifecycleLine is what to say about the machine itself, and nothing
+// when it has been here all along. It is said only while it is still
+// news: a wake an hour ago explains nothing about the present.
+func lifecycleLine(d *device, now time.Time) string {
+	switch {
+	case d.Offline:
+		return "It has no network."
+	case d.Asleep:
+		return "It is asleep."
+	case !d.Woke.IsZero() && now.Sub(d.Woke) < 10*time.Minute:
+		s := "It woke " + roughly(now.Sub(d.Woke)) + " ago"
+		if d.Slept > time.Minute {
+			s += ", after " + roughly(d.Slept) + " asleep"
+		}
+		return s + "."
+	}
+	return ""
 }
 
 // TerminalHost is the macOS app rook runs inside on a device, if known —
@@ -454,7 +504,11 @@ type DeviceStatus struct {
 	Focus      *ObservedApp   `json:"focus,omitempty"`
 	FocusSince *time.Time     `json:"focus_since,omitempty"`
 	Terminal   *TerminalFocus `json:"terminal,omitempty"`
-	Recent     []Observation  `json:"recent"`
+	// Asleep / Offline: the machine's own lifecycle, when it reports it.
+	Asleep  bool          `json:"asleep,omitempty"`
+	Offline bool          `json:"offline,omitempty"`
+	Woke    *time.Time    `json:"woke,omitempty"`
+	Recent  []Observation `json:"recent"`
 }
 
 // IntegrationStatus is one known integration and whether it has spoken
@@ -487,6 +541,11 @@ func (a *Attention) Snapshot(now time.Time, recent int) ([]DeviceStatus, []Integ
 		if d.Focus != nil {
 			since := d.FocusSince
 			s.FocusSince = &since
+		}
+		s.Asleep, s.Offline = d.Asleep, d.Offline
+		if !d.Woke.IsZero() {
+			woke := d.Woke
+			s.Woke = &woke
 		}
 		if n := len(d.Recent); n > 0 {
 			from := n - recent

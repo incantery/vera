@@ -252,6 +252,17 @@ final class Core {
         }
     }
 
+    /// Called when the machine comes back from sleep. Every stream this
+    /// held is dead — the sockets went with the machine — and the
+    /// reconnect backoff may be sitting on its longest wait. Starting
+    /// again cancels both and reconnects at once, which is the
+    /// difference between the overlay working the moment the lid opens
+    /// and working five seconds later.
+    func wake() {
+        log.info("the machine woke; reconnecting to Vera Core")
+        start()
+    }
+
     /// Holds the /commands downlink open in parallel with /watch. Waits
     /// for pairing, reconnects with the same short backoff. Kept separate
     /// so a busy or broken command stream never stalls the status one.

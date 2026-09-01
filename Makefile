@@ -24,6 +24,8 @@ test-mac:
 	@mkdir -p bin
 	@swiftc -o bin/askpanel-tests macos/Vera/AskPanel.swift macos/Vera/Attachment.swift macos/Tests/AskReturnTests.swift
 	@./bin/askpanel-tests
+	@swiftc -o bin/lifecycle-tests macos/Vera/Lifecycle.swift macos/Tests/LifecycleTests.swift
+	@./bin/lifecycle-tests
 
 install: build test
 	@mkdir -p $(BINDIR)

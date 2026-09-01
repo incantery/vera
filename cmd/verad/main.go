@@ -444,6 +444,23 @@ func main() {
 		// beside what she knows about the person.
 		f.Notes = place
 		f.Observe = func(ev fleet.Event) { lan.attention.Observe(fleetObservation(id.Name, ev)) }
+		// This machine's own lifecycle, from the Mac app: a lid that
+		// shuts is not an agent that stopped answering. Without the
+		// app the supervisor still notices sleep by counting its own
+		// heartbeats — less precisely, and blind to the network.
+		lan.machine = func(cause string, away bool, at time.Time) {
+			if away {
+				slog.Info("fleet: the machine went away", "cause", cause, "at", at)
+				f.Lifecycle.Went(cause, at)
+				return
+			}
+			slog.Info("fleet: the machine is back", "cause", cause, "at", at)
+			f.Lifecycle.Came(cause, at)
+		}
+		// Coming back is a reason to look at once rather than at the
+		// end of the cadence: every task's state changed the moment
+		// the machine did.
+		f.Lifecycle.OnBack(f.Poke)
 		lan.fleet = f
 		if mind != nil {
 			mind.Fleet = f

@@ -40,6 +40,16 @@ final class FocusTracker {
             let app = Self.describe(note)
             MainActor.assumeIsolated { self?.onUnfocus(app) }
         })
+        restate()
+    }
+
+    /// Reads the front of the screen and reports it if it has changed.
+    ///
+    /// Activation notifications are not delivered to a machine that is
+    /// asleep, so an app switched to across a sleep — or across a
+    /// reconnection — is one this tracker never heard about. Asking is
+    /// the only way back to the truth.
+    func restate() {
         if let front = NSWorkspace.shared.frontmostApplication {
             record(FocusedApp(name: front.localizedName ?? "Unknown", bundleID: front.bundleIdentifier ?? "", at: Date()))
         }

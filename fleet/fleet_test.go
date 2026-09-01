@@ -848,3 +848,116 @@ func TestInstallsByDefaultOnlyForVera(t *testing.T) {
 		t.Error("[land] install = true should win anywhere")
 	}
 }
+
+// The machine going away must not become news about the agents. A
+// sleeping Mac is silent on every pane in the fleet, and none of that
+// silence is a person's problem.
+func TestTheMachineGoingAwayIsNotTheAgentStalling(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	f.Thresholds = Thresholds{Quiet: time.Minute, Stale: 10 * time.Minute}
+	var events []Event
+	f.Observe = func(ev Event) { events = append(events, ev) }
+	ctx := context.Background()
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "work on it", Kind: Ship})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// It was working, and then the lid shut on it. The harness's Stop
+	// hook fires as the turn dies with it.
+	long := time.Now().Add(-2 * time.Hour)
+	m.touch(task.Pane, long)
+	backdate(t, task.Worktree, long)
+
+	f.Lifecycle.Went(CauseSleep, long.Add(time.Second))
+	if err := f.TurnEnded(task.ID, task.Incarnation); err != nil {
+		t.Fatal(err)
+	}
+	f.sweep(ctx)
+	if got := events[len(events)-1].State; got != Interrupted {
+		t.Fatalf("asleep: state = %s, want interrupted — %s would send a person to answer a question nobody asked", got, got)
+	}
+	if Interrupted.Actionable() {
+		t.Fatal("an interruption must not wake anybody")
+	}
+
+	// The lid opens. Nothing has stirred yet, so it is still the
+	// machine's silence and not the agent's.
+	f.Lifecycle.Came(CauseSleep, time.Now())
+	f.sweep(ctx)
+	if got := events[len(events)-1].State; got != Interrupted {
+		t.Fatalf("just back: state = %s, want interrupted", got)
+	}
+
+	// The agent picks up and draws something: back to work, and the
+	// two hours the machine was away are not held against it.
+	m.touch(task.Pane, time.Now())
+	f.sweep(ctx)
+	if got := events[len(events)-1].State; got != Running {
+		t.Fatalf("after it stirred: state = %s, want running", got)
+	}
+}
+
+// While the machine is away the supervisor watches and does nothing
+// else: landing needs a network, and a room reopened into a machine
+// that is going away is a room that dies twice.
+func TestNothingLandsWhileTheMachineIsAway(t *testing.T) {
+	r := newRepo(t)
+	m := newFakeMux()
+	f := New(m, NewStore(filepath.Join(t.TempDir(), "fleet")))
+	f.Harness = []string{"fake-agent"}
+	f.Trust = nil
+	ctx := context.Background()
+	task, err := f.Spawn(ctx, Request{Project: r.Root, Brief: "ship it", Kind: Ship})
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(task.Worktree, "thing.txt"), []byte("x\n"), 0o644)
+	gitRun(t, task.Worktree, "add", "thing.txt")
+	gitRun(t, task.Worktree, "commit", "-q", "-m", "the thing")
+	if err := f.Report(task.ID, Status{Verb: Done, Text: "shipped", By: "agent"}); err != nil {
+		t.Fatal(err)
+	}
+
+	f.Lifecycle.Went(CauseOffline, time.Now())
+	f.sweep(ctx)
+	if _, err := os.Stat(filepath.Join(r.Root, "thing.txt")); err == nil {
+		t.Fatal("landed while the machine had no network")
+	}
+	if last, _ := f.Store.Last(task.ID); last.Verb != Done {
+		t.Fatalf("the landing was attempted and failed: %+v", last)
+	}
+
+	// The network is back: it lands, on the poke that coming back
+	// sends.
+	poked := make(chan struct{}, 1)
+	f.Lifecycle.OnBack(func() { poked <- struct{}{} })
+	f.Lifecycle.Came(CauseOffline, time.Now())
+	select {
+	case <-poked:
+	default:
+		t.Fatal("coming back should ask the supervisor to look")
+	}
+	f.sweep(ctx)
+	if _, err := os.Stat(filepath.Join(r.Root, "thing.txt")); err != nil {
+		t.Fatal("not landed once the machine was back")
+	}
+}
+
+// backdate ages a whole tree, so the write-evidence scan sees a
+// worktree nothing has been written to in a while.
+func backdate(t *testing.T, dir string, at time.Time) {
+	t.Helper()
+	err := filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		return os.Chtimes(p, at, at)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
