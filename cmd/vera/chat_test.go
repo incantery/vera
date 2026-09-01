@@ -112,8 +112,9 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		ans := ModelsAnswer{
 			Default: InForce{Model: "gpt-5.6-luna", Effort: "none", From: "the built-in default"},
 			Models: []ModelRow{
-				{Name: "gpt-5.6-luna", Provider: "openai", Efforts: []string{"none"},
-					Note: "effort none only (chat completions)", Priced: true},
+				{Name: "gpt-5.6-luna", Provider: "openai", Wire: "responses",
+					Efforts: []string{"none", "low", "medium", "high"},
+					Note:    "the dial, via the responses API", Priced: true},
 				{Name: "gpt-5.6-terra", Provider: "openai", Efforts: []string{"none"},
 					Note: "effort none only (chat completions)", Priced: true},
 				{Name: "gpt-5", Provider: "openai", Efforts: []string{"none", "low", "medium", "high"}, Priced: true},
@@ -1270,8 +1271,8 @@ func TestModelWithNoArgumentOpensTheCard(t *testing.T) {
 	v := screen(m)
 	for _, want := range []string{
 		"Select model",
-		"gpt-5.6-luna", "effort none only", // the note the table exists for
-		"gpt-5.6-terra", // the other half of the 5.6 family
+		"gpt-5.6-terra", "effort none only", // the note the table exists for
+		"gpt-5.6-luna", "the dial, via the responses API", // and the wire that lifted it
 		"claude-opus-5", "via anthropic",
 		"my-local-7b", "unpriced", // no price is said out loud
 		"/effort sets how hard it thinks",      // the other toggle, named
@@ -1398,15 +1399,34 @@ func TestEffortWithNoArgumentOpensTheToggle(t *testing.T) {
 // A model with no dial gets the fact, not an empty card and not three
 // options verad would refuse one at a time.
 func TestEffortSaysSoWhenTheModelHasNoDial(t *testing.T) {
-	_, s, m := pickSession(t)
+	f, s, m := pickSession(t)
+	f.dflt = &InForce{Model: "gpt-5.6-terra", Effort: "none", From: "the built-in default"}
 	deliver(m, s.handle("effort", ""))
 
 	v := screen(m)
 	if strings.Contains(v, "Reasoning effort") {
 		t.Errorf("a card was drawn for a model with no dial:\n%s", v)
 	}
-	if !strings.Contains(v, "gpt-5.6-luna has no reasoning dial") || !strings.Contains(v, "it takes effort none") {
+	if !strings.Contains(v, "gpt-5.6-terra has no reasoning dial") || !strings.Contains(v, "it takes effort none") {
 		t.Errorf("it should say what that model does take:\n%s", v)
+	}
+}
+
+// And a model that does have one gets the card, which is the half that
+// was wrong: luna is reached through the responses API, where the dial
+// survives having tools in the request.
+func TestEffortDrawsTheCardForAModelWithADial(t *testing.T) {
+	_, s, m := pickSession(t)
+	deliver(m, s.handle("effort", ""))
+
+	v := screen(m)
+	if !strings.Contains(v, "Reasoning effort") {
+		t.Fatalf("no card for gpt-5.6-luna, which takes the dial:\n%s", v)
+	}
+	for _, want := range []string{"low", "medium", "high"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("the card is missing %q:\n%s", want, v)
+		}
 	}
 }
 

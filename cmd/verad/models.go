@@ -10,6 +10,14 @@
 // have learned, written down, editable, and wrong in a way somebody
 // can see and fix.
 //
+// It was also wrong in exactly that way. "gpt-5.6-luna takes effort
+// none" is not a fact about the model: it is a fact about
+// /chat/completions, and the same model on /v1/responses takes the dial
+// with the same tools in the request. So a row now says which WIRE
+// reaches it as well as which vendor, `openai/responses` is the second
+// one, and luna's efforts are the four it actually accepts. See
+// package responses.
+//
 // What the table is NOT allowed to do is claim a model this machine
 // cannot call. A provider with no key contributes no rows, because a
 // picker that offers claude-opus-5 on a laptop with no Anthropic key
@@ -42,6 +50,14 @@ type ModelRow struct {
 	Efforts  []string `json:"efforts"`
 	Note     string   `json:"note,omitempty"`
 	Priced   bool     `json:"priced"`
+
+	// Wire is which of a vendor's APIs reaches it, where the vendor has
+	// more than one and they do not take the same request. Empty is the
+	// ordinary one — /chat/completions for OpenAI, which is what mote
+	// speaks and what every endpoint imitating it speaks. wireResponses
+	// is OpenAI's own /v1/responses, which is where the reasoning dial
+	// survives having tools in the request.
+	Wire string `json:"wire,omitempty"`
 }
 
 // InForce is one model as something already using it: what it is, how
@@ -62,12 +78,17 @@ type ModelsAnswer struct {
 	Models       []ModelRow `json:"models"`
 }
 
+// wireResponses is OpenAI's /v1/responses, in the word $VERA_MODELS
+// writes after the vendor: `gpt-5.6-terra=openai/responses:none|high`.
+const wireResponses = "responses"
+
 // modelTable is what verad knows, in the order it is worth reading:
 // the cheap fast ones first, the ones you reach for when the cheap
 // fast one got it wrong last.
 var modelTable = []ModelRow{
-	{Name: "gpt-5.6-luna", Provider: "openai", Efforts: []string{"none"},
-		Note: "effort none only (chat completions)"},
+	{Name: "gpt-5.6-luna", Provider: "openai", Wire: wireResponses,
+		Efforts: []string{"none", "low", "medium", "high"},
+		Note:    "the dial, via the responses API"},
 	{Name: "gpt-5.6-terra", Provider: "openai", Efforts: []string{"none"},
 		Note: "effort none only (chat completions)"},
 	{Name: "gpt-5.6", Provider: "openai", Efforts: []string{"none"}},
@@ -153,9 +174,12 @@ func indexModel(rows []ModelRow, name string) int {
 
 // parseModels reads $VERA_MODELS: comma-separated
 // `name=provider:eff1|eff2`, with the efforts optional and "none" when
-// they are left out. A bad entry is named and dropped; it does not
-// take the good ones with it, for the same reason a bad price does
-// not.
+// they are left out. The provider may name a wire after a slash —
+// `openai/responses` — which is how a model is moved onto the other
+// OpenAI API without a rebuild, and how somebody who finds that
+// gpt-5.6-terra takes the dial there too can say so tonight. A bad
+// entry is named and dropped; it does not take the good ones with it,
+// for the same reason a bad price does not.
 func parseModels(spec string) (rows []ModelRow, bad []string) {
 	for _, entry := range strings.Split(spec, ",") {
 		entry = strings.TrimSpace(entry)
@@ -169,12 +193,13 @@ func parseModels(spec string) (rows []ModelRow, bad []string) {
 			continue
 		}
 		vendor, dial, _ := strings.Cut(rest, ":")
-		vendor = strings.TrimSpace(vendor)
-		if vendor == "" {
+		vendor, wire, _ := strings.Cut(strings.TrimSpace(vendor), "/")
+		vendor, wire = strings.TrimSpace(vendor), strings.TrimSpace(wire)
+		if vendor == "" || (wire != "" && wire != wireResponses) {
 			bad = append(bad, entry)
 			continue
 		}
-		row := ModelRow{Name: name, Provider: vendor, Efforts: []string{"none"}}
+		row := ModelRow{Name: name, Provider: vendor, Wire: wire, Efforts: []string{"none"}}
 		if dial = strings.TrimSpace(dial); dial != "" {
 			row.Efforts = nil
 			for _, e := range strings.Split(dial, "|") {

@@ -77,15 +77,23 @@ func (r *Resolution) Says() string {
 }
 
 // ModelRow is one model verad can reach, as GET /models lists it: the
-// name, the wire that reaches it, the efforts it will actually accept,
-// what is worth knowing, and whether its tokens can be turned into
-// dollars. The terminal knows no models of its own — it draws these.
+// name, the vendor that reaches it, the efforts it will actually
+// accept, what is worth knowing, and whether its tokens can be turned
+// into dollars. The terminal knows no models of its own — it draws
+// these.
 type ModelRow struct {
 	Name     string   `json:"name"`
 	Provider string   `json:"provider"`
 	Efforts  []string `json:"efforts"`
 	Note     string   `json:"note,omitempty"`
 	Priced   bool     `json:"priced"`
+
+	// Wire is which of that vendor's APIs, where it has more than one
+	// and they do not take the same request. Empty is the ordinary one.
+	// Nothing in the terminal acts on it — the cards are drawn from the
+	// efforts — but a row whose efforts are only true on one of two
+	// APIs should be able to say which.
+	Wire string `json:"wire,omitempty"`
 }
 
 // InForce is a model something is already on.

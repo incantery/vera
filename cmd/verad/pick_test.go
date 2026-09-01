@@ -8,6 +8,7 @@ import (
 
 	"github.com/incantery/mote/provider"
 	"github.com/incantery/vera/journal"
+	"github.com/incantery/vera/responses"
 )
 
 // wiredTo is a Wires whose models are already built, so a test can ask
@@ -299,5 +300,88 @@ func TestAnEffortIsRefusedWhenAskedForAndDroppedWhenCarried(t *testing.T) {
 	// Asking for it outright on that model is still refused.
 	if _, err := m.Choose("c1", "", "high"); err == nil {
 		t.Fatal("gpt-5.6-terra was given a reasoning effort")
+	}
+}
+
+// The table decides which of OpenAI's two APIs reaches a model, and the
+// daemon's own model is reached the same way every other one is.
+//
+// This is the whole point of the row: gpt-5.6-luna takes a reasoning
+// effort with tools in the request, and only on /v1/responses. A luna
+// built by hand at startup — which is how it used to be built — would
+// have gone to /chat/completions and refused the dial there.
+func TestTheTableDecidesWhichOpenAIWireReachesAModel(t *testing.T) {
+	noKeys(t)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	w := &Wires{OpenAIKey: "sk-test"}
+	p, vendor, err := w.For("gpt-5.6-luna")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.(*responses.Wire); !ok {
+		t.Errorf("gpt-5.6-luna went to %T, not the responses wire", p)
+	}
+	if vendor != "openai" {
+		t.Errorf("the responses wire is OpenAI's; it said %q", vendor)
+	}
+
+	// A row that says nothing about a wire is mote's, as it always was.
+	if p, _, err := w.For("gpt-5.6-terra"); err != nil {
+		t.Fatal(err)
+	} else if _, ok := p.(*provider.OpenAI); !ok {
+		t.Errorf("gpt-5.6-terra went to %T, not chat completions", p)
+	}
+
+	// So is a model the table has never heard of.
+	if p, _, err := w.For("my-local-7b"); err != nil {
+		t.Fatal(err)
+	} else if _, ok := p.(*provider.OpenAI); !ok {
+		t.Errorf("an unknown model went to %T", p)
+	}
+
+	// And the daemon's own model comes out of the same place, which is
+	// the half that used to be built by hand.
+	_, mind, how := chooseMind(mindOptions{Model: "gpt-5.6-luna", Effort: "high"})
+	if mind == nil {
+		t.Fatalf("no mind at all: %s", how)
+	}
+	if _, ok := mind.Provider.(*responses.Wire); !ok {
+		t.Errorf("the daemon's own gpt-5.6-luna is a %T", mind.Provider)
+	}
+	if mind.Vendor != "openai" {
+		t.Errorf("vendor: %q", mind.Vendor)
+	}
+}
+
+// An effort somebody typed reaches gpt-5.6-luna now rather than being
+// refused on the way in — which is the bug this row was wrong about.
+func TestLunaTakesTheDial(t *testing.T) {
+	noKeys(t)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	m := mindFor(t)
+	m.Wires = &Wires{OpenAIKey: "sk-test"}
+
+	res, err := m.Choose("c1", "gpt-5.6-luna", "high")
+	if err != nil {
+		t.Fatalf("/effort high on gpt-5.6-luna: %v", err)
+	}
+	if res.Model != "gpt-5.6-luna" || res.Effort != "high" {
+		t.Fatalf("in force: %+v", res)
+	}
+
+	// And it is what the request carries — not the "none" the
+	// chat-completions workaround used to force.
+	got, err := m.choose("c1", Pick{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Effort != provider.EffortHigh {
+		t.Errorf("effort reaching the wire: %q", got.Effort)
+	}
+
+	// An effort it still does not take is still refused.
+	if _, err := m.Choose("c1", "", "sideways"); err == nil {
+		t.Error("an effort nobody has a word for was accepted")
 	}
 }

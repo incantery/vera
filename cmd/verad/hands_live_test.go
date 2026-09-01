@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/incantery/mote/provider"
 )
 
 // TestHandsLive puts the real model in front of the real tools, once,
@@ -171,15 +169,61 @@ func liveMind(t *testing.T) (*Mind, string) {
 	if model == "" {
 		model = "gpt-5.6-luna"
 	}
-	// The real thing, chosen the way verad chooses it: the model name
-	// and whatever keys this machine has decide the wire.
-	p, err := provider.New(provider.Config{Model: model, OpenAIKey: findKey("")})
+	// The real thing, chosen the way verad chooses it: the model name,
+	// the table's row for it and whatever keys this machine has decide
+	// the wire. Through Wires rather than mote directly, because which
+	// of OpenAI's two APIs answers is exactly what a live test of the
+	// dial has to get right.
+	wires := &Wires{OpenAIKey: findKey("")}
+	p, vendor, err := wires.For(model)
 	if err != nil {
 		t.Skip(err.Error())
 	}
 	root := filepath.Join(t.TempDir(), "vera")
 	mind, _, _ := askingMindAt(t, root, nil)
-	mind.Provider, mind.Model, mind.Vendor = p, model, vendorOf(p)
+	mind.Provider, mind.Model, mind.Vendor = p, model, vendor
+	mind.Wires = wires
 	mind.Memory = mind.Home.Memory()
 	return mind, root
+}
+
+// TestTheDialLive is the one thing no scripted test can tell you:
+// whether gpt-5.6-luna, handed tool definitions AND a reasoning effort
+// in the same request, answers rather than 400s. That pair is what
+// /chat/completions refuses and what the responses wire exists for, and
+// the table is a claim about it that only the socket can settle.
+//
+// Skipped without VERA_LIVE=1. It costs money and it talks to the
+// network; nothing in CI should do either by accident.
+func TestTheDialLive(t *testing.T) {
+	mind, root := liveMind(t)
+
+	if err := os.WriteFile(filepath.Join(root, "notes", "colour.md"),
+		[]byte("The colour of the shed is heliotrope.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	var answer strings.Builder
+	err := mind.think(ctx, Message{
+		Text:         "What colour is the shed? It is written down in notes/colour.md in your home.",
+		Conversation: "live-effort",
+		// The half that used to be refused on the way in.
+		Effort: "high",
+	}, func(f Frame) error {
+		answer.WriteString(f.Delta)
+		if f.Error != "" {
+			t.Errorf("the model said: %s", f.Error)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("%s at effort high, with tools: %v", mind.Model, err)
+	}
+	if !strings.Contains(strings.ToLower(answer.String()), "heliotrope") {
+		t.Errorf("it did not read the file: %s", answer.String())
+	}
+	t.Logf("at effort high: %s", answer.String())
 }

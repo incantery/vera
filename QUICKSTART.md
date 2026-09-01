@@ -96,9 +96,11 @@ How hard it thinks is a separate toggle: `/effort` offers low, medium
 and high, and `/effort <level>` sets one straight. It moves the effort
 and leaves the model alone, and the other way round — so switching
 model does not silently restate the effort. A model with no dial says
-so: the gpt-5.6 family (`gpt-5.6-luna`, `gpt-5.6-terra`) takes effort
-`none` and nothing else, and moving onto one drops the effort rather
-than sending one it would refuse.
+so: `gpt-5.6-terra` takes effort `none` and nothing else, and moving
+onto it drops the effort rather than sending one it would refuse.
+`gpt-5.6-luna` used to be in that sentence and no longer is — it takes
+the dial, because Vera reaches it through OpenAI's responses API, where
+a reasoning effort survives having tools in the request.
 
 `vera costs` (or `/costs` in the chat) then says what that was worth:
 exchanges, tokens, dollars at list prices, how long until anything
