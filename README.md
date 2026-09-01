@@ -63,7 +63,6 @@ the phone by scanning the QR at `http://localhost:4780/`. First ride:
   chat, and Vera reads it herself to answer "what have we been doing".
   It reads files and asks nobody, so a fresh agent in a checkout can
   catch up on a week with one command. See `docs/events.md`.
-
 - **Attention you can jump to.** The home screen is the places on the
   Mac, ranked by frecency, the one in front of you marked. Tap to go
   there — the Mac follows you, and the phone follows the Mac.
