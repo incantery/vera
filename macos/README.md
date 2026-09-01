@@ -24,6 +24,15 @@ or `open macos/Vera.xcodeproj` and ⌘R.
   `app.focused` / `app.unfocused` observations: name, bundle id,
   timestamp. Nothing inside the window is read; an app without an
   integration is opaque, and the model is told so.
+- **Knows when the machine itself comes and goes.** `NSWorkspace`
+  sleep/wake and `NWPathMonitor` become `device.slept` / `device.woke` /
+  `device.offline` / `device.online`. There is no time to be heard on
+  the way into a sleep, so the moment is carried across it and reported
+  again on the way back — the far side needs the span, not just its end,
+  or eight hours of silence become a fleet of agents that all appear to
+  have stalled at once. A wake also reconnects the streams and re-reads
+  what has focus, since no activation notification was delivered while
+  the machine was gone.
 - **Hold ⌃⌥Space to talk.** Carbon `RegisterEventHotKey` — no
   Accessibility permission, and it reports the release, which is what
   makes hold-to-talk work. A tap under 300ms latches listening on until
@@ -44,6 +53,7 @@ Station.swift     the one state object: hotkey → overlay → listener → core
 Core.swift        pairing, /status poll, /observe, /say stream
 Events.swift      ContextEvent (the wire shape) and the debug log
 Focus.swift       NSWorkspace activation → FocusedApp
+Lifecycle.swift   NSWorkspace sleep/wake + NWPathMonitor → absences
 Hotkey.swift      Carbon hot key, press + release
 Listener.swift    microphone + speech, behind `Transcriber`
 Overlay.swift     the floating panel and its SwiftUI face

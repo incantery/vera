@@ -33,8 +33,11 @@ struct ContextEvent: Encodable, Identifiable, Sendable {
         ContextEvent(type: "app.unfocused", device: device, at: app.at, app: App(name: app.name, bundleID: app.bundleID))
     }
 
-    static func plain(_ type: String, device: String, text: String? = nil) -> ContextEvent {
-        ContextEvent(type: type, device: device, at: Date(), text: text)
+    /// `at` is when the thing happened, which is not always when it is
+    /// sent: a machine on its way to sleep has no time to be heard, so
+    /// the event goes again on the way back with the moment it meant.
+    static func plain(_ type: String, device: String, at: Date = Date(), text: String? = nil) -> ContextEvent {
+        ContextEvent(type: type, device: device, at: at, text: text)
     }
 
     /// One line for the Health view.
