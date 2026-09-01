@@ -569,6 +569,11 @@ func main() {
 		if mind.Fleet != nil {
 			own = append(own, &FleetTool{Fleet: mind.Fleet})
 		}
+		// The record, beside the fleet for the same reason the list
+		// is: the two read alike in English and are opposite in tense,
+		// and a model that sees only one of them will answer "what
+		// happened last week" out of the one that knows about now.
+		own = append(own, &RecentTool{Dir: stream.Dir})
 		// The list, so that the fluent way in and the exact way in are
 		// the same file. It goes in beside the fleet on purpose: the
 		// two are next to each other in a model's mind, and the only

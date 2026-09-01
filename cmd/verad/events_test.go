@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/events"
 	"github.com/incantery/vera/fleet"
 )
@@ -215,5 +217,86 @@ func TestRepoOfNamesAWorktreeAfterItsCheckout(t *testing.T) {
 	dir := t.TempDir()
 	if got := s.repoOf(dir); got != filepath.Base(dir) {
 		t.Fatalf("want %q, got %q", filepath.Base(dir), got)
+	}
+}
+
+func TestRecentToolReadsTheRecord(t *testing.T) {
+	dir := t.TempDir()
+	l := &events.Log{Dir: dir}
+	now := time.Now()
+	err := l.Append(
+		events.Event{At: now.Add(-time.Hour), Repo: "rook", Source: "git", Kind: "git.commit", Text: "tabs: the ordinal sits (abc1234)"},
+		events.Event{At: now.Add(-time.Minute), Repo: "vera", Source: "fleet", Kind: "task.decision", Task: "T-1", Text: "alpha is blocked on a decision"},
+		events.Event{At: now.Add(-40 * 24 * time.Hour), Repo: "vera", Source: "git", Kind: "git.commit", Text: "ancient (0000000)"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tl := &RecentTool{Dir: dir}
+	ctx := context.Background()
+
+	res, err := tl.Run(ctx, nil, tool.Handle{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "alpha is blocked") || !strings.Contains(res.Text, "tabs: the ordinal") {
+		t.Fatalf("want the week, got:\n%s", res.Text)
+	}
+	if strings.Contains(res.Text, "ancient") {
+		t.Fatalf("want the default window to be a week, got:\n%s", res.Text)
+	}
+
+	res, err = tl.Run(ctx, json.RawMessage(`{"repo":"rook"}`), tool.Handle{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.Text, "alpha is blocked") {
+		t.Fatalf("want only rook, got:\n%s", res.Text)
+	}
+
+	res, err = tl.Run(ctx, json.RawMessage(`{"since":"all"}`), tool.Handle{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Text, "ancient") {
+		t.Fatalf("want all of it, got:\n%s", res.Text)
+	}
+
+	if _, err := tl.Run(ctx, json.RawMessage(`{"since":"soon"}`), tool.Handle{}); err == nil {
+		t.Fatal("want a window nobody can parse refused")
+	}
+	if _, err := (&RecentTool{}).Run(ctx, nil, tool.Handle{}); err == nil {
+		t.Fatal("want a machine with no record to say so")
+	}
+	if tl.Scope(nil) != "read" || tl.Name() != "recent" {
+		t.Fatalf("want a read-only tool called recent, got %q/%q", tl.Name(), tl.Scope(nil))
+	}
+}
+
+// The description has to keep the model off the fleet, which is the
+// tool it will otherwise reach for: the two read alike and are
+// opposite in tense.
+func TestRecentToolSaysItIsNotTheFleet(t *testing.T) {
+	d := (&RecentTool{}).Description()
+	for _, want := range []string{"fleet", "HISTORY", "already happened"} {
+		if !strings.Contains(d, want) {
+			t.Fatalf("want %q in the description", want)
+		}
+	}
+	var schema map[string]any
+	if err := json.Unmarshal((&RecentTool{}).Schema(), &schema); err != nil {
+		t.Fatalf("the schema must be valid JSON: %v", err)
+	}
+}
+
+func TestRecentToolIsAllowedWithoutAsking(t *testing.T) {
+	got := policyTools(nil)
+	if got["recent"] != tool.Allow {
+		t.Fatalf("want reading the record to run without asking, got %v", got["recent"])
+	}
+	// And a profile that says otherwise still wins.
+	said := policyTools(map[string]tool.Decision{"recent": tool.Ask})
+	if said["recent"] != tool.Ask {
+		t.Fatal("want the profile's own word to stand")
 	}
 }

@@ -222,7 +222,7 @@ func policyRules(rules []tool.Rule, root string) []tool.Rule {
 	return append(out, stop, drop)
 }
 
-// policyTools is the default for the three tools the profile did not
+// policyTools is the default for the four tools the profile did not
 // choose and cannot have listed.
 //
 // Handing work away is the thing Vera is FOR. The supervisor's own
@@ -235,13 +235,18 @@ func policyRules(rules []tool.Rule, root string) []tool.Rule {
 // the list is a reason to stop using it. Dropping is the exception,
 // and it is a rule above rather than a decision here.
 //
+// Reading the record runs without asking for the plainest reason of
+// all: it is her own diary of this machine, it changes nothing, and a
+// prompt between "what were we doing on Thursday" and the answer is a
+// prompt that makes the question not worth asking.
+//
 // A file that DOES name them wins: this fills a gap, it does not
 // overrule anybody.
 func policyTools(tools map[string]tool.Decision) map[string]tool.Decision {
 	if tools == nil {
 		tools = map[string]tool.Decision{}
 	}
-	for _, name := range []string{"delegate", "fleet", "todo"} {
+	for _, name := range []string{"delegate", "fleet", "todo", "recent"} {
 		if _, said := tools[name]; !said {
 			tools[name] = tool.Allow
 		}

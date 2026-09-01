@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/events"
 	"github.com/incantery/vera/fleet"
 )
@@ -282,4 +283,122 @@ func (l *lanTransport) eventsPublish(w http.ResponseWriter, r *http.Request) {
 	}
 	l.events.Rec.Record(in...)
 	writeJSON(w, map[string]int{"recorded": len(in)})
+}
+
+// --- the tool -------------------------------------------------------------
+
+// RecentTool is the stream as Vera reaches it.
+//
+// It is here for the question she is asked most often and could
+// answer least well: "what have we been doing?" Before this she could
+// list the tasks that are open and read the conversation in front of
+// her, and everything else — what landed in rook on Thursday, what the
+// agent said before it stopped, which night the machine was asleep —
+// was in five files she had no tool for.
+//
+// The description works hard to keep it away from `fleet`. The two are
+// close in English and opposite in tense: `fleet` is what is happening
+// and can be acted on, this is what already happened and cannot.
+type RecentTool struct {
+	// Dir is the stream. Empty is not registered.
+	Dir string
+}
+
+func (t *RecentTool) Name() string { return "recent" }
+
+func (t *RecentTool) Description() string { return recentDescription }
+
+const recentDescription = "The record of what has been going on across this machine: the tasks that ran and " +
+	"what they said in their own words, what was committed in each repository, what the person asked you " +
+	"and when, and the stretches the machine was asleep. Use it whenever they ask what happened, what they " +
+	"were doing, what changed in a repository, how something ended — or when you need to catch up on a " +
+	"stretch of time you were not part of, which after a restart is most of them. " +
+	"It is HISTORY, not the present: `fleet` says what is happening now and can be acted on; this says what " +
+	"already happened and cannot. Narrow it — a repository, a window, a few words — before asking for more."
+
+func (t *RecentTool) Schema() json.RawMessage { return json.RawMessage(recentSchema) }
+
+const recentSchema = `{
+  "type": "object",
+  "properties": {
+    "since": {
+      "type": "string",
+      "description": "How far back: \"24h\", \"7d\", \"2w\", or \"all\". Default 7d."
+    },
+    "repo": {
+      "type": "string",
+      "description": "One repository by name, as they say it: \"rook\", \"vera\". Omit for all of them."
+    },
+    "kind": {
+      "type": "string",
+      "description": "One sort of moment: task.decision, task.finished, task.said, task.landed, git.commit, vera.asked, machine.away — or a prefix like \"task.\" for all of one family."
+    },
+    "task": {
+      "type": "string",
+      "description": "One task's whole history, by its id."
+    },
+    "q": {
+      "type": "string",
+      "description": "Words to look for in the line."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "How many at most. Default 60; ask for more only when the answer was cut off."
+    }
+  }
+}`
+
+type recentArgs struct {
+	Since string `json:"since"`
+	Repo  string `json:"repo"`
+	Kind  string `json:"kind"`
+	Task  string `json:"task"`
+	Text  string `json:"q"`
+	Limit int    `json:"limit"`
+}
+
+// Scope is one word because there is only one thing this does: read.
+// Somebody who said always to it has said she may look at the record,
+// which is the whole of the permission.
+func (t *RecentTool) Scope(json.RawMessage) string { return "read" }
+
+// recentDefaults: a week, and sixty lines. The week is the span "what
+// have we been doing" means; sixty lines is about as much history as
+// is worth putting in a model's context before it starts answering
+// from the middle of it.
+const (
+	recentWindow = 7 * 24 * time.Hour
+	recentLimit  = 60
+)
+
+func (t *RecentTool) Run(_ context.Context, args json.RawMessage, _ tool.Handle) (tool.Result, error) {
+	if t.Dir == "" {
+		return tool.Result{}, errors.New("there is no record on this machine")
+	}
+	var a recentArgs
+	if len(args) > 0 && json.Unmarshal(args, &a) != nil {
+		return tool.Result{}, errors.New("the request was not readable")
+	}
+	window := recentWindow
+	if a.Since != "" {
+		d, err := events.ParseSince(a.Since)
+		if err != nil {
+			return tool.Result{}, err
+		}
+		window = d
+	}
+	limit := a.Limit
+	if limit <= 0 {
+		limit = recentLimit
+	}
+	q := events.Query{Repo: a.Repo, Kind: a.Kind, Task: a.Task, Text: a.Text, Limit: limit}
+	now := time.Now()
+	if window > 0 {
+		q.Since = now.Add(-window)
+	}
+	evs, err := events.Read(t.Dir, q)
+	if err != nil {
+		return tool.Result{}, err
+	}
+	return tool.Result{Text: events.Summarize(evs, q.Since, now).Text()}, nil
 }
