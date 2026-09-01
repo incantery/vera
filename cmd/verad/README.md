@@ -518,6 +518,62 @@ It is held in memory and dies with the process. A conversation is a
 session; a restart ends it. That is the honest description of what this
 is, and it stops it being mistaken for the memory system it is not.
 
+## What has been going on
+
+The history above is a window and dies with the process. The **event
+stream** is the other half: an append-only record of the moments worth
+remembering, across every repository this machine works in, in one
+place a person or a fresh agent can read.
+
+`~/.local/state/vera/events/<UTC day>.jsonl`, one JSON object per line,
+beside the journal and in the same shape. It is an index rather than a
+second copy: an event says a task went to a decision, and the fleet
+store still holds what the decision was.
+
+Six things report into it. The fleet, through the one `Observe` hook it
+always had — which now carries spawns, landings and the agent's own
+status sentences as well as changes of belief, because "blocked on
+which database to use" is the most useful line the fleet produces and
+classifying it into `decision` throws the words away. The mind, one
+line per exchange: the question, never the answer, since the journal
+next door has the whole thing and a copy here would make the stream too
+big to grep and too private to paste. The machine's own absences, so a
+silent night reads as a shut lid rather than eight hours of stalled
+agents. The terminal engine's outages, so a pane table that vanished
+reads as rook restarting rather than nine agents dying. A sweep of
+every repository Vera knows, every five minutes, for the commits
+nobody reports — which is what makes a week in rook as present as a
+week in vera. And anything else on this machine, through
+`POST /events`.
+
+`task.running` and `task.quiet` are deliberately not in it: the stream
+is what mattered, and a task going quiet for four minutes and coming
+back did not.
+
+```
+vera events                     # the last day, grouped by repository
+vera events --since 7d --repo rook
+vera events --task T-9e4        # one task's whole history
+/events 7d @rook blocked        # the same, in the chat
+```
+
+`vera events` reads files and asks nobody: verad does not have to be
+running. The commonest reader is an agent handed a repository and no
+context, and the second is a person working out why the daemon is
+down — neither can be told to start it first. Vera reaches the same
+stream through the `recent` tool, whose description works hard to keep
+it away from `fleet`: the two read alike in English and are opposite in
+tense.
+
+Reading over the wire is authed like the rest of the LAN surface,
+because the stream says what the person has been doing all week.
+Writing (`POST /events`) is loopback and needs no secret, exactly like
+the fleet's hooks: everything that would publish into it is a program
+on this Mac, and a secret they carry is a secret in a dotfile.
+
+The whole contract, including how rook would publish into it, is
+`docs/events.md`.
+
 ## Evals
 
 ```
