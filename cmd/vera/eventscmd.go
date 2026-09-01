@@ -80,6 +80,14 @@ func runEvents(args []string) error {
 	default:
 		fmt.Print(events.Summarize(evs, q.Since, now).Text())
 	}
+	// A repository nobody has heard of is the commonest way to get an
+	// empty answer, and "nothing happened" is the wrong thing to say
+	// about it. Name the ones that are actually in the record.
+	if len(evs) == 0 && *repo != "" {
+		if known, err := events.Repos(eventsDir(), q.Since); err == nil && len(known) > 0 {
+			fmt.Fprintf(os.Stderr, "\nNothing under %q. In the record: %s\n", *repo, strings.Join(known, ", "))
+		}
+	}
 	return nil
 }
 

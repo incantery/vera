@@ -93,6 +93,10 @@ vera events --flat                 # one line each, for a pipe
 vera events --json                 # one object per line, for a program
 ```
 
+A `--repo` nobody has heard of says which repositories are actually in
+the record rather than "nothing happened", because that is almost
+always a typo.
+
 It reads files and asks nobody: verad does not have to be running.
 That is not a convenience — the commonest reader is an agent handed a
 repository and no context, and the second is a person working out why

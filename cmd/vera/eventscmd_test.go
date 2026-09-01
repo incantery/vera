@@ -194,3 +194,26 @@ func TestLooksLikeWindowReadsTheIntent(t *testing.T) {
 		}
 	}
 }
+
+// An empty answer under a repository name nobody has heard of is
+// almost always a typo, and "nothing happened" is the wrong thing to
+// say about it.
+func TestEventsCommandNamesTheRepositoriesItKnows(t *testing.T) {
+	writeEvents(t, sample()...)
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	capture(t, func() error { return runEvents([]string{"--repo", "rok", "--flat"}) })
+	os.Stderr = old
+	w.Close()
+	msg, _ := io.ReadAll(r)
+	r.Close()
+	for _, want := range []string{`Nothing under "rok"`, "rook", "vera"} {
+		if !strings.Contains(string(msg), want) {
+			t.Fatalf("want %q in %q", want, msg)
+		}
+	}
+}
