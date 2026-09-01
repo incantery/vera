@@ -297,21 +297,38 @@ that hands you an error three keystrokes later.
 ```json
 {"default":{"model":"gpt-5.6-luna","effort":"none","from":"the built-in default"},
  "conversation":{"model":"gpt-5","effort":"medium"},
- "models":[{"name":"gpt-5.6-luna","provider":"openai","efforts":["none"],
-            "note":"effort none only (chat completions)","priced":true},
+ "models":[{"name":"gpt-5.6-luna","provider":"openai","wire":"responses",
+            "efforts":["none","low","medium","high"],
+            "note":"the dial, via the responses API","priced":true},
            {"name":"gpt-5.6-terra","provider":"openai","efforts":["none"],
             "note":"effort none only (chat completions)","priced":true},
            {"name":"claude-opus-5","provider":"anthropic",
             "efforts":["low","medium","high","max"],"priced":true}]}
 ```
 
+`wire` is which of a vendor's APIs reaches it, where the vendor has more
+than one and they do not take the same request. Absent is the ordinary
+one — `/chat/completions` for OpenAI, which is what mote speaks and what
+every endpoint imitating it speaks. `responses` is OpenAI's own
+`/v1/responses` (package `responses/`), and it is there for one reason:
+**"gpt-5.6-luna takes effort none" was never a fact about the model.**
+It is a fact about chat completions, which refuses a `reasoning_effort`
+other than none when there are function tools in the request. The same
+model on `/v1/responses` takes the dial with the same tools, so luna is
+reached through that and its row says the four efforts it accepts.
+`gpt-5.6-terra` has not been tried there and stays where it was; the
+line below moves it without a rebuild if it turns out to behave the
+same.
+
 `conversation` is absent when this conversation has chosen nothing of
 its own, which is not the same as having chosen the default.
 `$VERA_MODELS` adds rows, or corrects them, without a rebuild — one
-entry per model, `name=provider:eff1|eff2`:
+entry per model, `name=provider:eff1|eff2`, with the wire after a slash
+when it is not the ordinary one:
 
 ```
 VERA_MODELS="my-local-7b=openai:none|high, gpt-5=openai:none"
+VERA_MODELS="gpt-5.6-terra=openai/responses:none|low|medium|high"
 ```
 
 An entry that will not parse is named in the log at startup and
@@ -338,12 +355,15 @@ at all, and `/effort` says that rather than drawing three options verad
 would refuse one at a time:
 
 ```
-gpt-5.6-luna has no reasoning dial — it takes effort none. /model moves to one that does.
+gpt-5.6-terra has no reasoning dial — it takes effort none. /model moves to one that does.
 ```
 
 Which wire a model reaches is mote's decision, from the name and the
-keys on this machine, and it is made per exchange through one cached
-provider per model. Setting a model builds that wire first, so a
+keys on this machine — except for the second OpenAI API, which is
+verad's, from the row's `wire`. It is made per exchange through one
+cached provider per model, and the daemon's own model comes out of the
+same place as everything else, so the default cannot end up on a
+different wire from the one its row names. Setting a model builds that wire first, so a
 machine that cannot reach it at all says so on the way in — but whether
 the far end has heard of the *name* is only knowable by asking, and a
 name it has not heard of comes back as a 404 on the first thing said,

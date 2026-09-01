@@ -63,9 +63,11 @@ func TestAProviderWithNoKeyContributesNoRows(t *testing.T) {
 	}
 }
 
-// What the table exists to encode: gpt-5.6 takes effort none and
-// nothing else, gpt-5 takes the dial, and every row says whether its
-// tokens can be turned into dollars.
+// What the table exists to encode: which wire reaches a model and what
+// it will take on it. gpt-5.6-luna takes the dial because it is reached
+// through the responses API; gpt-5.6-terra, still on chat completions,
+// takes effort none and says so; and every row says whether its tokens
+// can be turned into dollars.
 func TestTheTableSaysWhatEachModelTakes(t *testing.T) {
 	noKeys(t)
 	t.Setenv("OPENAI_API_KEY", "sk-test")
@@ -77,16 +79,25 @@ func TestTheTableSaysWhatEachModelTakes(t *testing.T) {
 		by[r.Name] = r
 	}
 	// Both halves of the 5.6 family are there to be tried against each
-	// other, and both refuse a dial.
-	for _, name := range []string{"gpt-5.6-luna", "gpt-5.6-terra"} {
-		got, ok := by[name]
-		if !ok {
-			t.Errorf("%s is not on the table", name)
-			continue
-		}
-		if len(got.Efforts) != 1 || got.Efforts[0] != "none" || got.Note == "" {
-			t.Errorf("%s: %+v — it takes effort none only, and should say why", name, got)
-		}
+	// other.
+	luna, ok := by["gpt-5.6-luna"]
+	if !ok {
+		t.Fatal("gpt-5.6-luna is not on the table")
+	}
+	if luna.Wire != wireResponses {
+		t.Errorf("gpt-5.6-luna: %+v — the dial only survives tools on the responses wire", luna)
+	}
+	if strings.Join(luna.Efforts, ",") != "none,low,medium,high" || luna.Note == "" {
+		t.Errorf("gpt-5.6-luna: %+v — it takes the dial, and should say where", luna)
+	}
+	// And the one still on chat completions is the reason the note
+	// exists at all.
+	terra, ok := by["gpt-5.6-terra"]
+	if !ok {
+		t.Fatal("gpt-5.6-terra is not on the table")
+	}
+	if terra.Wire != "" || len(terra.Efforts) != 1 || terra.Efforts[0] != "none" || terra.Note == "" {
+		t.Errorf("gpt-5.6-terra: %+v — it takes effort none only, and should say why", terra)
 	}
 	if got := by["gpt-5"]; strings.Join(got.Efforts, ",") != "none,low,medium,high" {
 		t.Errorf("gpt-5 efforts: %v", got.Efforts)
@@ -130,6 +141,42 @@ func TestTheEnvironmentAddsAndCorrectsRows(t *testing.T) {
 	}
 	if _, bad := parseModels("nonsense, a=openai:sideways, b=:low, c=openai"); len(bad) != 3 {
 		t.Errorf("bad entries: %v", bad)
+	}
+}
+
+// The wire is part of what an entry may say, so somebody who finds at
+// the socket that another model takes the dial on /v1/responses can
+// have it tonight rather than after a rebuild — and a wire nobody has
+// written is a bad entry rather than a silent chat completion.
+func TestTheEnvironmentCanMoveAModelOntoTheResponsesWire(t *testing.T) {
+	noKeys(t)
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	spec := "gpt-5.6-terra=openai/responses:none|low|medium|high, wrong=openai/carrier-pigeon:high"
+	rows := models((&Wires{}).reach(), spec)
+
+	by := map[string]ModelRow{}
+	for _, r := range rows {
+		by[r.Name] = r
+	}
+	terra := by["gpt-5.6-terra"]
+	if terra.Provider != "openai" || terra.Wire != wireResponses {
+		t.Errorf("moved row: %+v", terra)
+	}
+	if strings.Join(terra.Efforts, ",") != "none,low,medium,high" {
+		t.Errorf("moved row efforts: %v", terra.Efforts)
+	}
+	if _, ok := by["wrong"]; ok {
+		t.Error("a wire nobody has written should be a bad entry, not a guess")
+	}
+	if _, bad := parseModels(spec); len(bad) != 1 {
+		t.Errorf("bad entries: %v", bad)
+	}
+
+	// And the table's own answer follows the environment: this is what
+	// takesEffort and the /effort card both read.
+	t.Setenv(EnvModels, spec)
+	if err := takesEffort("gpt-5.6-terra", "high"); err != nil {
+		t.Errorf("after moving terra onto the responses wire: %v", err)
 	}
 }
 

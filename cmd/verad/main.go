@@ -661,31 +661,34 @@ type mindOptions struct {
 // (which ~/.config/vera/*.env is where this process gets) goes to the
 // Messages API; everything else goes to an OpenAI-compatible
 // /chat/completions, with --api-base and the key file exactly as
-// before.
+// before. The one exception verad owns is the second OpenAI wire, for
+// a model whose table row asks for /v1/responses.
+//
+// It goes through Wires rather than calling mote directly, so that the
+// daemon's OWN model is reached the same way every other model is.
+// Building it here by hand is how the default model quietly ended up on
+// a different wire from the one the table named for it.
 func chooseMind(o mindOptions) (Handler, *Mind, string) {
 	if o.Echo {
 		return echo, nil, "echoing, no model (--echo)"
 	}
-	p, err := provider.New(provider.Config{
-		Model: o.Model,
-		// Where vera has always looked for a key, kept: $OPENAI_API_KEY,
-		// then ~/.config/vera/openai_key, then --key-file over both.
-		OpenAIKey:  findKey(o.KeyFile),
-		OpenAIBase: o.APIBase,
-	})
+	// Where vera has always looked for a key, kept: $OPENAI_API_KEY,
+	// then ~/.config/vera/openai_key, then --key-file over both.
+	wires := &Wires{OpenAIKey: findKey(o.KeyFile), OpenAIBase: o.APIBase}
+	p, vendor, err := wires.For(o.Model)
 	if err != nil {
 		return echo, nil, "echoing — " + err.Error()
 	}
 
 	mind := &Mind{
 		Provider:        p,
-		Vendor:          vendorOf(p),
+		Vendor:          vendor,
 		Model:           o.Model,
 		ModelFrom:       o.Source,
 		EffortFrom:      o.EffortSource,
 		BaseEffort:      o.Effort,
 		EffortExplicit:  o.EffortSet,
-		Wires:           &Wires{OpenAIKey: findKey(o.KeyFile), OpenAIBase: o.APIBase},
+		Wires:           wires,
 		ThinkingDisplay: o.Display,
 		History:         newHistory(),
 		Gen:             o.Gen,

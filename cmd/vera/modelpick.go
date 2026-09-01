@@ -73,9 +73,10 @@ func rowFor(rows []ModelRow, name string) (ModelRow, bool) {
 // effortsFor is which positions of the toggle the model in force will
 // actually take.
 //
-// A model whose row says "none" and nothing else — the whole gpt-5.6
-// family — has no dial, and gets an empty list rather than three
-// options verad would refuse one at a time. A model verad listed no row
+// A model whose row says "none" and nothing else — gpt-5.6-terra, and
+// whatever else somebody has found the edge of — has no dial, and gets
+// an empty list rather than three options verad would refuse one at a
+// time. A model verad listed no row
 // for is not one this terminal may make claims about, so it gets all
 // three and verad decides.
 func effortsFor(ans *ModelsAnswer) []string {

@@ -29,10 +29,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
 	"github.com/incantery/mote/provider"
+	"github.com/incantery/vera/responses"
 )
 
 // Where a choice came from, in the words `/model` prints.
@@ -107,6 +109,13 @@ func (r Resolution) Says() string {
 // somebody actually typed an effort, because an explicit dial is a
 // stronger statement than a workaround for a different model. The
 // Anthropic side leaves Thinking empty and thinks adaptively.
+//
+// Nothing here changed when the responses wire arrived, and that is
+// deliberate. Thinking is a chat-completions field and package
+// responses ignores it — there, reasoning is turned off by asking for
+// effort none, which is what an unasked-for exchange already sends. So
+// the default costs what it always cost, and the dial is what somebody
+// typed.
 func tune(vendor, effort string, explicit bool) (provider.Effort, provider.Thinking) {
 	if vendor == "anthropic" {
 		return provider.Effort(effort), ""
@@ -117,9 +126,12 @@ func tune(vendor, effort string, explicit bool) (provider.Effort, provider.Think
 	return provider.Effort("none"), provider.ThinkingOff
 }
 
-// vendorOf is which wire mote picked. The concrete type is the answer;
+// vendorOf is whose wire this is. The concrete type is the answer;
 // there is no interface method for it, and a name is what the banner,
-// the telemetry label and the journal all want.
+// the telemetry label and the journal all want. It is the VENDOR and
+// not the API: a responses.Wire is OpenAI the same way an OpenAI-shaped
+// chat endpoint is, and nothing downstream of here wants to be told
+// which of the two paths the bytes took.
 func vendorOf(p provider.Provider) string {
 	if _, ok := p.(*provider.Anthropic); ok {
 		return "anthropic"
@@ -132,8 +144,12 @@ func vendorOf(p provider.Provider) string {
 // It is the one function that knows a claude-* name goes to the
 // Messages API and everything else to an OpenAI-compatible
 // /chat/completions — mote decides that from the name, and this is
-// where verad asks. Providers are cached because a model switched back
-// and forth should not mint a new HTTP client each time.
+// where verad asks. The one thing verad decides for itself is the
+// second OpenAI wire: a model whose table row says `openai/responses`
+// is reached through package responses instead, because that is where
+// the reasoning dial survives having tools in the request. Providers
+// are cached because a model switched back and forth should not mint a
+// new HTTP client each time.
 type Wires struct {
 	OpenAIKey  string
 	OpenAIBase string
@@ -158,6 +174,13 @@ func (w *Wires) For(model string) (provider.Provider, string, error) {
 	if got, ok := w.made[model]; ok {
 		return got.p, got.vendor, nil
 	}
+	if p, ok := w.responses(model); ok {
+		if w.made == nil {
+			w.made = map[string]*madeWire{}
+		}
+		w.made[model] = &madeWire{p: p, vendor: "openai"}
+		return p, "openai", nil
+	}
 	p, err := provider.New(provider.Config{
 		Model:      model,
 		OpenAIKey:  w.OpenAIKey,
@@ -171,6 +194,38 @@ func (w *Wires) For(model string) (provider.Provider, string, error) {
 	}
 	w.made[model] = &madeWire{p: p, vendor: vendorOf(p)}
 	return p, vendorOf(p), nil
+}
+
+// responses is the second OpenAI wire, when the table asks for it and
+// this machine has something to point it at.
+//
+// A row that asks for it on a machine with no OpenAI key and no base
+// URL is NOT an error here: it falls through to mote, which owns the
+// sentence about which key was missing and is also where a claude key
+// and an unrecognised name still find each other.
+func (w *Wires) responses(model string) (provider.Provider, bool) {
+	row, ok := rowFor(model)
+	if !ok || row.Wire != wireResponses || row.Provider != "openai" {
+		return nil, false
+	}
+	key := firstSet(w.OpenAIKey, os.Getenv(provider.EnvOpenAIKey))
+	base := firstSet(w.OpenAIBase, os.Getenv(provider.EnvOpenAIBase))
+	if key == "" && base == "" {
+		return nil, false
+	}
+	r := responses.New(base, key)
+	r.Model = model
+	return r, true
+}
+
+// firstSet is the first of these that somebody actually set.
+func firstSet(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // Pick is what a conversation was told to use. Either half may be
