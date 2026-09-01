@@ -330,3 +330,27 @@ func TestAFinishedTaskIsToldTheTruthAboutItself(t *testing.T) {
 		t.Errorf("a landing that failed: %q", got)
 	}
 }
+
+// An interruption must never reach the model as a question. The two
+// look identical from the outside — a turn that ended, and nothing
+// since — and only the machine's own record tells them apart.
+func TestAnInterruptionIsNotToldAsAQuestion(t *testing.T) {
+	now := time.Now()
+	slept := fleet.View{
+		Task:    &fleet.Task{ID: "a", Kind: fleet.Ship, TurnEnded: now.Add(-8 * time.Hour)},
+		State:   fleet.Interrupted,
+		Machine: fleet.Machine{Cause: fleet.CauseSleep, Went: now.Add(-8 * time.Hour), Back: now.Add(-time.Minute)},
+	}
+	got := fleetPhrase(slept, now)
+	if !strings.Contains(got, "interrupted") || !strings.Contains(got, "the machine was asleep") {
+		t.Errorf("a task the lid shut on: %q", got)
+	}
+	if strings.Contains(got, "WAITING") || strings.Contains(got, "needs an answer") {
+		t.Errorf("nothing was asked, and the model must not be told it was: %q", got)
+	}
+	offline := slept
+	offline.Machine = fleet.Machine{Away: true, Cause: fleet.CauseOffline, Went: now.Add(-time.Hour)}
+	if got := fleetPhrase(offline, now); !strings.Contains(got, "the machine has no network") {
+		t.Errorf("a task with nothing to reach: %q", got)
+	}
+}

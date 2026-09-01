@@ -47,8 +47,13 @@ func (a Away) Open() bool { return a.To.IsZero() }
 // records nothing until something is reported to it.
 type Lifecycle struct {
 	// Tolerance is how late a heartbeat may be before the gap it left
-	// is read as the machine having been suspended. Zero means a
-	// minute, which no ordinary scheduling delay reaches.
+	// is read as the machine having been suspended. Zero means two
+	// minutes: the supervisor's cadence is fifteen seconds, so this is
+	// eight missed beats — far more than a slow mux or a loaded
+	// machine costs, and far less than the ten minutes it takes for a
+	// quiet task to become one worth looking at. Real sleeps are
+	// reported precisely by the Mac app; this only has to catch the
+	// ones nobody reported.
 	Tolerance time.Duration
 	// Keep bounds the record; zero keeps 32. Nothing older matters —
 	// a task is judged over the window since it last did something,
@@ -83,7 +88,7 @@ func (l *Lifecycle) tolerance() time.Duration {
 	if l.Tolerance > 0 {
 		return l.Tolerance
 	}
-	return time.Minute
+	return 2 * time.Minute
 }
 
 func (l *Lifecycle) keep() int {
