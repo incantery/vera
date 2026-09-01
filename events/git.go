@@ -97,7 +97,7 @@ func (g *GitWatcher) Scan(ctx context.Context, repo Repo) ([]Event, error) {
 	out, err := g.run(ctx, repo.Root, "log", "--all", "--date-order",
 		fmt.Sprintf("-n%d", g.max()),
 		"--since="+since.Format(time.RFC3339),
-		"--pretty=format:%H%x1f%cI%x1f%an%x1f%D%x1f%s")
+		"--pretty=format:%H%x1f%cI%x1f%an%x1f%D%x1f%P%x1f%s")
 	if err != nil {
 		return nil, nil
 	}
@@ -169,18 +169,28 @@ func (g *GitWatcher) ScanAll(ctx context.Context, repos []Repo) []Event {
 type commit struct {
 	sha, author, refs, subject string
 	at                         time.Time
+	// merge: more than one parent. It is kept apart from an ordinary
+	// commit because a merge is the branch landing and its content is
+	// already in the stream as the branch's own commits — so a reader
+	// asking what was actually done can say `--kind git.commit` and a
+	// reader asking what went home can say `--kind git.merge`.
+	merge bool
 }
 
 func parseCommit(line string) (commit, bool) {
 	parts := strings.Split(strings.TrimSpace(line), "\x1f")
-	if len(parts) != 5 || len(parts[0]) < 7 {
+	if len(parts) != 6 || len(parts[0]) < 7 {
 		return commit{}, false
 	}
 	at, err := time.Parse(time.RFC3339, parts[1])
 	if err != nil {
 		return commit{}, false
 	}
-	return commit{sha: parts[0], at: at, author: parts[2], refs: parts[3], subject: parts[4]}, true
+	return commit{
+		sha: parts[0], at: at, author: parts[2], refs: parts[3],
+		merge:   strings.Contains(strings.TrimSpace(parts[4]), " "),
+		subject: parts[5],
+	}, true
 }
 
 func (c commit) event(repo Repo) Event {
@@ -192,11 +202,15 @@ func (c commit) event(repo Repo) Event {
 	if refs := branchOf(c.refs); refs != "" {
 		fields["refs"] = refs
 	}
+	kind := "git.commit"
+	if c.merge {
+		kind = "git.merge"
+	}
 	return Event{
 		At:      c.at,
 		Repo:    repo.Name,
 		Source:  "git",
-		Kind:    "git.commit",
+		Kind:    kind,
 		Subject: short,
 		Project: repo.Root,
 		Text:    c.subject + " (" + short + ")",

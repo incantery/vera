@@ -191,3 +191,30 @@ func TestBranchOfDropsTheNoise(t *testing.T) {
 		}
 	}
 }
+
+// A merge is the branch landing and its content is already in the
+// stream as the branch's own commits, so it gets a kind of its own.
+func TestGitScanTellsAMergeFromACommit(t *testing.T) {
+	repo := newGitRepo(t)
+	addCommit(t, repo, "on main")
+	gitRun(t, repo.Root, "checkout", "-q", "-b", "side")
+	addCommit(t, repo, "on a branch")
+	gitRun(t, repo.Root, "checkout", "-q", "main")
+	gitRun(t, repo.Root, "merge", "--no-ff", "-q", "-m", "merge the branch", "side")
+
+	g := &GitWatcher{Dir: t.TempDir()}
+	evs, err := g.Scan(context.Background(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, e := range evs {
+		kinds[e.Kind]++
+	}
+	if kinds["git.merge"] != 1 {
+		t.Fatalf("want exactly one merge, got %+v", kinds)
+	}
+	if kinds["git.commit"] != 2 {
+		t.Fatalf("want the two ordinary commits, got %+v", kinds)
+	}
+}

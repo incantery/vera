@@ -66,6 +66,7 @@ one state directory is one too many.
 | `task.landed` / `task.land-failed` | fleet | the branch went home, or would not |
 | `vera.asked` / `vera.failed` | vera | one exchange: the question and the shape of the answer, never the answer — the journal has that |
 | `git.commit` | git | a commit appeared in a repository Vera knows |
+| `git.merge` | git | …and it had two parents: a branch went home. Kept apart because its content is already in the stream as the branch's own commits — `--kind git.commit` is what was done, `--kind git.merge` is what landed |
 | `machine.away` / `machine.back` | machine | the lid shut, or the network went |
 | `rook.gone` / `rook.back` | rook | the terminal engine stopped answering, or answered again |
 
