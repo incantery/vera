@@ -163,8 +163,10 @@ func TestPruneDropsOldShards(t *testing.T) {
 	if err := l.Append(Event{At: at(1, 9).AddDate(0, 0, -10), Source: "git", Kind: "git.commit", Text: "ancient"}); err != nil {
 		t.Fatal(err)
 	}
-	// The first append prunes on a fresh Log; the ancient shard is
-	// written and then, on the next day's append, swept.
+	// Retention is retention: a shard outside the window goes, whether
+	// it was written a month ago or a moment ago. Nothing reachable
+	// writes into the past — the first git sweep looks back a week and
+	// the default window is a quarter — so this only pins the rule.
 	l.Now = func() time.Time { return at(2, 9) }
 	if err := l.Append(Event{At: at(2, 9), Source: "git", Kind: "git.commit", Text: "today"}); err != nil {
 		t.Fatal(err)

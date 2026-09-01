@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/incantery/mote/provider"
 	"github.com/incantery/mote/tool"
 	"github.com/incantery/vera/events"
 	"github.com/incantery/vera/fleet"
@@ -298,5 +299,49 @@ func TestRecentToolIsAllowedWithoutAsking(t *testing.T) {
 	said := policyTools(map[string]tool.Decision{"recent": tool.Ask})
 	if said["recent"] != tool.Ask {
 		t.Fatal("want the profile's own word to stand")
+	}
+}
+
+// The stream gets a line per exchange beside the journal's whole one:
+// the question and the shape of the answer, never the answer itself.
+func TestAnExchangeLeavesOneLineInTheStream(t *testing.T) {
+	dir := t.TempDir()
+	rec := &events.Recorder{Log: &events.Log{Dir: dir}}
+	model := scripted(t,
+		scriptRound{
+			events: []provider.Event{provider.Calling("call_1", "nonesuch", `{}`)},
+			usage:  provider.Usage{Model: "m", Input: 10, Output: 2},
+		},
+		scriptRound{
+			events: []provider.Event{provider.Delta("here you are")},
+			usage:  provider.Usage{Model: "m", Input: 5, Output: 3},
+		})
+	mind := &Mind{Provider: model, Model: "m", History: newHistory(),
+		Events: rec, instruments: newInstruments()}
+
+	msg := Message{Text: "what is on my list", Conversation: "c1", Device: "phone"}
+	if err := mind.think(context.Background(), msg, func(Frame) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := events.Read(dir, events.Query{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want one line per exchange, got %+v", got)
+	}
+	e := got[0]
+	if e.Kind != "vera.asked" || e.Subject != "c1" {
+		t.Fatalf("want the question on the record, got %+v", e)
+	}
+	if !strings.Contains(e.Text, "what is on my list") {
+		t.Fatalf("want the question kept, got %q", e.Text)
+	}
+	if strings.Contains(e.Text, "here you are") {
+		t.Fatalf("want the answer left in the journal, got %q", e.Text)
+	}
+	if e.Fields["device"] != "phone" || e.Fields["model"] != "m" || e.Fields["tools"] != "1" {
+		t.Fatalf("want the shape of the answer, got %+v", e.Fields)
 	}
 }
