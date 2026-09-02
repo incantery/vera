@@ -43,6 +43,9 @@ type fakeVerad struct {
 	// answer with. Nil answers an empty list.
 	told      []string
 	todoReply func(line string) TodoAnswer
+	// refuse is what every POST /fleet/… answers with instead of
+	// doing it, for a test about what a refused verb says.
+	refuse string
 }
 
 func newFakeVerad(t *testing.T) *fakeVerad {
@@ -198,7 +201,12 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		}
 		f.mu.Lock()
 		f.posts = append(f.posts, r.URL.Path)
+		why := f.refuse
 		f.mu.Unlock()
+		if why != "" {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": why})
+		}
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -513,9 +521,15 @@ func TestNoticesWhenATaskNeedsYou(t *testing.T) {
 	done.Last = &fleet.Status{Verb: fleet.Done, Text: "merged"}
 	evs := w.absorb([]fleet.View{done}, now)
 	// Landing is the person's here (AutoLand is off on this view), so
-	// "ready to land" is the true thing to say.
-	if len(evs) != 1 || !strings.Contains(evs[0].Text, "a1 finished — ready to land") {
+	// the verb it offers is the landing. The tick is the state, the
+	// task's own last word is the detail, and /land is what to do —
+	// one channel each.
+	if len(evs) != 1 || !strings.Contains(evs[0].Text, "✓ Task finished · Scout the panel") ||
+		!strings.Contains(evs[0].Text, "merged") || !strings.Contains(evs[0].Text, "/land a1") {
 		t.Fatalf("events: %+v", evs)
+	}
+	if strings.Contains(evs[0].Text, "×") {
+		t.Errorf("red is failure only: %q", evs[0].Text)
 	}
 	if evs := w.absorb([]fleet.View{done}, now); len(evs) != 0 {
 		t.Fatalf("unchanged state is not news: %+v", evs)
@@ -525,13 +539,14 @@ func TestNoticesWhenATaskNeedsYou(t *testing.T) {
 	landed.State = fleet.Closed
 	landed.Report = "# What changed\n\nThe panel reads the cache now."
 	evs = w.absorb([]fleet.View{landed}, now)
-	if len(evs) != 1 || !strings.HasPrefix(evs[0].Text, "landed a1") || !strings.Contains(evs[0].Text, "merged") {
+	if len(evs) != 1 || !strings.HasPrefix(evs[0].Text, "✓ Task landed · Scout the panel") ||
+		!strings.Contains(evs[0].Text, "merged") {
 		t.Fatalf("a landing says so: %+v", evs)
 	}
 	// It landed itself and closed itself; the summary it wrote on the
 	// way out is the last thing the person can still read, so the line
 	// that ends the task says where it is.
-	if !strings.Contains(evs[0].Text, "(/report a1)") {
+	if !strings.Contains(evs[0].Text, "/report a1") {
 		t.Errorf("a landing with a report should point at it: %q", evs[0].Text)
 	}
 
@@ -560,8 +575,15 @@ func TestAShipTaskVeraLandsHerselfDoesNotAskThemToLandIt(t *testing.T) {
 	v.State = fleet.Decision
 	v.LandFailure = "merge conflict in README"
 	evs = w.absorb([]fleet.View{v}, now)
-	if len(evs) != 1 || !strings.Contains(evs[0].Text, "blocked: merge conflict in README") {
+	// A landing that failed needs the person, and needing the person
+	// is not a crash: ◇ and the failure's own words, never ×.
+	if len(evs) != 1 || !strings.Contains(evs[0].Text, "◇ Task needs you") ||
+		!strings.Contains(evs[0].Text, "merge conflict in README") ||
+		!strings.Contains(evs[0].Text, "/answer b2") {
 		t.Fatalf("a failed landing should say so: %+v", evs)
+	}
+	if strings.Contains(evs[0].Text, "×") {
+		t.Errorf("attention is not failure: %q", evs[0].Text)
 	}
 }
 
@@ -577,7 +599,9 @@ func TestAScoutReportsRatherThanLands(t *testing.T) {
 	v.Report = "# Findings\n\nThe cache prefix changes every turn.\n"
 	v.Unread = []fleet.Status{{Verb: fleet.Done, Text: "report written"}}
 	evs := w.absorb([]fleet.View{v}, now)
-	want := "1ea6a4b5 reported — Findings  (/report 1ea6a4b5)"
+	// Done AND unread, on one row and in two channels: the tick is
+	// what became of it, ● is that nobody has read it yet.
+	want := "✓ Scout reported · Find out why it is slow ●\nFindings · /report 1ea6a4b5"
 	if len(evs) != 1 || evs[0].Text != want {
 		t.Fatalf("notice:\n got %+v\nwant %q", evs, want)
 	}
@@ -731,9 +755,11 @@ func TestNoticesAreAboutTheTask(t *testing.T) {
 	}
 }
 
-// The right of the status line: where Vera believes you are, or, when
-// nobody has told her, what she is doing herself.
-func TestStatusRightSaysWhereYouAre(t *testing.T) {
+// Where Vera believes you are, or, when nobody has told her, what she
+// is doing herself. It used to be the right of the status line and is
+// `/debug`'s opening line now — the status line says what is true of
+// this conversation, and this is true of the world.
+func TestWhereYouAre(t *testing.T) {
 	focused := &Status{
 		RunsInFlight: 2,
 		Devices: []DeviceStatus{
@@ -764,14 +790,14 @@ func TestStatusRightSaysWhereYouAre(t *testing.T) {
 		t.Errorf("no status yet: %q", got)
 	}
 
-	// The watcher answers from the cache, so the UI goroutine never waits.
-	w := newFleetWatch(nil)
-	if got := w.where(); got != "" {
-		t.Errorf("before the first poll: %q", got)
+	// And it reaches the person through the belief block, which is
+	// where it went when it came off the line.
+	if got := beliefMarkdown(focused, "chat-1"); !strings.Contains(got, "Where you are: ") ||
+		!strings.Contains(got, "Ghostty") {
+		t.Errorf("/debug should open with where she thinks you are:\n%s", got)
 	}
-	w.absorbStatus(focused)
-	if got := w.where(); !strings.Contains(got, "Ghostty") {
-		t.Errorf("after: %q", got)
+	if got := beliefMarkdown(&Status{}, "chat-1"); strings.Contains(got, "Where you are") {
+		t.Errorf("nothing believed is nothing claimed:\n%s", got)
 	}
 }
 
@@ -951,10 +977,11 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	m := tui.New(veraAgent{c: c}, headless(chatOptions(&Status{Name: "vera", Mind: "echo"}, s, nil, "say something")))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 32})
 
-	// The status line: the model actually in use and the machine
-	// asking, on the right, with no "(from profiles/…)" anywhere.
+	// The status line: the model actually in use, and nothing else the
+	// reference struck off it — no "· none" for a dial nobody turned,
+	// no "(from profiles/…)", nothing about where the person is.
 	view := screen(m)
-	for _, want := range []string{"vera", "gpt-5.6-luna \u00b7 none", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
+	for _, want := range []string{"vera \u00b7 gpt-5.6-luna", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the screen is missing %q:\n%s", want, view)
 		}
@@ -1051,7 +1078,7 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 
 	sess := openChat(t, dir, "chat-1")
 	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
-	m := tui.New(veraAgent{c: c}, headless(chatOptions(st, s, sess, chatGreeting(st, sess))))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(st, s, sess, chatGreeting(st, "", sess))))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	drive(t, m, func() bool { return len(sess.Turns()) == 1 }, m.Init(), say(m, "what is on the rail?"))
@@ -1072,7 +1099,7 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 		t.Fatalf("%d turns on disk, want the one exchange", n)
 	}
 	s2 := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{}}
-	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
+	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, "", again))))
 	m2.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	view := screen(m2)
@@ -1145,7 +1172,7 @@ func TestTheStatusLineSaysWhatItCost(t *testing.T) {
 	// Reopened, the total comes back with the turn.
 	again := openChat(t, dir, "chat-1")
 	s2 := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{}}
-	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
+	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, "", again))))
 	m2.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	if v := screen(m2); !strings.Contains(v, want) {
 		t.Errorf("a reopened conversation should still know what it cost:\n%s", v)
@@ -1223,7 +1250,7 @@ func TestModelCommandAsksVeradAndTheStatusLineFollows(t *testing.T) {
 
 	// What is in force is on the status line from the start, without
 	// asking: the chat polls verad for it.
-	if v := screen(m); !strings.Contains(v, "vera · gpt-5.6-luna · none") {
+	if v := screen(m); !strings.Contains(v, "vera · gpt-5.6-luna") || strings.Contains(v, "· none") {
 		t.Errorf("the status line should open on what is in force:\n%s", v)
 	}
 
@@ -1295,7 +1322,7 @@ func TestTheRailStartsHiddenInsideRook(t *testing.T) {
 	if insideRook() {
 		t.Fatal("no rook in the environment")
 	}
-	plain := chatGreeting(&Status{Name: "vera"}, emptySession(t))
+	plain := chatGreeting(&Status{Name: "vera"}, "", emptySession(t))
 	if strings.Contains(plain, "starts hidden") {
 		t.Errorf("outside rook the rail is just there:\n%s", plain)
 	}
@@ -1304,7 +1331,7 @@ func TestTheRailStartsHiddenInsideRook(t *testing.T) {
 	if !insideRook() {
 		t.Fatal("ROOK_MUX_SOCK should be enough")
 	}
-	inside := chatGreeting(&Status{Name: "vera"}, emptySession(t))
+	inside := chatGreeting(&Status{Name: "vera"}, "", emptySession(t))
 	for _, want := range []string{"starts hidden", "agents pane", "/rail", "F2"} {
 		if !strings.Contains(inside, want) {
 			t.Errorf("the greeting inside rook is missing %q:\n%s", want, inside)
@@ -1509,7 +1536,9 @@ func TestEffortWithNoArgumentOpensTheToggle(t *testing.T) {
 }
 
 // A model with no dial gets the fact, not an empty card and not three
-// options verad would refuse one at a time.
+// options verad would refuse one at a time — and the fact is that the
+// control is ABSENT, not that it is set to "none". Three parts:
+// what cannot be done, what that leaves alone, what to do instead.
 func TestEffortSaysSoWhenTheModelHasNoDial(t *testing.T) {
 	f, s, m := pickSession(t)
 	f.dflt = &InForce{Model: "gpt-5.6-terra", Effort: "none", From: "the built-in default"}
@@ -1519,8 +1548,14 @@ func TestEffortSaysSoWhenTheModelHasNoDial(t *testing.T) {
 	if strings.Contains(v, "Reasoning effort") {
 		t.Errorf("a card was drawn for a model with no dial:\n%s", v)
 	}
-	if !strings.Contains(v, "gpt-5.6-terra has no reasoning dial") || !strings.Contains(v, "it takes effort none") {
-		t.Errorf("it should say what that model does take:\n%s", v)
+	if !strings.Contains(v, "gpt-5.6-terra does not expose a reasoning-effort control") {
+		t.Errorf("it should say the control is not there:\n%s", v)
+	}
+	if !strings.Contains(v, "model and settings unchanged") || !strings.Contains(v, "/model shows what does") {
+		t.Errorf("a refusal says what it left alone and what to do:\n%s", v)
+	}
+	if strings.Contains(v, "it takes effort none") {
+		t.Errorf("none is not a position of a dial this model has:\n%s", v)
 	}
 }
 
@@ -1718,5 +1753,26 @@ func TestBackslashEnterIsANewlineNotASend(t *testing.T) {
 	want := "what is on the rail,\nand what is blocked?"
 	if got := sess.Turns()[0].Said; got != want {
 		t.Errorf("verad was told %q, want %q", got, want)
+	}
+}
+
+// A fleet verb that would not run says the three things every refusal
+// here says: what failed, what it left alone, and what to do. The
+// middle one is the one that matters — a /land that failed and one
+// that half-landed look identical from the keyboard.
+func TestARefusedFleetVerbSaysTheTaskIsWhereItWas(t *testing.T) {
+	outsideRook(t)
+	f := newFakeVerad(t)
+	f.refuse = "the branch has a conflict in README"
+	c := f.client()
+	w := newFleetWatch(c)
+	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
+	w.conv = s.conversation
+
+	got := joined(s.handle("land", "a1"))
+	for _, want := range []string{"conflict in README", "the task is where it was", "/tasks"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a refused /land is missing %q:\n%s", want, got)
+		}
 	}
 }

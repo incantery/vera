@@ -159,16 +159,38 @@ func TestThePasteKeyLeavesEveryOtherKeyAlone(t *testing.T) {
 func TestCtrlVIsNotTakenWhereThereIsNoPasteboard(t *testing.T) {
 	s, p := pasted(t, pasteboard{})
 
-	before := screen(p)
 	_, cmd := p.Update(ctrlV())
 	deliver(p, cmd)
 
 	if s.held.count() != 0 {
 		t.Fatal("something was attached from a pasteboard that is not there")
 	}
-	if screen(p) != before {
-		t.Errorf("ctrl+v said something where there is nothing to read:\n%s", screen(p))
+	// Nothing said: no note, no error, nothing about a pasteboard.
+	//
+	// Not "the frame is unchanged". Where vera does not take ctrl+v
+	// the text area keeps it, and the text area's own ctrl+v pastes
+	// the machine's clipboard — so the box, and the height of the
+	// transcript above it, move with whatever the tester last copied.
+	// What this test is about is that VERA says nothing.
+	said := transcriptOf(screen(p))
+	for _, quiet := range []string{"✗", "attached", "pasteboard", "/image"} {
+		if strings.Contains(said, quiet) {
+			t.Errorf("ctrl+v said %q where there is nothing to read:\n%s", quiet, said)
+		}
 	}
+}
+
+// transcriptOf is the screen above the rule: everything the terminal
+// has said, without the input box under it — which holds whatever the
+// text area pasted, and is not this package's business.
+func transcriptOf(v string) string {
+	lines := strings.Split(v, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if l := strings.TrimSpace(lines[i]); l != "" && strings.Trim(l, "─") == "" {
+			return strings.Join(lines[:i], "\n")
+		}
+	}
+	return v
 }
 
 // /paste and ctrl+v are the same fetch: both go through the session's

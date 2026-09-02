@@ -276,6 +276,14 @@ func takesEffort(model, effort string) error {
 			return nil
 		}
 	}
+	// A model whose only effort is "none" has no dial at all, and
+	// saying "it takes none" describes the absence as if it were a
+	// setting — which is the one thing that sends somebody on typing
+	// efforts at a model that will never take one. Say what is true:
+	// there is no control here, change model.
+	if len(row.Efforts) == 1 && strings.EqualFold(row.Efforts[0], "none") {
+		return fmt.Errorf("%s does not expose a reasoning-effort control", model)
+	}
 	return fmt.Errorf("%s does not take effort %s — it takes %s",
 		model, effort, strings.Join(row.Efforts, ", "))
 }

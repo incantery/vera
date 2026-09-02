@@ -323,8 +323,22 @@ func TestTakesEffortAnswersFromTheTableNotTheKeys(t *testing.T) {
 	if err == nil {
 		t.Fatal("gpt-5.6-terra was said to take a reasoning effort")
 	}
-	if !strings.Contains(err.Error(), "it takes none") {
-		t.Errorf("the refusal should name what it does take: %v", err)
+	// A model whose only effort is "none" has no dial at all, and the
+	// refusal says so. "It takes none" describes an absence as if it
+	// were a setting, and a person who reads that keeps typing efforts
+	// at a model that will never take one.
+	if !strings.Contains(err.Error(), "does not expose a reasoning-effort control") {
+		t.Errorf("a model with no dial should say there is none: %v", err)
+	}
+	if strings.Contains(err.Error(), "it takes none") {
+		t.Errorf("none is not a setting this model offers: %v", err)
+	}
+	// A model that DOES have a dial, asked for a position it does not
+	// have, still names the positions it has.
+	if err := takesEffort("gpt-5", "xhigh"); err == nil {
+		t.Error("gpt-5 was said to take xhigh")
+	} else if !strings.Contains(err.Error(), "it takes none, low, medium, high") {
+		t.Errorf("a refusal from a model with a dial names the dial: %v", err)
 	}
 	// An empty effort is "leave it alone", not a refusal, and a model
 	// nobody has written down is one nothing may be claimed about.
