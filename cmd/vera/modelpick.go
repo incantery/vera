@@ -215,12 +215,12 @@ func (s *chatSession) applyPick(noun string, half func(tui.PickChoice) (model, e
 			// line follows what it says, and the note says so too when
 			// the two are not the same thing.
 			w.pollModel(ctx)
-			line := w.resolution().Line()
+			line := w.resolution().Short()
 			if line == "" {
-				line = res.Line() // verad answered and then went quiet
+				line = res.Short() // verad answered and then went quiet
 			}
 			note := res.Line() + " " + scope + " — " + res.Says()
-			if line != res.Line() {
+			if line != res.Short() {
 				note += "; this conversation stays on " + line + " (its own choice)"
 			}
 			return tea.Batch(tui.SetModel(line), tui.Note("%s", note), tui.Refresh())

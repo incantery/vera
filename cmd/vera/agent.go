@@ -113,10 +113,15 @@ func translate(f Frame) []agent.Event {
 		out = append(out, agent.Delta(f.Delta))
 	}
 	if tc := f.ToolCall; tc != nil {
-		out = append(out, agent.Call(tc.ID, tc.Name, tc.Args))
+		// The card reads as a sentence where this terminal knows the
+		// tool's shape — `start scout vera "Investigate…"` rather
+		// than the JSON it was called with. mote summarizes the
+		// arguments itself for everything else, which is the right
+		// answer for a tool the chat has never heard of.
+		out = append(out, agent.Call(tc.ID, tc.Name, tc.Args).WithSummary(toolSays(tc.Name, tc.Args)))
 	}
 	if ask := f.Ask; ask != nil {
-		out = append(out, agent.Asking(ask.ID, ask.Name, ask.Args, ask.Text))
+		out = append(out, agent.Asking(ask.ID, ask.Name, ask.Args, ask.Text).WithSummary(toolSays(ask.Name, ask.Args)))
 	}
 	if to := f.ToolOutput; to != nil {
 		out = append(out, agent.Output(to.ID, to.Text))

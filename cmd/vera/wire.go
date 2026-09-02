@@ -53,7 +53,8 @@ type Resolution struct {
 	EffortFrom string `json:"effort_from,omitempty"`
 }
 
-// Line is model and effort in the form the status line wants.
+// Line is model and effort, whole — what `/model` and `/effort` print
+// back when somebody has just moved one of them.
 func (r *Resolution) Line() string {
 	if r == nil || r.Model == "" {
 		return ""
@@ -62,6 +63,30 @@ func (r *Resolution) Line() string {
 		return r.Model
 	}
 	return r.Model + " · " + r.Effort
+}
+
+// Short is the same resolution as the status line takes it: the
+// model, and the dial only when it is turned to something.
+//
+// "· none" is not a setting, it is the absence of one — no reasoning
+// is what a model does when nobody turned a dial, and half the table
+// has no dial to turn. The reference's rule for this line is that an
+// absent capability does not get a column on it, which is the same
+// rule that turns "does not take effort low — it takes none" into
+// "does not expose a reasoning-effort control". `/model` still prints
+// Line, where the difference between none and unset is worth saying.
+func (r *Resolution) Short() string {
+	if r == nil || r.Effort == "none" {
+		return r.model()
+	}
+	return r.Line()
+}
+
+func (r *Resolution) model() string {
+	if r == nil {
+		return ""
+	}
+	return r.Model
 }
 
 // Says is where each half came from — what `/model` prints and the

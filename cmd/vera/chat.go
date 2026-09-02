@@ -14,6 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,6 +123,50 @@ func insideRook() bool {
 	return os.Getenv("ROOK_MUX_SOCK") != "" || os.Getenv("ROOK_SOCK") != ""
 }
 
+// staying is what a refused change leaves the conversation on, for
+// the middle line of a failure. A watch that has not answered yet
+// says the honest thing rather than naming a model it is guessing.
+func staying(w *fleetWatch) string {
+	if line := w.resolution().Short(); line != "" {
+		return "this conversation stays on " + line
+	}
+	return "nothing changed"
+}
+
+// statusName is the name on the status line — and mostly there is
+// none.
+//
+// The reference drops the hostname: this is a single-machine UI, and
+// a machine name that never changes spends a column of the line on a
+// constant, then truncates everything after it. It comes back the
+// moment it stops being a constant — `vera chat -url` pointed at
+// another Mac's verad, where which machine is answering is the most
+// load-bearing fact on the screen.
+//
+// mote insists on a name (an empty one becomes "agent"), so the local
+// case says "vera": the shortest true thing, and nothing that cuts.
+func statusName(st *Status, base string) string {
+	if elsewhere(base) && st != nil && st.Name != "" {
+		return st.Name
+	}
+	return "vera"
+}
+
+// elsewhere: this chat is talking to a verad that is not on this
+// machine. A base nobody could parse is treated as local, because the
+// only thing that answers a URL like that is the one we started.
+func elsewhere(base string) bool {
+	u, err := url.Parse(base)
+	if err != nil {
+		return false
+	}
+	switch u.Hostname() {
+	case "", "127.0.0.1", "localhost", "::1", "[::1]":
+		return false
+	}
+	return true
+}
+
 // railToggle is mote's own ctrl+t, as a message. It is what /rail
 // sends and what hides the rail on the way in.
 func railToggle() tea.Msg { return tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl} }
@@ -132,7 +177,7 @@ func newConversation() string { return "chat-" + time.Now().Format("20060102-150
 // so that what a test drives is what `vera chat` runs.
 func chatOptions(st *Status, s *chatSession, sess *session.Session, greeting string) tui.Options {
 	return tui.Options{
-		Name: st.Name,
+		Name: statusName(st, s.c.base),
 		// The model in use, beside her name. mote reads Options.Model
 		// every frame and tui.SetModel is how it moves, so this is a
 		// starting position rather than a fixed fact: the picker moves
@@ -141,7 +186,7 @@ func chatOptions(st *Status, s *chatSession, sess *session.Session, greeting str
 		// What is deliberately not here is the sentence about where it
 		// came from. That is `/model`'s to print, and it changes
 		// nothing about what is happening.
-		Model:        s.w.resolution().Line(),
+		Model:        s.w.resolution().Short(),
 		Conversation: s.conversation(),
 		Session:      sess,
 		Greeting:     greeting,
@@ -150,11 +195,15 @@ func chatOptions(st *Status, s *chatSession, sess *session.Session, greeting str
 		// Inside rook the rail is redundant with rook's own agents
 		// pane, so it starts hidden. Closed, not gone: ctrl+t, F2 and
 		// /rail all still bring it back.
-		SideClosed:  insideRook(),
-		StatusRight: s.w.where,
-		Notices:     s.w.notices,
-		Commands:    chatCommands,
-		Handle:      s.handle,
+		SideClosed: insideRook(),
+		// Nothing on the right. The status line says what is true of
+		// THIS conversation — the model, what it has spent — and
+		// where Vera believes the person is is true of the world,
+		// which is the rail's business and `/debug`'s. It used to be
+		// here, and it was the half of the line that truncated.
+		Notices:  s.w.notices,
+		Commands: chatCommands,
+		Handle:   s.handle,
 		// The terminal owns the id — /new hands it one and it may hand
 		// back another — so the chat is told rather than keeping a
 		// guess of its own. /dump reads what it was told.
@@ -318,7 +367,7 @@ func (w *fleetWatch) pollModel(ctx context.Context) {
 	}
 	w.mu.Lock()
 	w.model = res
-	line, send := res.Line(), w.send
+	line, send := res.Short(), w.send
 	moved := line != "" && line != w.shown
 	if moved {
 		w.shown = line
@@ -348,20 +397,6 @@ func (w *fleetWatch) resolution() *Resolution {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.model
-}
-
-// where is the right of the status line: where Vera believes the
-// person is, in a phrase. It is read on the UI goroutine, so it reads
-// the cache and gets out.
-//
-// The model used to be here, because mote read Options.Model once, at
-// New, and the model can change under a conversation at any moment.
-// tui.SetModel ended that — it is on the left now, with the device and
-// the conversation, and this line is what it was written for.
-func (w *fleetWatch) where() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return whereYouAre(w.status)
 }
 
 // absorb replaces the cache and returns what is worth saying about it.
@@ -433,6 +468,10 @@ func (w *fleetWatch) lines() string {
 // supervisor landing on its own, the next thing they will hear is
 // "landed", and telling them to land it in the meantime is telling
 // them to do a job somebody else already started.
+//
+// What each line LOOKS like is grammar.go's: a glyph, what the task
+// is, what it last said, and the one command that moves it on. This
+// decides which of them is worth saying at all.
 func noticeFor(prev fleet.State, seen bool, v fleet.View, now time.Time) (string, bool) {
 	if !seen || prev == v.State {
 		return "", false
@@ -443,39 +482,48 @@ func noticeFor(prev fleet.State, seen bool, v fleet.View, now time.Time) (string
 		if v.State == fleet.Closed && prev == fleet.Finished {
 			return "", false // already said, when it finished
 		}
-		return fmt.Sprintf("%s reported — %s  (/report %s)", v.ID, trim(firstLine(v.Report, v.Last), 80), v.ID), true
+		head := glyphDone + " Scout reported · " + trim(firstSentence(v.Brief), 60)
+		if unreadReport(v) {
+			head += " " + glyphUnread
+		}
+		return event(head, trim(firstLine(v.Report, v.Last), 90), "/report "+v.ID), true
 	}
 	// Closed: it landed, or it was torn down. Which of the two is the
 	// supervisor's own last word, so say that rather than a tick.
 	if v.State == fleet.Closed {
-		verb := "closed"
+		word := "closed"
 		if v.Last != nil && v.Last.Verb == fleet.Done {
-			verb = "landed"
+			word = "landed"
 		}
-		line := verb + " " + v.ID + " — " + trim(firstSentence(v.Brief), 60)
+		head := glyphDone + " " + kindWord(v) + " " + word + " · " + trim(firstSentence(v.Brief), 60)
+		detail := ""
 		if v.Last != nil && v.Last.Text != "" {
-			line += ": " + trim(v.Last.Text, 200)
+			detail = trim(oneLine(v.Last.Text), 120)
 		}
 		// A ship task writes a summary of what it changed and why, and
 		// with the supervisor landing on its own this line is the last
 		// the person hears of it. Without the pointer the summary is
 		// written for nobody.
+		next := ""
 		if v.Report != "" {
-			line += "  (/report " + v.ID + ")"
+			next = "/report " + v.ID
 		}
-		return line, true
+		return event(head, detail, next), true
 	}
 	if !v.State.Actionable() {
 		return "", false
 	}
-	line := fmt.Sprintf("● %s %s — %s", v.ID, fleetPhrase(v, now), trim(firstSentence(v.Brief), 60))
-	if v.Last != nil && v.Last.Text != "" {
-		line += ": " + trim(v.Last.Text, 200)
+	return taskNotice(v, waitedFor(v, now)), true
+}
+
+// waitedFor is how long a task has been waiting on the person, in the
+// words a sentence would use. Empty when it has not ended a turn —
+// "waiting on you for 0s" is worse than "waiting on you".
+func waitedFor(v fleet.View, now time.Time) string {
+	if v.State != fleet.Waiting || v.TurnEnded.IsZero() {
+		return ""
 	}
-	if v.Report != "" {
-		line += "  (/report " + v.ID + ")"
-	}
-	return line, true
+	return roughDuration(now.Sub(v.TurnEnded))
 }
 
 // firstLine is the first line of a report — the sentence a scout put
@@ -689,27 +737,33 @@ func plainText(s string) string { return strings.ReplaceAll(s, "`", "") }
 // chatCommands are the fleet verbs by hand — the same calls the
 // mind's fleet tool makes, for when you know exactly what you want
 // and do not need to say it in prose. /help is mote's.
+//
+// Each Help is one column of the completion popup, beside a name the
+// popup has already printed — so it says what the command DOES first
+// and how to type it after the ·, and never opens by repeating its
+// own name. A line that has to be truncated to fit is a line whose
+// first half was the only half anybody read.
 var chatCommands = []tui.Command{
-	{Name: "model", Help: "/model — pick from the models verad can reach; /model <name> moves this conversation straight there"},
-	{Name: "effort", Help: "/effort — how hard it thinks: low, medium, high; /effort <level> moves this conversation straight there"},
-	{Name: "costs", Help: "/costs [7d] [by model|conversation|day] — what the journal says every exchange cost"},
-	{Name: "events", Help: "/events [7d] [@repo] [words] — what has been going on: tasks, commits, questions"},
-	{Name: "rail", Help: "show or hide the fleet rail (ctrl+t, F2) — it starts hidden inside rook"},
+	{Name: "model", Help: "which model answers · /model <name> moves straight there"},
+	{Name: "effort", Help: "how hard it thinks · /effort low|medium|high"},
+	{Name: "costs", Help: "what the exchanges have cost · /costs 7d by model"},
+	{Name: "events", Help: "what has been going on · /events 7d @repo words"},
+	{Name: "rail", Help: "show or hide the fleet rail · ctrl+t, F2"},
 	{Name: "tasks", Help: "every task and what is believed about it"},
-	{Name: "todo", Help: "/todo — your own list; /todo <something> adds it, /todo done <n|words> crosses it off"},
-	{Name: "start", Help: "/start [@repo] <brief> — put a task on the rail"},
-	{Name: "scout", Help: "/scout [@repo] <brief> — a task that reports instead of landing"},
-	{Name: "resume", Help: "/resume <id> — pick a task back up"},
-	{Name: "report", Help: "/report [id] — what a task wrote, with what to do about it (and mark it seen); no id takes the one that is waiting"},
-	{Name: "answer", Help: "/answer <id> <text> — reply to a task that asked"},
-	{Name: "land", Help: "/land <id> — merge its branch and close it"},
-	{Name: "stop", Help: "/stop <id> [force] — tear a task down"},
-	{Name: "seen", Help: "/seen <id> — you have read it"},
-	{Name: "paste", Help: "attach the picture on the pasteboard (ctrl+v does it too) — it goes with your next message"},
-	{Name: "image", Help: "/image <path> — attach a picture from a file; /image with nothing forgets what is attached"},
+	{Name: "todo", Help: "your own list · /todo <something>, /todo done <n>"},
+	{Name: "start", Help: "put a task on the rail · /start [@repo] <brief>"},
+	{Name: "scout", Help: "a task that reports instead of landing · /scout [@repo] <brief>"},
+	{Name: "resume", Help: "pick a task back up · /resume <id>"},
+	{Name: "report", Help: "what a task wrote, and what to do about it · /report [id]"},
+	{Name: "answer", Help: "reply to a task that asked · /answer <id> <text>"},
+	{Name: "land", Help: "merge its branch and close it · /land <id>"},
+	{Name: "stop", Help: "tear a task down · /stop <id> [force]"},
+	{Name: "seen", Help: "you have read it · /seen <id>"},
+	{Name: "paste", Help: "attach the picture on the pasteboard · ctrl+v does it too"},
+	{Name: "image", Help: "attach a picture from a file · /image <path>"},
 	{Name: "new", Help: "a fresh conversation, in its own file"},
 	{Name: "sessions", Help: "the conversations on disk"},
-	{Name: "dump", Help: "/dump [note] — this conversation, in a folder, to report a problem"},
+	{Name: "dump", Help: "this conversation, in a folder, to report a problem · /dump [note]"},
 	{Name: "debug", Help: "what Vera believes about where you are"},
 	{Name: "quit", Help: "leave"},
 }
@@ -796,10 +850,14 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 		return off(func(ctx context.Context) tea.Cmd {
 			res, err := c.chooseModel(ctx, conv, want, effort)
 			if err != nil {
-				return tui.Fail("model: %s", err)
+				// What failed, what it left alone, and where to look.
+				// A refusal that only says no leaves the person
+				// wondering what it moved on the way past.
+				return tui.Fail("%s", failure(err.Error(),
+					"staying on "+staying(w), "/model on its own lists what verad can reach"))
 			}
 			w.pollModel(ctx)
-			return tea.Batch(tui.SetModel(res.Line()),
+			return tea.Batch(tui.SetModel(res.Short()),
 				tui.Note("%s — %s", res.Line(), res.Says()), tui.Refresh())
 		})
 
@@ -815,17 +873,18 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 			return off(func(ctx context.Context) tea.Cmd {
 				ans, err := c.models(ctx, conv)
 				if err != nil {
-					return tui.Fail("effort: %s", err)
+					return tui.Fail("%s", failure("could not ask verad which efforts this model takes: "+err.Error(),
+						"nothing changed", "/effort <level> still sends one straight through"))
 				}
 				dial := effortsFor(ans)
 				if len(dial) == 0 {
-					// Not an error and not an empty card: a model with
-					// no dial is a fact about that model, and saying it
-					// is more use than three options verad would refuse.
-					using := ans.using()
-					row, _ := rowFor(ans.Models, using.Model)
-					return tui.Note("%s has no reasoning dial — it takes effort %s. /model moves to one that does.",
-						using.Model, strings.Join(row.Efforts, ", "))
+					// Not an empty card: a model with no dial is a
+					// fact about that model, and the honest shape for
+					// it is the one every refusal here wears — what
+					// cannot be done, what that leaves alone, and the
+					// command that can. The capability is ABSENT; it
+					// is not set to "none".
+					return tui.Fail("%s", noDial(ans.using().Model))
 				}
 				return tui.Choose(s.effortPick(ans, dial))
 			})
@@ -833,10 +892,11 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 		return off(func(ctx context.Context) tea.Cmd {
 			res, err := c.chooseEffort(ctx, conv, rest)
 			if err != nil {
-				return tui.Fail("effort: %s", err)
+				return tui.Fail("%s", failure(err.Error(),
+					"model and settings unchanged", "/effort on its own shows what this model takes"))
 			}
 			w.pollModel(ctx)
-			return tea.Batch(tui.SetModel(res.Line()),
+			return tea.Batch(tui.SetModel(res.Short()),
 				tui.Note("%s — %s", res.Line(), res.Says()), tui.Refresh())
 		})
 
@@ -1079,6 +1139,12 @@ func off(fn func(context.Context) tea.Cmd) tea.Cmd {
 func beliefMarkdown(s *Status, conversation string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "**%s** · %s · %d run(s) in flight · conversation `%s`\n", s.Name, s.Mind, s.RunsInFlight, conversation)
+	// Where she believes the person is. It was on the status line and
+	// is not any more — it is a fact about the world rather than about
+	// this conversation, and it is the first thing this block is for.
+	if where := whereYouAre(s); where != "" {
+		fmt.Fprintf(&b, "\nWhere you are: %s\n", where)
+	}
 	if len(s.Devices) == 0 {
 		b.WriteString("\nNo device has reported in.\n")
 	}
@@ -1111,55 +1177,16 @@ func beliefMarkdown(s *Status, conversation string) string {
 	return b.String()
 }
 
-// fleetPhrase says what is believed, in words a person would use —
-// the same phrasing verad gives the mind.
-func fleetPhrase(v fleet.View, now time.Time) string {
-	switch v.State {
-	case fleet.Running:
-		return "working"
-	case fleet.Quiet:
-		return "working, quiet for a bit"
-	case fleet.Stale:
-		return "has gone quiet — worth a look"
-	case fleet.Waiting:
-		if !v.TurnEnded.IsZero() {
-			return "waiting on you for " + roughDuration(now.Sub(v.TurnEnded))
-		}
-		return "waiting on you"
-	case fleet.Decision:
-		if v.LandFailure != "" {
-			return "blocked: " + trim(oneLine(v.LandFailure), 120)
-		}
-		return "blocked on a decision from you"
-	case fleet.Held:
-		return "paused on something external"
-	case fleet.Interrupted:
-		// Not a question, and not a stall: the machine went out from
-		// under it. Saying which is the whole point — "quiet for 8
-		// hours" would send them looking for a problem that is a lid.
-		return "interrupted — " + v.Machine.Why()
-	case fleet.Finished:
-		switch {
-		case v.Kind == fleet.Scout:
-			return "reported"
-		case v.AutoLand:
-			return "finished — landing it"
-		}
-		return "finished — ready to land"
-	case fleet.Broken:
-		return "failed"
-	case fleet.Gone:
-		return "its terminal is gone — /resume picks it up"
-	default:
-		return string(v.State)
-	}
-}
-
-// whereYouAre is what Vera believes about where the person is, short
-// enough for the end of a status line: the app they are in front of
-// and, if that app is a terminal she can see into, what is in it. With
-// nothing focused — no device has reported, or the report has gone
-// stale — the honest thing left to say is what she is doing herself.
+// whereYouAre is what Vera believes about where the person is, in a
+// phrase: the app they are in front of and, if that app is a terminal
+// she can see into, what is in it. With nothing focused — no device
+// has reported, or the report has gone stale — the honest thing left
+// to say is what she is doing herself.
+//
+// It used to be the right of the status line. The reference took it
+// off: that line says what is true of the conversation in front of
+// you, and this is true of the world — so it opens `/debug`'s block
+// now, where it has room and nothing truncates.
 func whereYouAre(s *Status) string {
 	if s == nil {
 		return ""
