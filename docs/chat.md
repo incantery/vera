@@ -137,6 +137,10 @@ for them:
   so the glyphs carry the whole distinction. The reference tints the
   gutter — yellow for an ask, red for a failure — which needs a notice
   that can say what kind it is.
+- **Where a notice wraps.** `hang` wraps on `" -/"`, so a second line
+  too long for the pane breaks *inside* the slash command at its
+  slash — `· /` / `answer a3f2 <text>`. The breakpoints are right for
+  prose and wrong for the one token on the line that must not be cut.
 - **`⏎ open` on a task event.** The reference opens the task from the
   transcript row. Nothing in mote focuses a notice, so the second line
   carries a slash command instead.
