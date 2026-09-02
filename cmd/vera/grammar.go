@@ -84,8 +84,8 @@ func kindWord(v fleet.View) string {
 
 // event is one lifecycle line in the design's grammar:
 //
-//	◐ Scout working · Investigate Vera's /effort
-//	reading firstmate/src/models.ts · /report a3f2
+//	◇ Scout needs you · Investigate Vera's /effort
+//	Luna has no effort control · /answer a3f2 <text>
 //
 // The head is the state and the subject; the second line is what is
 // true right now and the one thing to do about it. mote draws a
@@ -130,7 +130,7 @@ func taskNotice(v fleet.View, waited string) string {
 func unreadReport(v fleet.View) bool { return v.Report != "" && len(v.Unread) > 0 }
 
 // taskDetail is the second line's first half: what is actually going
-// on. Its task's own last words where it left any, and what is true
+// on: the task's own last words where it left any, and what is true
 // of the state where that adds something the words do not.
 //
 // Nothing here restates a command. "Ready to land" and "/land a1" are
