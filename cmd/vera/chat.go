@@ -146,10 +146,20 @@ func staying(w *fleetWatch) string {
 // mote insists on a name (an empty one becomes "agent"), so the local
 // case says "vera": the shortest true thing, and nothing that cuts.
 func statusName(st *Status, base string) string {
+	if who := remoteName(st, base); who != "" {
+		return who
+	}
+	return "vera"
+}
+
+// remoteName is the machine answering, when it is not this one — and
+// "" when it is, which is the only name a single-machine UI should
+// spend a column on.
+func remoteName(st *Status, base string) string {
 	if elsewhere(base) && st != nil && st.Name != "" {
 		return st.Name
 	}
-	return "vera"
+	return ""
 }
 
 // elsewhere: this chat is talking to a verad that is not on this
@@ -178,6 +188,11 @@ func newConversation() string { return "chat-" + time.Now().Format("20060102-150
 func chatOptions(st *Status, s *chatSession, sess *session.Session, greeting string) tui.Options {
 	return tui.Options{
 		Name: statusName(st, s.c.base),
+		// The line itself is the grammar's (statusLine): the model on
+		// the left, the cost and the context on the right. mote fits
+		// it and puts the key hints in front of the right when there
+		// is room.
+		Status: statusLine(remoteName(st, s.c.base)),
 		// The model in use, beside her name. mote reads Options.Model
 		// every frame and tui.SetModel is how it moves, so this is a
 		// starting position rather than a fixed fact: the picker moves
@@ -425,7 +440,9 @@ func (w *fleetWatch) absorb(views []fleet.View, now time.Time) []agent.Event {
 		prev, seen := w.states[v.ID]
 		w.states[v.ID] = v.State
 		if line, ok := noticeFor(prev, seen, v, now); ok {
-			out = append(out, agent.About(v.ID, line))
+			// The words are the notice; the tone is the colour on
+			// its gutter, and the open is what ⏎ does on it.
+			out = append(out, agent.About(v.ID, line).WithTone(tone(v)).WithOpen(opens(v)))
 		}
 	}
 	return out

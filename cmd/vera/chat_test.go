@@ -531,6 +531,11 @@ func TestNoticesWhenATaskNeedsYou(t *testing.T) {
 	if strings.Contains(evs[0].Text, "×") {
 		t.Errorf("red is failure only: %q", evs[0].Text)
 	}
+	// Nothing to colour and nothing to open: it finished, and it has
+	// written nothing to read.
+	if evs[0].Tone != "" || evs[0].Open != "" {
+		t.Errorf("a plain finish carries a tone or an open: %+v", evs[0])
+	}
 	if evs := w.absorb([]fleet.View{done}, now); len(evs) != 0 {
 		t.Fatalf("unchanged state is not news: %+v", evs)
 	}
@@ -542,6 +547,10 @@ func TestNoticesWhenATaskNeedsYou(t *testing.T) {
 	if len(evs) != 1 || !strings.HasPrefix(evs[0].Text, "✓ Task landed · Scout the panel") ||
 		!strings.Contains(evs[0].Text, "merged") {
 		t.Fatalf("a landing says so: %+v", evs)
+	}
+	// It wrote a report, so ⏎ on the notice opens it.
+	if evs[0].Open != "/report a1" {
+		t.Errorf("the landing's notice does not open its report: %+v", evs[0])
 	}
 	// It landed itself and closed itself; the summary it wrote on the
 	// way out is the last thing the person can still read, so the line
@@ -981,10 +990,15 @@ func TestTheTerminalDrawsWhatVeraGivesIt(t *testing.T) {
 	// reference struck off it — no "· none" for a dial nobody turned,
 	// no "(from profiles/…)", nothing about where the person is.
 	view := screen(m)
-	for _, want := range []string{"vera \u00b7 gpt-5.6-luna", "say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
+	for _, want := range []string{"say something", "fleet", "a1", "Port the chat onto mote", "a1 \u00b7 blocked", "one rail o"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the screen is missing %q:\n%s", want, view)
 		}
+	}
+	// The model opens the line, and nothing sits in front of it: not
+	// "vera" (the tab says it), not the machine.
+	if !strings.HasPrefix(bottomLine(m), "gpt-5.6-luna") {
+		t.Errorf("the status line does not open on the model: %q", bottomLine(m))
 	}
 
 	deliver(m, s.handle("report", "a1"))
@@ -1162,8 +1176,10 @@ func TestTheStatusLineSaysWhatItCost(t *testing.T) {
 	if !strings.Contains(view, want) {
 		t.Errorf("the status line should show %s:\n%s", want, view)
 	}
-	if !strings.Contains(view, "12.8k tok") {
-		t.Errorf("the status line should show the turn's tokens:\n%s", view)
+	// And the context the next turn starts from — the turn's input
+	// tokens, labelled — rather than a total that only grows.
+	if !strings.Contains(bottomLine(m), " est · ctx 12.0k") {
+		t.Errorf("the status line should show the estimate and the context:\n%s", view)
 	}
 	if err := sess.Close(); err != nil {
 		t.Fatal(err)
@@ -1230,6 +1246,13 @@ func outsideRook(t *testing.T) {
 
 // screen is the terminal's frame as plain text: v2 hands back a
 // tea.View, and the tests read words, not colours.
+// bottomLine is the status line: the last line of the frame, the
+// trailing space taken off.
+func bottomLine(m *tui.Model) string {
+	lines := strings.Split(screen(m), "\n")
+	return strings.TrimRight(lines[len(lines)-1], " ")
+}
+
 func screen(m tea.Model) string { return ansi.Strip(m.View().Content) }
 
 // /model <name> moves this conversation onto another one — the typed
@@ -1250,7 +1273,7 @@ func TestModelCommandAsksVeradAndTheStatusLineFollows(t *testing.T) {
 
 	// What is in force is on the status line from the start, without
 	// asking: the chat polls verad for it.
-	if v := screen(m); !strings.Contains(v, "vera · gpt-5.6-luna") || strings.Contains(v, "· none") {
+	if v := bottomLine(m); !strings.HasPrefix(v, "gpt-5.6-luna") || strings.Contains(v, "· none") {
 		t.Errorf("the status line should open on what is in force:\n%s", v)
 	}
 
@@ -1454,7 +1477,7 @@ func TestThePickerPostsToTheRightEndpointForEachAction(t *testing.T) {
 		t.Errorf("the note should say what changed and for what scope:\n%s", v)
 	}
 	// And the status line follows immediately, without waiting for a poll.
-	if v := screen(m); !strings.Contains(v, "vera · claude-opus-5") {
+	if v := bottomLine(m); !strings.HasPrefix(v, "claude-opus-5") {
 		t.Errorf("the status line did not follow:\n%s", v)
 	}
 
@@ -1715,7 +1738,7 @@ func TestTheWatchPushesAModelThatMovedElsewhere(t *testing.T) {
 	for _, msg := range pushed {
 		m.Update(msg)
 	}
-	if v := screen(m); !strings.Contains(v, "vera · claude-opus-5 · max") {
+	if v := bottomLine(m); !strings.HasPrefix(v, "claude-opus-5 · max") {
 		t.Errorf("the status line did not follow verad:\n%s", v)
 	}
 }

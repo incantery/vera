@@ -19,6 +19,7 @@
 //	taskNotice   a task's lifecycle: glyph, what it is, what to do
 //	failure      an error: what failed, what it changed, what next
 //	toolSays     a tool receipt: the call as a sentence
+//	statusLine   the model, and what this conversation has cost
 package main
 
 import (
@@ -26,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/incantery/mote/agent"
+	"github.com/incantery/mote/tui"
 	"github.com/incantery/vera/fleet"
 )
 
@@ -122,6 +125,34 @@ func taskNotice(v fleet.View, waited string) string {
 		head += " " + glyphUnread
 	}
 	return event(head, taskDetail(v, waited), taskNext(v))
+}
+
+// tone is the one colour mote may put on a notice's gutter, and it
+// follows the shape: ◇ gets the Needs colour, × gets the Error
+// colour, everything else stays dim. It never says anything the glyph
+// does not — the same rule as the rail, so that the two can be read
+// against each other, and so that the line still reads with the
+// colour off.
+func tone(v fleet.View) agent.Tone {
+	switch glyph, _ := mark(v); glyph {
+	case glyphNeedsYou:
+		return agent.ToneNeeds
+	case glyphFailed:
+		return agent.ToneFailed
+	}
+	return ""
+}
+
+// opens is what ⏎ runs on a focused notice: the task's report, when
+// it has written one. It is the reference's "⏎ open", and it is only
+// ever a read — /land and /answer change things, and a key called
+// open must not. A task that has written nothing has nothing to open,
+// and its notice is not a stop for tab.
+func opens(v fleet.View) string {
+	if v.Report != "" {
+		return "/report " + v.ID
+	}
+	return ""
 }
 
 // unreadReport: something has been written here that nobody has read.
@@ -313,4 +344,53 @@ func fleetSays(args string) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// --- the status line ----------------------------------------------------
+
+// statusLine is the reference's 3g: the model on the left, what this
+// conversation has cost on the right, and nothing that is not true of
+// this conversation.
+//
+//	gpt-5.6-luna                            $0.0094 est · ctx 40.8k
+//
+// mote hands over everything it knows (tui.Status) and lays out what
+// comes back; this decides what comes back. "vera" is gone — the tab
+// says it. The conversation id is gone — /status has it. The cost is
+// labelled an estimate, because it is one, and the tokens are the
+// context the next turn starts from rather than a total that only
+// grows, because "how big has this got" is the question a person
+// watching a long conversation is asking. The state — waiting for
+// you, choosing, working — stays, on the left, because it is the one
+// thing on the line that changes what the person should do.
+//
+// who is the machine answering, and is "" on this one: a single-
+// machine UI spends no column on a constant. It comes back for `vera
+// chat -url` pointed at another Mac, where which machine is answering
+// is the most load-bearing fact on the screen.
+func statusLine(who string) func(tui.Status) (left, right string) {
+	return func(s tui.Status) (string, string) {
+		left := dotJoin(who, s.Model, s.State)
+		var spent []string
+		if s.Cost > 0 {
+			spent = append(spent, tui.FormatCost(s.Cost)+" est")
+		}
+		if s.Context > 0 {
+			spent = append(spent, "ctx "+tui.FormatTokens(s.Context))
+		}
+		return left, dotJoin(append(spent, s.Right)...)
+	}
+}
+
+// dotJoin is the line's own punctuation, with the empty parts left
+// out, so that a line made of things that are sometimes not there is
+// still a sentence.
+func dotJoin(parts ...string) string {
+	var out []string
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, " · ")
 }

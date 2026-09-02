@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/incantery/mote/agent"
 	"github.com/incantery/mote/tui"
 	"github.com/incantery/vera/fleet"
 )
@@ -287,12 +288,13 @@ func TestALifecycleEventDrawsAsOneBlock(t *testing.T) {
 	if head == "" || body == "" {
 		t.Fatalf("the event did not draw as two lines:\n%s", screen(m))
 	}
-	// The gutter is on the head; the second line is indented under it
-	// rather than starting a second event.
-	if !strings.HasPrefix(head, "  · ") {
+	// The gutter runs down both lines — one bar, one block — and the
+	// second line is indented under the head rather than starting a
+	// second event.
+	if !strings.HasPrefix(head, "  ▏ ◇") {
 		t.Errorf("head: %q", head)
 	}
-	if !strings.HasPrefix(body, "    ") || strings.Contains(body, "·  ") {
+	if !strings.HasPrefix(body, "  ▏ one") {
 		t.Errorf("body: %q", body)
 	}
 	if !strings.Contains(body, "one rail or two?") {
@@ -316,5 +318,84 @@ func TestTheGreetingNamesAMachineOnlyWhenItMatters(t *testing.T) {
 	away := chatGreeting(st, "http://studio.local:4780", emptySession(t))
 	if !strings.HasPrefix(away, "**Seths-MacBook-Pro-2** — ") {
 		t.Errorf("another machine's verad should say so:\n%s", away)
+	}
+}
+
+// The tone is a colour on the gutter and it follows the shape: the
+// Needs colour goes with ◇ and the Error colour with ×, and nothing
+// else gets one. A tone that said something the glyph did not would
+// be a state the screen could only read with the colour on.
+func TestTheToneFollowsTheShape(t *testing.T) {
+	for _, st := range []fleet.State{
+		fleet.Running, fleet.Waiting, fleet.Stale, fleet.Decision,
+		fleet.Finished, fleet.Broken, fleet.Gone, fleet.Held, fleet.Interrupted, fleet.Quiet,
+	} {
+		v := fleet.View{Task: &fleet.Task{ID: "a1", Brief: "Port the chat"}, State: st}
+		glyph, _ := mark(v)
+		got := tone(v)
+		if (got == agent.ToneNeeds) != (glyph == glyphNeedsYou) {
+			t.Errorf("%s draws %q and is toned %q", st, glyph, got)
+		}
+		if (got == agent.ToneFailed) != (glyph == glyphFailed) {
+			t.Errorf("%s draws %q and is toned %q", st, glyph, got)
+		}
+		if got != "" && got != agent.ToneNeeds && got != agent.ToneFailed {
+			t.Errorf("%s has a tone of its own: %q", st, got)
+		}
+	}
+}
+
+// ⏎ opens what the task wrote, and nothing else: a read, never a
+// verb that changes something.
+func TestOpenIsWhatTheTaskWrote(t *testing.T) {
+	v := fleet.View{Task: &fleet.Task{ID: "a1", Brief: "Port the chat"}, State: fleet.Waiting}
+	if got := opens(v); got != "" {
+		t.Errorf("a task that wrote nothing opens %q", got)
+	}
+	v.State, v.Report = fleet.Finished, "# Done"
+	if got := opens(v); got != "/report a1" {
+		t.Errorf("a task with a report opens %q", got)
+	}
+	v.State = fleet.Broken
+	if got := opens(v); got != "/report a1" {
+		t.Errorf("open became a verb: %q", got)
+	}
+}
+
+// 3g: the model on the left, the cost and the context on the right,
+// and nothing that is not true of this conversation.
+func TestTheStatusLineIsModelLeftAndSpendRight(t *testing.T) {
+	line := statusLine("")
+	s := tui.Status{Name: "vera", Model: "gpt-5.6-luna", Conversation: "chat-20260902-072301",
+		Cost: 0.0094, InputTokens: 61000, OutputTokens: 4000, Context: 40800,
+		Spent: "$0.0094 · 65.0k tok"}
+	left, right := line(s)
+	if left != "gpt-5.6-luna" {
+		t.Errorf("left %q — the tab says vera, /status has the id", left)
+	}
+	if right != "$0.0094 est · ctx 40.8k" {
+		t.Errorf("right %q", right)
+	}
+	// The state stays: it is the one thing on the line that changes
+	// what the person should do.
+	s.State = "waiting for you"
+	if left, _ := line(s); left != "gpt-5.6-luna · waiting for you" {
+		t.Errorf("left %q", left)
+	}
+	// Before a turn has ended there is nothing to say on the right,
+	// and the line does not say "$0.0000" to fill the space.
+	if _, right := line(tui.Status{Model: "gpt-5.6-luna"}); right != "" {
+		t.Errorf("right %q for a conversation that has spent nothing", right)
+	}
+	// Another machine's verad is the one exception to the constant:
+	// then which machine is answering is the fact that matters.
+	if left, _ := statusLine("Seths-Mini")(s); left != "Seths-Mini · gpt-5.6-luna · waiting for you" {
+		t.Errorf("left %q", left)
+	}
+	// Whatever the application put on the right (nothing, today)
+	// follows the spend.
+	s.Right = "2 runs in flight"
+	if _, right := line(s); right != "$0.0094 est · ctx 40.8k · 2 runs in flight" {
+		t.Errorf("right %q", right)
 	}
 }

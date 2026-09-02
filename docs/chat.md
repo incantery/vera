@@ -105,42 +105,53 @@ half was the only half anybody read.
 What is true of **this conversation**, and nothing else:
 
 ```
-vera · gpt-5.6-luna · chat-20260902-072301 · $0.0015 · 6.9k tok
+gpt-5.6-luna                                        $0.0094 est · ctx 40.8k
 ```
+
+The model on the left, with the state beside it when there is one
+(waiting for you · choosing · ◐ working); the cost on the right,
+labelled the estimate it is, and the context the next turn starts
+from rather than a total that only grows. mote hands over everything
+it knows (`tui.Status`) and `statusLine` in `grammar.go` decides what
+goes back; mote fits it and puts its key hints in front of the right
+when there is room.
 
 Struck off it, and where each went:
 
 | dropped | why | where it is now |
 | --- | --- | --- |
-| the hostname | a single-machine UI spends no column on a constant | back for `vera chat -url <another mac>` (`statusName`) — the greeting follows the same rule |
+| the hostname | a single-machine UI spends no column on a constant | back for `vera chat -url <another mac>` (`remoteName`) — the greeting follows the same rule |
+| `vera` | the tab says it | the tab |
+| the conversation id | an argument, not a name | `/status`, `/sessions` |
 | `· none` | a dial nobody turned, on models with no dial | `/model` prints the resolution whole |
 | where you are | true of the world, not of this conversation | `/debug`'s opening line |
 | the keys | a reminder `/help` already holds | mote drops them itself when the line is full |
 
-## What is still owed, and by whom
+## What mote gives, and where the seam is
 
-These are mote's (`../mote/tui`), not Vera's, and the reference asks
-for them:
+The reference asked for five things that were the terminal's rather
+than Vera's. All five landed in `../mote/tui` (mote `eae0a25`,
+`f38c1b7`), and this is the seam each one crosses:
 
-- **The left of the status line.** The reference has the model and
-  nothing else there, with the estimated cost and labelled context
-  (`$0.0094 est · ctx 40.8k`) on the right. `Model.statusLine` composes
-  `name · model · conversation · state · spent` on the left and will
-  not take an empty name, so `vera` and the conversation id stay. An
-  `Options.Status` that let the application lay the line out, or an
-  Options field to drop either, would finish 3g.
-- **The completion popup's own hint line** (`↑↓ choose · ⏎ accept ·
-  esc dismiss · ⇧⏎ newline`), the accent border on the focused editor
-  against a dim border on the popup, and the selected row as a solid
-  block rather than a `▸`. All of 3f's chrome is `renderSuggestions`.
-- **Colour inside a notice.** mote paints a notice in one dim style,
-  so the glyphs carry the whole distinction. The reference tints the
-  gutter — yellow for an ask, red for a failure — which needs a notice
-  that can say what kind it is.
-- **Where a notice wraps.** `hang` wraps on `" -/"`, so a second line
-  too long for the pane breaks *inside* the slash command at its
-  slash — `· /` / `answer a3f2 <text>`. The breakpoints are right for
-  prose and wrong for the one token on the line that must not be cut.
-- **`⏎ open` on a task event.** The reference opens the task from the
-  transcript row. Nothing in mote focuses a notice, so the second line
-  carries a slash command instead.
+- **The status line's layout** — `Options.Status`, above.
+- **The completion popup** — a box of its own in the dim border, its
+  keys on its last line (`↑↓ choose · ⏎ accept · esc dismiss · ⇧⏎
+  newline`), the chosen command a reversed block. The editor under it
+  is a box too, in the accent while the keyboard is in it and dim
+  while it is not — under a question, a picker, or while a card or a
+  notice has the focus. Nothing of Vera's: mote draws all of it.
+- **Colour inside a notice** — `agent.Event.Tone`. `tone()` in
+  `grammar.go` follows the shape: `◇` is `ToneNeeds`, `×` is
+  `ToneFailed`, everything else is dim. mote tints the gutter and
+  only the gutter; the words stay dim, and the line still reads with
+  the colour off.
+- **Where a notice wraps** — mote's `hang` no longer breaks a line at
+  the slash of a slash command. A path in prose still wraps where it
+  always did.
+- **`⏎ open` on a task event** — `agent.Event.Open`. `opens()` in
+  `grammar.go` is `/report <id>` when the task has written one and
+  nothing otherwise: it is only ever a read. A notice carrying one is
+  a stop for tab, wears the accent bar when it has the focus, and
+  enter over an empty box runs the command. With something typed,
+  enter sends that. The second line of the notice still names the
+  command, for anybody who would rather type it.
