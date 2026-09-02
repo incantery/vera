@@ -43,6 +43,9 @@ type fakeVerad struct {
 	// answer with. Nil answers an empty list.
 	told      []string
 	todoReply func(line string) TodoAnswer
+	// refuse is what every POST /fleet/… answers with instead of
+	// doing it, for a test about what a refused verb says.
+	refuse string
 }
 
 func newFakeVerad(t *testing.T) *fakeVerad {
@@ -198,7 +201,12 @@ func newFakeVerad(t *testing.T) *fakeVerad {
 		}
 		f.mu.Lock()
 		f.posts = append(f.posts, r.URL.Path)
+		why := f.refuse
 		f.mu.Unlock()
+		if why != "" {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": why})
+		}
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -1745,5 +1753,26 @@ func TestBackslashEnterIsANewlineNotASend(t *testing.T) {
 	want := "what is on the rail,\nand what is blocked?"
 	if got := sess.Turns()[0].Said; got != want {
 		t.Errorf("verad was told %q, want %q", got, want)
+	}
+}
+
+// A fleet verb that would not run says the three things every refusal
+// here says: what failed, what it left alone, and what to do. The
+// middle one is the one that matters — a /land that failed and one
+// that half-landed look identical from the keyboard.
+func TestARefusedFleetVerbSaysTheTaskIsWhereItWas(t *testing.T) {
+	outsideRook(t)
+	f := newFakeVerad(t)
+	f.refuse = "the branch has a conflict in README"
+	c := f.client()
+	w := newFleetWatch(c)
+	s := &chatSession{c: c, w: w, conv: "chat-1", dir: t.TempDir(), open: &openSessions{}}
+	w.conv = s.conversation
+
+	got := joined(s.handle("land", "a1"))
+	for _, want := range []string{"conflict in README", "the task is where it was", "/tasks"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a refused /land is missing %q:\n%s", want, got)
+		}
 	}
 }

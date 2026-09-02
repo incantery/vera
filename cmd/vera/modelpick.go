@@ -176,6 +176,14 @@ func (s *chatSession) effortPick(ans *ModelsAnswer, dial []string) tui.Pick {
 	return p
 }
 
+// cardNext is where to look after a card was refused — the other half
+// of the same question, since a refusal here is nearly always a model
+// and an effort that do not go together.
+var cardNext = map[string]string{
+	"model":  "/model lists what verad can reach",
+	"effort": "/effort shows what this model takes",
+}
+
 // applyPick is what either card does when it closes: nothing at all if
 // it was cancelled, and otherwise a request to verad in the scope the
 // key asked for.
@@ -207,7 +215,11 @@ func (s *chatSession) applyPick(noun string, half func(tui.PickChoice) (model, e
 				res, err = c.setDefaultModel(ctx, model, effort)
 			}
 			if err != nil {
-				return tui.Fail("%s: %s", noun, err)
+				// The same three parts a typed refusal wears: what
+				// failed, what it left alone, what to do. A card that
+				// only says no leaves the person guessing whether it
+				// moved anything on the way past.
+				return tui.Fail("%s", failure(err.Error(), staying(w), cardNext[noun]))
 			}
 			// verad is the authority on what this conversation is now
 			// on, and setting the daemon's default does not move a

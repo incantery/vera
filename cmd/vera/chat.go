@@ -1106,11 +1106,18 @@ func (s *chatSession) handle(name, rest string) tea.Cmd {
 
 // post is one call to verad, off the UI goroutine, followed by a fresh
 // read of the fleet so the rail is right by the time the note lands.
+//
+// A verb that would not run says the same three things every refusal
+// here says. The middle one is what a fleet command especially needs:
+// `/land a1` that failed and `/land a1` that half-landed look
+// identical from the keyboard, so the line says the task is where it
+// was and points at the one command that shows whether it is.
 func (s *chatSession) post(path string, body any, ok string) tea.Cmd {
 	c, w := s.c, s.w
 	return off(func(ctx context.Context) tea.Cmd {
 		if err := c.post(ctx, path, body); err != nil {
-			return tui.Fail("%s", err)
+			return tui.Fail("%s", failure(err.Error(),
+				"the task is where it was", "/tasks says what each one is doing"))
 		}
 		w.poll(ctx)
 		if ok == "" {
