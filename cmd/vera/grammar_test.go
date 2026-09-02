@@ -299,3 +299,22 @@ func TestALifecycleEventDrawsAsOneBlock(t *testing.T) {
 		t.Errorf("its own last words belong on the line: %q", body)
 	}
 }
+
+// The greeting is the top of the transcript, and it opened on the
+// machine's name in bold — the same constant the status line stopped
+// spending a column on, and read as though the laptop were greeting
+// you. Same rule, same exception.
+func TestTheGreetingNamesAMachineOnlyWhenItMatters(t *testing.T) {
+	st := &Status{Name: "Seths-MacBook-Pro-2"}
+	local := chatGreeting(st, "http://127.0.0.1:4780", emptySession(t))
+	if strings.Contains(local, "Seths-MacBook-Pro-2") {
+		t.Errorf("this machine does not introduce itself:\n%s", local)
+	}
+	if !strings.HasPrefix(local, "Say something") {
+		t.Errorf("greeting:\n%s", local)
+	}
+	away := chatGreeting(st, "http://studio.local:4780", emptySession(t))
+	if !strings.HasPrefix(away, "**Seths-MacBook-Pro-2** — ") {
+		t.Errorf("another machine's verad should say so:\n%s", away)
+	}
+}

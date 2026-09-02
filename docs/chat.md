@@ -112,7 +112,7 @@ Struck off it, and where each went:
 
 | dropped | why | where it is now |
 | --- | --- | --- |
-| the hostname | a single-machine UI spends no column on a constant | back for `vera chat -url <another mac>` (`statusName`) |
+| the hostname | a single-machine UI spends no column on a constant | back for `vera chat -url <another mac>` (`statusName`) — the greeting follows the same rule |
 | `· none` | a dial nobody turned, on models with no dial | `/model` prints the resolution whole |
 | where you are | true of the world, not of this conversation | `/debug`'s opening line |
 | the keys | a reminder `/help` already holds | mote drops them itself when the line is full |

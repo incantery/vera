@@ -95,7 +95,7 @@ func runChat(args []string) {
 	// moves that — so it reads the id rather than being handed one.
 	w.conv = s.conversation
 	w.pollModel(ctx)
-	greeting := chatGreeting(st, sess)
+	greeting := chatGreeting(st, base, sess)
 	if *debug {
 		greeting += "\n\n" + beliefMarkdown(st, s.conversation())
 	}
@@ -219,11 +219,21 @@ func chatSessionDir() string { return filepath.Join(stateDir(), "chat") }
 // chatGreeting is what is said once, at the top. A reopened
 // conversation says so and names the file, because a person who quit
 // and came back needs to know it was kept and where.
-func chatGreeting(st *Status, sess *session.Session) string {
-	g := "**" + st.Name + "** — say something, or `/` for the fleet. " +
+//
+// It opened on the machine's name in bold, which read as though the
+// laptop were the one greeting you, and was the same constant the
+// status line has stopped spending a column on. Same rule here, and
+// the same exception: `vera chat -url` pointed somewhere else says
+// where, because then it is not a constant.
+func chatGreeting(st *Status, base string, sess *session.Session) string {
+	who := ""
+	if elsewhere(base) && st != nil && st.Name != "" {
+		who = "**" + st.Name + "** — "
+	}
+	g := who + "Say something, or `/` for the fleet. " +
 		"`/help` has the keys; the rail on the right is every task and what is believed about it."
 	if insideRook() {
-		g = "**" + st.Name + "** — say something, or `/` for the fleet. " +
+		g = who + "Say something, or `/` for the fleet. " +
 			"`/help` has the keys. The rail starts hidden here: rook already has an agents pane " +
 			"showing the same fleet. `/rail`, ctrl+t or F2 brings it back."
 	}

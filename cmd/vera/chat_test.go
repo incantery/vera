@@ -1078,7 +1078,7 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 
 	sess := openChat(t, dir, "chat-1")
 	s := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{list: []*session.Session{sess}}}
-	m := tui.New(veraAgent{c: c}, headless(chatOptions(st, s, sess, chatGreeting(st, sess))))
+	m := tui.New(veraAgent{c: c}, headless(chatOptions(st, s, sess, chatGreeting(st, "", sess))))
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	drive(t, m, func() bool { return len(sess.Turns()) == 1 }, m.Init(), say(m, "what is on the rail?"))
@@ -1099,7 +1099,7 @@ func TestAConversationOutlivesTheTerminal(t *testing.T) {
 		t.Fatalf("%d turns on disk, want the one exchange", n)
 	}
 	s2 := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{}}
-	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
+	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, "", again))))
 	m2.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 
 	view := screen(m2)
@@ -1172,7 +1172,7 @@ func TestTheStatusLineSaysWhatItCost(t *testing.T) {
 	// Reopened, the total comes back with the turn.
 	again := openChat(t, dir, "chat-1")
 	s2 := &chatSession{c: c, w: newFleetWatch(c), conv: "chat-1", dir: dir, open: &openSessions{}}
-	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, again))))
+	m2 := tui.New(veraAgent{c: c}, headless(chatOptions(st, s2, again, chatGreeting(st, "", again))))
 	m2.Update(tea.WindowSizeMsg{Width: 160, Height: 40})
 	if v := screen(m2); !strings.Contains(v, want) {
 		t.Errorf("a reopened conversation should still know what it cost:\n%s", v)
@@ -1322,7 +1322,7 @@ func TestTheRailStartsHiddenInsideRook(t *testing.T) {
 	if insideRook() {
 		t.Fatal("no rook in the environment")
 	}
-	plain := chatGreeting(&Status{Name: "vera"}, emptySession(t))
+	plain := chatGreeting(&Status{Name: "vera"}, "", emptySession(t))
 	if strings.Contains(plain, "starts hidden") {
 		t.Errorf("outside rook the rail is just there:\n%s", plain)
 	}
@@ -1331,7 +1331,7 @@ func TestTheRailStartsHiddenInsideRook(t *testing.T) {
 	if !insideRook() {
 		t.Fatal("ROOK_MUX_SOCK should be enough")
 	}
-	inside := chatGreeting(&Status{Name: "vera"}, emptySession(t))
+	inside := chatGreeting(&Status{Name: "vera"}, "", emptySession(t))
 	for _, want := range []string{"starts hidden", "agents pane", "/rail", "F2"} {
 		if !strings.Contains(inside, want) {
 			t.Errorf("the greeting inside rook is missing %q:\n%s", want, inside)
