@@ -1,0 +1,84 @@
+# GoReleaser builds the macOS archives on a version tag, publishes a
+# GitHub Release, and updates the Homebrew cask in incantery/homebrew-tap
+# (same shape as rook's pipeline).
+#
+# vera is two Go binaries: `vera` (what you type) and `verad` (what stays
+# up). Vera.app and the iOS app are built from Xcode and are not part of
+# this release; the cask ships only the Go side. macOS-only because that
+# is the only place verad has senses to talk to.
+#
+# go.work in this repo points local builds at ./drive and ../mote; CI has
+# neither, so the workflow sets GOWORK=off and builds from go.mod alone.
+# Bump drive/mote pins (`go get github.com/incantery/vera/drive@<sha>`,
+# `go get github.com/incantery/mote@<sha>`) before tagging, or the release
+# silently builds against older code than your checkout.
+#
+# Run locally with: GOWORK=off goreleaser release --snapshot --clean
+version: 2
+
+project_name: vera
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: vera
+    main: ./cmd/vera
+    binary: bin/vera
+    env: [CGO_ENABLED=0]
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+  - id: verad
+    main: ./cmd/verad
+    binary: bin/verad
+    env: [CGO_ENABLED=0]
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+
+archives:
+  - id: vera
+    ids: [vera, verad]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+homebrew_casks:
+  - name: vera
+    repository:
+      owner: incantery
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/incantery/vera"
+    description: "Persistent assistant between your phone and your Mac: vera CLI and verad daemon"
+    binaries:
+      - bin/vera
+      - bin/verad
+    # Ad-hoc-signed binaries: strip the quarantine flag so Gatekeeper
+    # does not block first run.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/bin/vera", "#{staged_path}/bin/verad"]
+          end
+
+release:
+  github:
+    owner: incantery
+    name: vera

@@ -5,3 +5,5 @@
 macos/build/
 macos/Vera.xcodeproj/xcuserdata/
 bin/
+# goreleaser output
+dist/

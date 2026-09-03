@@ -87,10 +87,10 @@ github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 h1:5VipnvEpbqr2gA2VbM+nYVbkIF2
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0/go.mod h1:Hyl3n6Twe1hvtd9XUXDec4pTvgMSEixRuQKPTMH2bNs=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
-github.com/incantery/mote v0.0.0-20260826163410-f67f3a51b1d5 h1:szHhKQbeK7Y3aQqmhrxuHZjdyTvxjOIahI2SzrblTDo=
-github.com/incantery/mote v0.0.0-20260826163410-f67f3a51b1d5/go.mod h1:hpr19pnL0sckMXz9CZuz2ONl8hLJOKVDAL7yqZo0/Is=
-github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc h1:z1d3g/fou7eW978AOY8riurgqK0oZQdHIkRxcjnWa8I=
-github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc/go.mod h1:Gv38TyMudM/6yaFxBn1EscKbGfSx/deU5NMIBB3X62I=
+github.com/incantery/mote v0.0.0-20260903051846-6a11f119cc3d h1:4rEoUiW2tUogMPeTJ5F3RCD6gwadZ2seYUN49kshtuM=
+github.com/incantery/mote v0.0.0-20260903051846-6a11f119cc3d/go.mod h1:hpr19pnL0sckMXz9CZuz2ONl8hLJOKVDAL7yqZo0/Is=
+github.com/incantery/vera/drive v0.0.0-20260902124523-a5d797bb844e h1:r03GAqHVP3XSmo9aPR45UxQsZ8ezQ6vACAjmEpOVT+M=
+github.com/incantery/vera/drive v0.0.0-20260902124523-a5d797bb844e/go.mod h1:Gv38TyMudM/6yaFxBn1EscKbGfSx/deU5NMIBB3X62I=
 github.com/invopop/jsonschema v0.14.0 h1:MHQqLhvpNUZfw+hM3AZDYK7jxO8FZoQeQM77g8iyZjg=
 github.com/invopop/jsonschema v0.14.0/go.mod h1:ygm6C2EaVNMBDPpaPlnOA2pFAxBnxGjFlMZABxm9n2I=
 github.com/klauspost/compress v1.19.1 h1:VsB4HPswih7mmZ8WleSFQ75c/Ui1M4trX5oAsJnhSlk=

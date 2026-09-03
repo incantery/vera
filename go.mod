@@ -7,8 +7,8 @@ require (
 	connectrpc.com/connect v1.20.0
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/grafana/agento11y/go v0.17.0
-	github.com/incantery/mote v0.0.0-20260826163410-f67f3a51b1d5
-	github.com/incantery/vera/drive v0.0.0-20260819221129-d21e4cba01cc
+	github.com/incantery/mote v0.0.0-20260903051846-6a11f119cc3d
+	github.com/incantery/vera/drive v0.0.0-20260902124523-a5d797bb844e
 	github.com/modelcontextprotocol/go-sdk v1.6.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.opentelemetry.io/contrib/exporters/autoexport v0.70.0
